@@ -15,11 +15,12 @@
 // @require https://gist.github.com/raw/2625891/waitForKeyElements.js
 // ==/UserScript==
 
+this.$ = this.jQuery = jQuery.noConflict(true);
+
 // config parameters
 const SHOW_LINK_ICON = 1; // toggle link fav icons
 const LINK_STYLE = "font-weight: bold; font-style: italic;";
 const SHOW_LINK_TEXT = 1; // toggle link text
-
 
 // constants
 const PRICE_SELECTOR = 'tr#priceblock_ourprice_row > td:last-child, #priceblock_dealprice_row > td:last-child';
