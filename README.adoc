@@ -1,4 +1,4 @@
-= My Dot-Files
+= My Userscripts & Co.
 Andreas Weyer <dev@cbaoth.de>
 v1.0, 2018-11-28
 :toc:
