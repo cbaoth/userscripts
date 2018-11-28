@@ -2,6 +2,7 @@
 // @name        Streaming Tweaks
 // @namespace   https://cbaoth.de
 // @version     0.1
+// @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 // @description Some tweaks for various streaming sites
 //
 // @include     /^https?://www\.netflix\.com/watch//

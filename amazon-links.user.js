@@ -3,6 +3,7 @@
 // @name:en     Amazon ASIN Links (price tracking)
 // @namespace   https://cbaoth.de
 // @version     0.3
+// @downloadURL https://github.com/cbaoth/userscripts/raw/master/amazon-links.user.js
 // @description Fügt auf allen Amazon Produktseiten links zur Preisüberwachungsseite keepa.com sowie ein direkter Amazon Produktlink (ohne unnütze URL Parameter, zum Teilen des Links).
 // @description:en Adds links to the price watching page keepa.com as well as a direct link to the Amazon Product (without any URL parameters, for sharing).
 //
