@@ -28,6 +28,13 @@ My browser user scripts and related stuff.
 image:amazon-links1.png[]
 
 
+=== Gerrit Tweaks
+
+`link:gerrit-tweaks.user.js[]` improves gerrit e.g. by adding additional syntax highlighting for Google Guava Preconditions, returns, exception throwing etc.
+
+image:gerrit-tweaks-code1.png[]
+
+
 === Streaming Tweaks
 
 `link:streaming-tweaks.user.js[]` improves netflix.com and amazon prime video by automatically skipping intros, to the next episode, and ads/trailers (amazon) as soon as the appropriate button pops up.
