@@ -1,0 +1,33 @@
+= My Dot-Files
+Andreas Weyer <dev@cbaoth.de>
+v1.0, 2018-11-28
+:toc:
+:toc-placement: auto
+//:sectnums:
+//:sectnumlevels: 3
+:source-highlighter: prettify
+//:source-highlighter: highlight.js
+:imagesdir: ./adoc_assets
+ifdef::env-github[]
+:tip-caption: :bulb:
+:note-caption: :information_source:
+:important-caption: :heavy_exclamation_mark:
+:caution-caption: :fire:
+:warning-caption: :warning:
+endif::[]
+
+
+== Summary
+
+My browser user scripts and related stuff.
+
+=== Amazon Links
+
+`link:amazon-links.user.js[]` adds a direct product link (no unnecessary parameters etc.) and a keepa.com price search link next to the price on each amazon product page.
+
+image:amazon-links1.png[]
+
+
+=== Streaming Tweaks
+
+`link:streaming-tweaks.user.js[]` improves netflix.com and amazon prime video by automatically skipping intros, to the next episode, and ads/trailers (amazon) as soon as the appropriate button pops up.
