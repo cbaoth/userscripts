@@ -28,6 +28,11 @@ My browser user scripts and related stuff.
 image:amazon-links1.png[]
 
 
+=== Copy URL on Hover
+
+`link:copy-url-on-hover.user.js[]` copies link/media URLs to the clipboard on mouse hover while alt (link) / ctrl (media) is pressed.
+
+
 === Gerrit Tweaks
 
 `link:gerrit-tweaks.user.js[]` improves gerrit e.g. by adding additional syntax highlighting for Google Guava Preconditions, returns, exception throwing etc.
