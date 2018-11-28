@@ -40,6 +40,16 @@ image:amazon-links1.png[]
 image:gerrit-tweaks-code1.png[]
 
 
+=== OpenProject Tweaks
+
+`link:openproject-tweaks.user.js[]` improves OpenProjects by adding thinks like:
+
+* Highlighting of the user's own name (automatically detected).
+* Highlighting of issue priority, status, and type (tracker).
+* Highlighting of _[Tags]_ in issue subjects.
+* Allow adding of additional styles to text fragments via generic regex search mechanism.
+
+
 === Streaming Tweaks
 
 `link:streaming-tweaks.user.js[]` improves netflix.com and amazon prime video by automatically skipping intros, to the next episode, and ads/trailers (amazon) as soon as the appropriate button pops up.
