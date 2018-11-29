@@ -46,7 +46,7 @@ image:gerrit-tweaks-code1.png[]
 
 === Jenkins Tweaks
 
-`link:jenkins-tweaks.user.js[]` improves the jenkins https://jenkins.io/[Jenkins]:
+`link:jenkins-tweaks.user.js[]` improves https://jenkins.io/[Jenkins]:
 
 * Highlight errors, exceptions and warnings in job console output
 
