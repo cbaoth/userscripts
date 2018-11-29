@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Streaming Tweaks
 // @namespace   https://cbaoth.de
-// @version     0.1.1
+// @version     0.1.2
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 // @description Some tweaks for various streaming sites
 //
@@ -19,16 +19,37 @@
 
 this.$ = this.jQuery = jQuery.noConflict(true);
 
+
+// wait for element(s) to appear then call function no more than once within the given wait period
+function waitAndThrottle(selector, f, wait = 200, options = { tailing: false }) {
+    waitForKeyElements(selector, _.throttle(f, wait, options));
+}
+
+
+// register amazon tweaks
+function amazonTweaksReg() {
+    // skip intro/credits/ads
+    const AMAZON_SEL_SKIP = `.skipElement, .countdown, .adSkipButton`;
+    waitAndThrottle(AMAZON_SEL_SKIP, (e) => $(e).click(), 2000);
+}
+
+
+// register netflix tweaks
+function netflixTweaksReg() {
+    // skip intro/credits
+    const NETFLIX_SEL_SKIP = `.skip-credits > a > span, .WatchNext-still-container`;
+    var netflixSkip = (e) => {
+        $(e)[0].click();
+        // playback may be paused, in this case press "play" after 1sec delay
+        setTimeout(() => $("button.button-nfplayerPlay")[0].click(), 1000);
+    };
+    waitAndThrottle(NETFLIX_SEL_SKIP, netflixSkip, 5000);
+}
+
+
+// register tweaks depending on page
 if (/amazon/.test(window.location.host)) { // Amazon prime video
-    // Auto skip: Intro, to next episode (credits), ads between episodes
-    var amazonSelSkip = `.adSkipButton, .countdown`;
-    function amazonVideoSkip() { $(amazonSelSkip).click(); }
-    // wait for buttons to appear, click only once within 2sec (prevent pause or similar)
-    waitForKeyElements(amazonSelSkip, _.throttle(amazonVideoSkip, 2000, { tailing: false }));
+    amazonTweaksReg();
 } else if (/netflix/.test(window.location.host)) { // Netflix
-    // Auto skip: Intro, to next episode (credits)
-    var netflixSelSkip = `.skip-credits > a > span, .WatchNext-still-container`;
-    function netflixVideoSkip() { $(netflixSelSkip).click(); }
-    // wait for buttons to appear, click only once within 2sec (prevent pause or similar)
-    waitForKeyElements(netflixSelSkip, _.throttle(netflixVideoSkip, 2000, { tailing: false }));
+    netflixTweaksReg();
 }
