@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Streaming Tweaks
 // @namespace   https://cbaoth.de
-// @version     0.1
+// @version     0.1.1
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 // @description Some tweaks for various streaming sites
 //
@@ -23,10 +23,12 @@ if (/amazon/.test(window.location.host)) { // Amazon prime video
     // Auto skip: Intro, to next episode (credits), ads between episodes
     var amazonSelSkip = `.adSkipButton, .countdown`;
     function amazonVideoSkip() { $(amazonSelSkip).click(); }
-    waitForKeyElements(amazonSelSkip, _.debounce(amazonVideoSkip, 200));
+    // wait for buttons to appear, click only once within 2sec (prevent pause or similar)
+    waitForKeyElements(amazonSelSkip, _.throttle(amazonVideoSkip, 2000, { tailing: false }));
 } else if (/netflix/.test(window.location.host)) { // Netflix
     // Auto skip: Intro, to next episode (credits)
     var netflixSelSkip = `.skip-credits > a > span, .WatchNext-still-container`;
     function netflixVideoSkip() { $(netflixSelSkip).click(); }
-    waitForKeyElements(netflixSelSkip, _.debounce(netflixVideoSkip, 200));
+    // wait for buttons to appear, click only once within 2sec (prevent pause or similar)
+    waitForKeyElements(netflixSelSkip, _.throttle(netflixVideoSkip, 2000, { tailing: false }));
 }
