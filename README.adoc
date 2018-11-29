@@ -46,7 +46,7 @@ image:gerrit-tweaks-code1.png[]
 
 * Highlighting of the user's own name (automatically detected).
 * Highlighting of issue priority, status, and type (tracker).
-* Highlighting of _[Tags]_ in issue subjects.
+* Highlighting of _[tags]_ and \*bold* in issue subjects.
 * Allow adding of additional styles to text fragments via generic regex search mechanism.
 
 

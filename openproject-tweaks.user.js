@@ -59,11 +59,11 @@ const SET_CSS_BY_TEXT_MATCH = [];
 // user name found?
 if (MY_NAME !== undefined && MY_NAME != '') {
     SET_CSS_BY_TEXT_MATCH.push(["span.user > a" // activity details comments section, FIXME not working all the time
-            + ", span.assignee" // work_packages and activity details
-            + ", span.author" // work_packages and activity details
-            + ", user-link.user-link > a" // task created by (samll text on top)
-            + ", user-link.user-link > a", // task created by (samll text on top)
-        [[new RegExp(MY_NAME, "g"), { "color": "rgb(11, 73, 191)", "animation": "blinker 1.5s linear infinite" }]]]);
+        + ", span.assignee" // work_packages and activity details
+        + ", span.author" // work_packages and activity details
+        + ", user-link.user-link > a" // task created by (samll text on top)
+        + ", user-link.user-link > a", // task created by (samll text on top)
+    [[new RegExp(MY_NAME, "g"), { "color": "rgb(11, 73, 191)", "animation": "blinker 1.5s linear infinite" }]]]);
 };
 
 /**
@@ -97,39 +97,40 @@ if (MY_NAME !== undefined && MY_NAME != '') {
  *       // text of <b> is matched, not inner text of slected div
  */
 const TEXT_SUBSTITUTION = [
-    // highlight [tags] in issue subjects
+    // highlight [tags] and *bold* in issue subjects
     ["span.subject"
         + ", .form--fieldset > div > ul > li" // roadmap
         + ", .timeline-element > .containerRight > .labelFarRight > .label-content" // gant diagram
         + ", div.subject", // backlog
-        [[/(\[[^\]]+\])/g, "$1", { "color": "rgb(11, 73, 191)" }],
-         [/(\[Story\])/gi, "[STORY]", {}]]], // just upper case (style added with pattern above)
+    [[/(\[[^\]]+\])/g, "$1", { "color": "rgb(11, 73, 191)" }],
+    [/(\[Story\])/gi, "[STORY]", {}], // just upper case (style added with pattern above)
+    [/(\*[^ ][^*]+[^ ]\*)/g, "$1", { "color": "rgb(255, 102, 65)" }]]], // make *bold* text orange
 
     // highlight / shorten tracker names (by type)
     ["span.wp-table--cell-span.type",
         [[/(Bug)/gi, "$1", { "color": "#ff6641" }],
-         [/(Task|Feature)/gi, "$1", { "color": "black" }],
-         [/(Idea)/gi, "$1", { "color": "silver" }],
-         [/Application/gi, "APP", {}], // customer tracker only
-         [/Change Request/gi, "CR", {}]]], // customer tracker only
+        [/(Task|Feature)/gi, "$1", { "color": "black" }],
+        [/(Idea)/gi, "$1", { "color": "silver" }],
+        [/Application/gi, "APP", {}], // customer tracker only
+        [/Change Request/gi, "CR", {}]]], // customer tracker only
 
     // highlight issues priorities
     ["span.priority",
         [[/(Immediate)/gi, "$1", { "color": "rgb(255, 102, 65)", "font-weight": "bold", "animation": "blinker .7s linear infinite" }],
-         [/(Urgent)/gi, "$1", { "color": "rgb(255, 102, 65)", "font-weight": "bold" }],
-         [/(High)/gi, "$1", { "color": "rgb(241, 196, 15)", "font-weight": "bold" }],
-         [/(Normal)/gi, "$1", { "color": "black" }],
-         [/(Low)/gi, "$1", { "color": "silver" }]]],
+        [/(Urgent)/gi, "$1", { "color": "rgb(255, 102, 65)", "font-weight": "bold" }],
+        [/(High)/gi, "$1", { "color": "rgb(241, 196, 15)", "font-weight": "bold" }],
+        [/(Normal)/gi, "$1", { "color": "black" }],
+        [/(Low)/gi, "$1", { "color": "silver" }]]],
 
     // highlight issues statuses
     ["span.status"
         + ", div.status_id", // backlog
-        [[/(New)/gi, "$1", { "color": "black" }],
-         [/(Feedback)/gi, "$1", { "color": "#8E44AD" }],
-         [/(In Progress)/gi, "$1", { "color": "rgb(11, 73, 191)" }],
-         [/(Resolved)/gi, "$1", { "color": "#229954" }],
-         [/(Closed)/gi, "$1", { "color": "silver" }],
-         [/(Rejected)/gi, "$1", { "color": "silver" }]]]
+    [[/(New)/gi, "$1", { "color": "black" }],
+    [/(Feedback)/gi, "$1", { "color": "#8E44AD" }],
+    [/(In Progress)/gi, "$1", { "color": "rgb(11, 73, 191)" }],
+    [/(Resolved)/gi, "$1", { "color": "#229954" }],
+    [/(Closed)/gi, "$1", { "color": "silver" }],
+    [/(Rejected)/gi, "$1", { "color": "silver" }]]]
 
     // highlight / shorten category names
     //[ "span.category",
