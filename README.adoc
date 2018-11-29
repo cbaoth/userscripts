@@ -44,6 +44,15 @@ image:amazon-links1.png[]
 image:gerrit-tweaks-code1.png[]
 
 
+=== Jenkins Tweaks
+
+`link:jenkins-tweaks.user.js[]` improves the jenkins https://jenkins.io/[Jenkins]:
+
+* Highlight errors, exceptions and warnings in job console output
+
+image:jenkins-console1.png[]
+
+
 === OpenProject Tweaks
 
 `link:openproject-tweaks.user.js[]` improves OpenProjects by adding thinks like:

@@ -12,11 +12,11 @@
 //
 // @require     http://code.jquery.com/jquery-latest.min.js
 // @require     https://gist.github.com/raw/2625891/waitForKeyElements.js
+// @require     https://raw.githubusercontent.com/jashkenas/underscore/master/underscore.js
 // @copyright   2017, userscript@cbaoth.de
 // ==/UserScript==
 
 /* TODO:
- * - ADD DEBOUNCE TO IMPROVE PERFORMANCE!
  * - Strike subject when closed / rejected
  * - Highlight bugs
  * - Show tooltip (subject) for parent task link
@@ -47,8 +47,8 @@ function updateKeyword(node) {
             break;
     }
 }
-waitForKeyElements (".cm-keyword", updateKeyword); // old gerrit
-waitForKeyElements (".gr-diff.gr-syntax-keyword", updateKeyword); // new gerrit
+waitForKeyElements(".cm-keyword", _.debounce(updateKeyword, 200)); // old gerrit
+waitForKeyElements(".gr-diff.gr-syntax-keyword", _.debounce(updateKeyword, 200)); // new gerrit
 
 // add style classes to selected span.cm-variable nodes
 function updateVariable(node) {
@@ -69,5 +69,5 @@ function updateVariable(node) {
             break;
     }
 }
-waitForKeyElements (".cm-variable", updateVariable); // old gerrit
-waitForKeyElements (".gr-diff.contentText", updateVariable); // new gerrit
+waitForKeyElements(".cm-variable", _.debounce(updateVariable, 200)); // old gerrit
+waitForKeyElements(".gr-diff.contentText", _.debounce(updateVariable, 200)); // new gerrit
