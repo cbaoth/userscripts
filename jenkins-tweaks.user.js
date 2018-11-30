@@ -26,12 +26,17 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 /* Search and replace + highlight the given patterns in the jenkins job console output
  */
 const CONSOLE_SUBSTITUTION = [['pre.console-output',
-    [[/(?<=^|[ \[\n\r])(error|fail(?:ed|ure)|abort(?:ed)?)(?=[ \]\n\r]|$)/gi, "$1", { "color": "red", "font-weight": "bold" }],
-    [/(?<=^|[ \[\n\r])(warn(?:ing)?|unstable|skip(?:ed|ping)?)(?=[ \]\n\r]|$)/gi, "$1", { "color": "gold", "font-weight": "bold" }],
-    [/(?<=^|[ .\n\r])(\w*(?:exception|error|Caused by:))(?=[ :\n\r]|$)/gi, "$1", { "color": "red", "font-weight": "bold" }],
-    [/(\(0 Failed for now)\)/g, "$1", { "color": "darkgreen" }],
-    [/(\([1-9][0-9]* Failed for now\))/g, "$1", { "color": "indigo" }],
-    [/(?<=^| )(success)(?=[ \n\r]|$)/gi, "$1", { "color": "green" }]]
+    [// test progress
+        [/(\(0 Failed for now\))/g, "$1", { "color": "cornflowerblue" }],
+        [/(\([1-9][0-9]* Failed for now\))/g, "$1", { "color": "red" }],
+        // errors, warnings, exceptions, ignoring positive test progress "(0 failed"
+        [/(?<=^|[ \[\n\r])(error|(<!\(0 )fail(?:ure)|abort(?:ed)?)(?=[ \]\n\r!.]|$)/gi, "$1", { "color": "red", "font-weight": "bold" }],
+        [/(?<=^|[ .\n\r])(\w*(?:exception|error|Caused by:))(?=[ :\n\r!.]|$)/gi, "$1", { "color": "red", "font-weight": "bold" }],
+        [/(?<=^|[ \[\n\r])(warn(?:ing)?|unstable|skip(?:ed|ping)?)(?=[ \]\n\r!.]|$)/gi, "$1", { "color": "#FFC000", "font-weight": "bold" }],
+        // unit test summary
+        [/((?:errors|failures): [1-9][0-9]*)/gi, "$1", { "color": "red", "font-weight": "bold" }],
+        [/((?:skipped): [1-9][0-9]*)/gi, "$1", { "color": "#FFC000", "font-weight": "bold" }],
+        [/(?<=^| )(success)(?=[ \n\r]|$)/gi, "$1", { "color": "limegreen", "font-weight": "bold" }]]
 ]];
 
 /* {{{ -- UTILITIES ------------------------------------------------------- */
