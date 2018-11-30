@@ -48,7 +48,9 @@ image:gerrit-tweaks-code1.png[]
 
 `link:jenkins-tweaks.user.js[]` improves https://jenkins.io/[Jenkins]:
 
-* Highlight errors, exceptions and warnings in job console output
+* Highlight errors, exceptions, warnings, success, test issues etc. in:
+** Job console output
+** Blue Ocean pipeline and test output
 
 image:jenkins-console1.png[]
 
