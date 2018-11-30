@@ -25,11 +25,14 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
 /* Search and replace + highlight the given patterns in the jenkins job console output
  */
-const CONSOLE_SUBSTITUTION = [[ 'pre.console-output',
-                               [[ /(?<=^|[ \[])(error)(?=[ \]]|$)/gi, "$1", { "color": "red", "font-weight": "bold" } ],
-                                [ /(?<=^|[ \[])(warn(?:ing)?)(?=[ \]]|$)/gi, "$1", { "color": "darkorange", "font-weight": "bold" } ],
-                                [ /(?<=^|[ .])(\w*exception|\w*error)(?=[ :]|$)/gi, "$1", { "color": "red", "font-weight": "bold" } ]]
-                             ]];
+const CONSOLE_SUBSTITUTION = [['pre.console-output',
+    [[/(?<=^|[ \[\n\r])(error|fail(?:ed|ure)|abort(?:ed)?)(?=[ \]\n\r]|$)/gi, "$1", { "color": "red", "font-weight": "bold" }],
+    [/(?<=^|[ \[\n\r])(warn(?:ing)?|unstable|skip(?:ed|ping)?)(?=[ \]\n\r]|$)/gi, "$1", { "color": "gold", "font-weight": "bold" }],
+    [/(?<=^|[ .\n\r])(\w*(?:exception|error|Caused by:))(?=[ :\n\r]|$)/gi, "$1", { "color": "red", "font-weight": "bold" }],
+    [/(\(0 Failed for now)\)/g, "$1", { "color": "darkgreen" }],
+    [/(\([1-9][0-9]* Failed for now\))/g, "$1", { "color": "indigo" }],
+    [/(?<=^| )(success)(?=[ \n\r]|$)/gi, "$1", { "color": "green" }]]
+]];
 
 /* {{{ -- UTILITIES ------------------------------------------------------- */
 // calculate a hash code for this string
