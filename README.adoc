@@ -72,8 +72,29 @@ image:jenkins-console1.png[]
 ==== Netflix
 * Automatically skip the intro _(where supported)_.
 * Automatically skip to the next episode _(in closing credits view)_.
+* Additional key bindings:
+
+[options="header"]
+|=======
+| Keys        | Action
+| Shift-Right | Fast-forward 1min
+| Shift-Left  | Rewind 1min
+| Ctrl-Right  | Fast-forward 10min
+| Ctrl-Left   | Rewind 10min
+| n           | Next episode
+|=======
 
 ==== Amazon prime video
 * Automatically skip the intro _(where supported)_.
 * Automatically skip to the next episode _(in closing credits view)_.
 * Automatically skip intermittend advertisments / trailers _(between episodes)_.
+
+[options="header"]
+|=======
+| Keys        | Action
+| Shift-Right | Fast-forward 1min
+| Shift-Left  | Rewind 1min
+| Ctrl-Right  | Fast-forward 10min
+| Ctrl-Left   | Rewind 10min
+| n           | Next episode
+|=======
