@@ -17,9 +17,11 @@ ifdef::env-github[]
 endif::[]
 
 
-== Summary
+== User Scripts
 
-My browser user scripts and related stuff.
+My browser user scripts.
+
+To run them install link:https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo[Tampermonkey] (link:https://www.google.com/chrome/[Chrome]), link:https://addons.mozilla.org/en-US/firefox/addon/greasemonkey/[Greasemonkey] (link:https://www.mozilla.org/en-US/firefox/developer/[Firefox]), or no extension at all (link:https://vivaldi.com/[Vivaldi]) and click on the linked `*.user.js` file to install the script. Note that, except when using the integrated Vivaldi solution, the user scripts will be **updated automatically** _(default settings)_ as soon as I commit a new version.
 
 === Amazon Links
 
@@ -74,7 +76,7 @@ image:jenkins-console1.png[]
 * Automatically skip to the next episode _(in closing credits view)_.
 * Additional key bindings:
 
-[options="header"]
+[cols="1,3",options="header"]
 |=======
 | Keys        | Action
 | Shift-Right | Fast-forward 1min
@@ -89,7 +91,7 @@ image:jenkins-console1.png[]
 * Automatically skip to the next episode _(in closing credits view)_.
 * Automatically skip intermittend advertisments / trailers _(between episodes)_.
 
-[options="header"]
+[cols="1,3",options="header"]
 |=======
 | Keys        | Action
 | Shift-Right | Fast-forward 1min
@@ -97,4 +99,17 @@ image:jenkins-console1.png[]
 | Ctrl-Right  | Fast-forward 10min
 | Ctrl-Left   | Rewind 10min
 | n           | Next episode
+|=======
+
+
+== Libs & Resources
+
+My common libs and resources.
+
+[cols="1,3",options="header"]
+|=======
+| File | Description
+|`link:lib/cblib.js[]`  | Some common JS used in my user scripts.
+|`link:lib/cblib.css[]` | Some common CSS used in my user scripts.
+|`link:dev/[]` | Just some code snippets, notes, etc. that can be helpful while developing user scripts.
 |=======
