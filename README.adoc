@@ -90,6 +90,7 @@ image:jenkins-console1.png[]
 * Automatically skip the intro _(where supported)_.
 * Automatically skip to the next episode _(in closing credits view)_.
 * Automatically skip intermittend advertisments / trailers _(between episodes)_.
+* Additional key bindings:
 
 [cols="1,3",options="header"]
 |=======
