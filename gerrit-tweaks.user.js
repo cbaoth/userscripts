@@ -4,7 +4,7 @@
 // @copyright   2017+, userscript@cbaoth.de
 //
 // @name        Gerrit Tweaks
-// @version     0.1.1
+// @version     0.1.2
 // @description Some tweaks for gerrit
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/gerrit-tweaks.user.js
 //
