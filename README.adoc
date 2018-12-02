@@ -72,7 +72,7 @@ image:jenkins-console1.png[]
 `link:streaming-tweaks.user.js[]` improves the user experience of some streaming services.
 
 ==== Netflix
-Improvements to the improves https://netflix.com[Netflix] web player:
+Improvements to the https://netflix.com[Netflix] web player:
 
 * Automatically skip the intro _(where supported)_.
 * Automatically skip to the next episode _(in closing credits view)_.
