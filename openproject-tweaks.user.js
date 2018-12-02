@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        OpenProject Tweaks
-// @version     0.1.3
+// @version     0.1.4
 // @description Some tweaks for OpenProject
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/openproject-tweaks.user.js
 //
@@ -63,12 +63,12 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // user name found?
     if (MY_NAME !== undefined && MY_NAME != '') {
-        SET_CSS_BY_TEXT_MATCH.push(["span.user > a" // activity details comments section, FIXME not working all the time
+        SET_CSS_BY_TEXT_MATCH.push(["span.user > a" // activity details comments section
             + ", span.assignee" // work_packages and activity details
             + ", span.author" // work_packages and activity details
             + ", user-link.user-link > a" // task created by (samll text on top)
             + ", user-link.user-link > a", // task created by (samll text on top)
-        [[new RegExp(MY_NAME, "g"), { "color": "rgb(11, 73, 191)", "animation": "blinker 1.5s linear infinite" }]]]);
+        [[new RegExp(MY_NAME), { "color": "rgb(11, 73, 191)", "animation": "blinker 1.5s linear infinite" }]]]);
     };
 
     /**
@@ -292,9 +292,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 // and for first gant diagram record to appear
                 waitForKeyElements(".results-tbody > tr:first-child"
                     + ", .wp-table-timeline--header-inner > .wp-timeline--header-element:first-child"
-                    + ", .work-package-details-activities-activity-contents", // comment section in details
+                    + ", span.user > a", //user name in details comment section
                     opApplyTweaksDebounce);
-                // issue ditails
+                // issue details
                 waitForKeyElements(".detail-activity", opApplyTweaksDebounce);
             }
             break;
