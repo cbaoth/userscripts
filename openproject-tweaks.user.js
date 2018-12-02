@@ -72,15 +72,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     };
 
     /**
-     * Substitute texts and/or add CSS to a text fragment of the selected elements.
-     * Text fragments will be wrapped in a new span element if needed.
+     * Substitute texts and inject CSS styles by wrapping text in spans.
      *
-     * To simplify things the regex pattern must match a text node (any child of the slected node)
-     * meaning /foo bar/ would not match "foo <b>bar</b>" due to it's html content, only "foo" and
-     * "bar" can be matched individually, since HTML can again contain attributes with similar text
-     * (e.g. @title) and we don't want to mess with that.
-     *
-     * Array format:
+     * substitutions: a multi dimensional array in the following format
      *  [<selector>,        [i,0]      - match elements
      *   [                  [i,1]      - multiple patterns per selector are supported
      *    [<pattern>,       [i,1,j,0]  - match regex pattern within the selected element's inner text
@@ -89,8 +83,14 @@ this.$ = this.jQuery = jQuery.noConflict(true);
      *   ], ...i+1
      *  ]
      *
+     * Notes:
+     * - Any sub-element of the <selector> will be searched for the given regex <pattern>
+     * - To simplify things the regex <pattern> must match a single text-only node
+     *   meaning html content is omitted, e.g. /foo bar/ would not match "foo <b>bar</b>"
+     *   due to it's html content, but /foo/ and /bar/ would match individually.
+     *
      * Examples:
-     * // make all text fragments starting with "b", including all following non-space characters, red and add a "!" at the end
+     * # make all text fragments starting with "b", including all following non-space characters, red and add a "!" at the end
      * ["div.foo"
      *  [[ /(b[^ ]+)/, "$1!", { "color": "red" } ]]]
      *    -> <div class="foo">Foo bar baz</div>
@@ -98,8 +98,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
      *
      *    -> <div class="foo">Foo ra<b>b</b>az</div></div>
      *    => <div class="foo">Foo ra<b><span style="color: red;">b</span></b>az</div></div>
-     *       // only "b" matches, not "baz" due to the intermittend "b" tags
-     *       // text of <b> is matched, not inner text of slected div
+     *       # only "b" matches, not "baz" due to the intermitted "b" tags
+     *       # text of <b> is matched, not inner text of selected div
      */
     const TEXT_SUBSTITUTION = [
         // highlight [tags] and *bold* in issue subjects
@@ -242,47 +242,12 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         // -- ADD CSS ------------------------------------------------------------
         // process all custom styles from SET_CSS_BY_TEXT_MATCH
         if (SET_CSS_BY_TEXT_MATCH !== undefined) {
-            for (var idxSel1 in SET_CSS_BY_TEXT_MATCH) {//debugger; // loop: selectors
-                jQuery.each($(SET_CSS_BY_TEXT_MATCH[idxSel1][0]), function (i, e) {//debugger; // loop: selected elements
-                    for (var idxSub1 in SET_CSS_BY_TEXT_MATCH[idxSel1][1]) {//debugger; // loop: texts to match
-                        // does element's text match? then add style
-                        if (SET_CSS_BY_TEXT_MATCH[idxSel1][1][idxSub1][0].test($(e).text())) {
-                            $(e).css(SET_CSS_BY_TEXT_MATCH[idxSel1][1][idxSub1][1]);
-                        }
-                    }
-                });
-            }
+            cb.findTextAddCSS(SET_CSS_BY_TEXT_MATCH);
         }
 
         // -- TEXT SUBSTITUTION --------------------------------------------------
         if (TEXT_SUBSTITUTION !== undefined) {
-            for (var tsIdxSel in TEXT_SUBSTITUTION) {//debugger; // loop: selectors
-                var tsSelector = TEXT_SUBSTITUTION[tsIdxSel][0];
-                jQuery.each($(tsSelector), function (i, e) {//debugger; // loop: selected elements
-                    for (var tsIdxSub in TEXT_SUBSTITUTION[tsIdxSel][1]) {//debugger; // loop: substitutions
-                        var tsPattern = TEXT_SUBSTITUTION[tsIdxSel][1][tsIdxSub][0];
-                        // check if the text of the whole selection matches (limitation, but more efficient)
-                        if (!tsPattern.test($(e).text())) {
-                            continue; // no match
-                        }
-                        // text content does match
-                        var tsSubstitution = TEXT_SUBSTITUTION[tsIdxSel][1][tsIdxSub][1];
-                        var tsCSS = TEXT_SUBSTITUTION[tsIdxSel][1][tsIdxSub][2];
-                        var tsSpanClass = "optsnode_" + cb.stringHash(tsSelector + tsPattern);
-                        var tsSubSpan = '<span class="' + tsSpanClass + '">' + tsSubstitution + '</span>';
-                        // replace text node with substitution wrapped in span
-                        cb.findTextNodes($(e)).each(function (it, et) {
-                            // replace only if parent is not already span with same id, e.g. from earlier execution
-                            // we don't want to add additional spans with every repeated execution
-                            if (!$(et).parent().hasClass(tsSpanClass)) {
-                                $(et).replaceWith($(et).text().replace(tsPattern, tsSubSpan));
-                            }
-                        });
-                        //GM_addStyle('span.' + tsSpanClass + ... tsCSS ...); // TODO maybe add global style
-                        $(e).find("." + tsSpanClass).css(tsCSS);
-                    }
-                });
-            }
+            cb.substituteTextWithCSS(TEXT_SUBSTITUTION);
         }
 
         // == LIST SCREEN ========================================================
@@ -300,7 +265,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             $("td span.wp-table--cell-span.assignee, td span.wp-table--cell-span.author").each(function (i, e) {
                 var text = e.innerText.trim();
                 if (! /, /.test(text)) { // contains no comma (else: most likely already shortened)
-                    e.innerText = cbNameToInitials(text, ", ", 1, 20, true);
+                    e.innerText = cb.nameToInitials(text, { separator: ", ", lastLength: 20, reverse: true });
                     e.title = text;
                 }
             });
