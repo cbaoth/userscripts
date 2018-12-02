@@ -4,7 +4,7 @@
 // @copyright   2015+, userscript@cbaoth.de
 //
 // @name        Amazon ASIN Links (price tracking)
-// @version     0.3.1
+// @version     0.3.2
 // @description Adds links to the price watching page keepa.com as well as a direct link to the Amazon Product (without any URL parameters, for sharing).
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/amazon-links.user.js
 //
@@ -28,6 +28,14 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // constants
     const PRICE_SELECTOR = 'tr#priceblock_ourprice_row > td:last-child, #priceblock_dealprice_row > td:last-child';
 
+    // create html for link
+    function createLink(url, text, color, icon, tooltip) {
+        return (SHOW_LINK_ICON ? '<img src="' + icon + '" border="0" align="absmiddle" width="16" height="16" />&nbsp;' : '')
+            + '<a target="_blank" href="' + url + '" style="color: ' + color + ';' + LINK_STYLE + '" title="' + tooltip + '">'
+            + (SHOW_LINK_TEXT ? text : '')
+            + '</a>';
+    }
+
     // add links
     function addAmazonLinks() {
         if (!$('input#ASIN:first').length) {
@@ -45,32 +53,31 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             tld = 'co.' + tld;
         }
 
-        // create all new links
-
         // direct link
-        var link1tooltip = (tld == 'de' ? 'Direkter Produktlink' : 'Direct product link');
-        var link1url = 'http://amazon.' + tld + '/dp/' + asin;
-        var link1 = (SHOW_LINK_ICON ? '<img src="http://www.amazon.' + tld + '/favicon.ico" border="0" align="absmiddle" width="16" height="16" />&nbsp;' : '')
-            + '<a target="_blank" href="' + link1url + '" style="color: #e47911;' + LINK_STYLE + '" title="' + link1tooltip + '">'
-            + (SHOW_LINK_TEXT ? (tld == 'de' ? 'Direkter Link' : 'Direct Link') : '')
-            + '</a>';
+        var azLink = createLink('http://amazon.' + tld + '/dp/' + asin,
+            'Amazon',
+            '#e47911',
+            'http://www.amazon.' + tld + '/favicon.ico',
+            (tld == 'de' ? 'Direkter Produktlink' : 'Direct product link'));
 
         // keepa.com
         var keepaIds = { "com": 1, "uk": 2, "de": 3, "fr": 4, "jp": 5, "ca": 6, "cn": 7, "it": 8, "es": 9, "in": 10, "mx": 11, "br": 12, "au": 13 };
-        var link2tooltip = (tld == 'de' ? 'Keepa Preishistorie' : 'Keepa price history');
-        var link2url = 'https://keepa.com/#!product/' + keepaIds[tld] + '-' + asin;
-        var link2 = (SHOW_LINK_ICON ? '<img src="https://keepa.com/favicon.ico" border="0" align="absmiddle" width="16" height="16" />&nbsp;' : '')
-            + '<a target="_blank" href="' + link2url + '" style="color: #039;' + LINK_STYLE + '" title="' + link2tooltip + '">'
-            + (SHOW_LINK_TEXT ? 'Keepa' : '') + '</a>';
+        var keepaLink = createLink('https://keepa.com/#!product/' + keepaIds[tld] + '-' + asin,
+            'Keepa',
+            '#039',
+            'https://keepa.com/favicon.ico',
+            (tld == 'de' ? 'Keepa Preishistorie' : 'Keepa price history'));
 
+        // combine links
+        var linksHTML = '<span style="margin-left: 2em;">' + azLink + ' &nbsp; ' + keepaLink + '</span><br/>';
         // add the links next to the price information
         var td = $(PRICE_SELECTOR);
         // if there are additional shipping details next to the price, add a line break and instert links before next to the price
         var shipSpan = td.find('#ourprice_shippingmessage');
         if (shipSpan) {
-            shipSpan.prepend('<span style="margin-left: 2em;">' + link1 + ' &nbsp; ' + link2 + '</span><br/>');
+            shipSpan.prepend(linksHTML + '<br/>');
         } else {
-            td.append('<span style="margin-left: 2em;">' + link1 + ' &nbsp; ' + link2 + '</span>');
+            td.append(linksHTML);
         }
     }
 
