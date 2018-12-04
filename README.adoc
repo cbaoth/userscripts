@@ -41,7 +41,7 @@ image:amazon-links1.png[]
 
 `link:gerrit-tweaks.user.js[]` improves https://www.gerritcodereview.com/[gerrit code review]:
 
-* Adding additional syntax highlighting for:
+* Adds additional syntax highlighting for:
 ** Exit keybords `return` and `throw`
 ** Static method calls of Google Guava https://github.com/google/guava/wiki/PreconditionsExplained[Preconditions] (potential exits) +
 image:gerrit-tweaks-code1.png[]
@@ -55,16 +55,16 @@ image:gerrit-tweaks-code1.png[]
 
 ==== Episode List
 
-* Add direct season links to episode list _(top & bottom)_: +
+* Adds direct season links to episode list _(top & bottom)_: +
 image:imdb-tweaks-seasons1.png[]
-* Make list more compact _(default)_, toggle details with new hotkey 'd':
+* Makes the list more compact _(default)_, adding the hotkey `d` to (show) toggle the detailes: +
 image:imdb-tweaks-season-list-details.gif[]
 
 === Jenkins Tweaks
 
 `link:jenkins-tweaks.user.js[]` improves https://jenkins.io/[Jenkins]:
 
-* Highlight errors, exceptions, warnings, success, test issues etc. in:
+* Highlights errors, exceptions, warnings, success, test issues etc. in:
 ** Job console output
 ** Blue Ocean pipeline and test output +
 image:jenkins-console1.png[]
@@ -74,10 +74,10 @@ image:jenkins-console1.png[]
 
 `link:openproject-tweaks.user.js[]` improves OpenProjects by adding thinks like:
 
-* Highlighting of the user's own name (automatically detected).
-* Highlighting of issue priority, status, and type (tracker).
-* Highlighting of _[tags]_ and \*bold* in issue subjects.
-* Allow adding of additional styles to text fragments via generic regex search mechanism.
+* Highlights the user's own name (automatically detected).
+* Highlights issue priority, status, and type (tracker).
+* Highlights _[tags]_ and \*bold* in issue subjects.
+* Allows adding of additoinal custom styles _(substitute text fragments via generic regex search mechanism)_.
 
 
 === Streaming Tweaks
@@ -88,9 +88,9 @@ image:jenkins-console1.png[]
 
 Improvements to the https://netflix.com[Netflix] web player:
 
-* Automatically skip the intro _(where supported)_.
-* Automatically skip to the next episode _(in closing credits view)_.
-* Additional key bindings:
+* Automatically skips the intro _(where supported)_.
+* Automatically skips to the next episode _(in closing credits view)_.
+* Adds new key bindings:
 
 [cols="1,3",options="header"]
 |=======
@@ -106,10 +106,10 @@ Improvements to the https://netflix.com[Netflix] web player:
 
 Improvements to Amazon's https://www.primevideo.com/:[prime video] web player:
 
-* Automatically skip the intro _(where supported)_.
-* Automatically skip to the next episode _(in closing credits view)_.
-* Automatically skip ads / trailers _(upfront & between episodes)_.
-* Additional key bindings:
+* Automatically skips the intro _(where supported)_.
+* Automatically skips to the next episode _(in closing credits view)_.
+* Automatically skips ads / trailers _(upfront & between episodes)_.
+* Adds new key bindings:
 
 [cols="1,3",options="header"]
 |=======
