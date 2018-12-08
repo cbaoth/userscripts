@@ -4,7 +4,7 @@
 // @copyright   2015+, userscript@cbaoth.de
 //
 // @name        Amazon ASIN Links (price tracking)
-// @version     0.3.3
+// @version     0.4
 // @description Adds links to the price watching page keepa.com as well as a direct link to the Amazon Product (without any URL parameters, for sharing).
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/amazon-links.user.js
 //
@@ -26,24 +26,40 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const SHOW_LINK_TEXT = 1; // toggle link text
 
     // constants
-    const PRICE_SELECTOR = '#priceblock_ourprice'; //'tr#priceblock_ourprice_row > td:last-child, #priceblock_dealprice_row > td:last-child';
+    const PAGE_PRODUCT = 1;
+    const PAGE_SEARCH = 2;
+    const PRICE_SELECTOR = 'span#priceblock_ourprice';
+    const PRICE_SELECTOR_SEARCH = 'span.a-color-price';
 
-    // create html for link
-    function createLink(url, text, color, icon, tooltip) {
-        return (SHOW_LINK_ICON ? '<img src="' + icon + '" border="0" align="absmiddle" width="16" height="16" />&nbsp;' : '')
-            + '<a target="_blank" href="' + url + '" style="color: ' + color + ';' + LINK_STYLE + '" title="' + tooltip + '">'
-            + (SHOW_LINK_TEXT ? text : '')
-            + '</a>';
+    function cleanLink(a) {
+        var href = $(a).attr('href');
+        if (! /\/dp\/\w{10}\//.test(href)) { // not a product page links?
+            return; // do nothing
+        }
+        if (/^\s*http/.test(href)) { // absolute link?
+            $(a).attr('href', href.replace(/(?<=\w)\/.*(\/dp\/\w{10}\/).*/, '$1'));
+        } else {
+            $(a).attr('href', href.replace(/.*(\/dp\/\w{10}\/).*/, '$1'));
+        }
     }
 
     // add links
-    function addAmazonLinks() {
-        if (!$('input#ASIN:first').length) {
-            return; // this doesn't seem to be a product page
-        }
+    function addAmazonLinks(e, page) {
+        // get price tag
+        var price = $(e);
 
         // get the ASIN (product id)
-        var asin = $('input#ASIN:first').val();
+        var asin;
+        if (page == PAGE_PRODUCT) {
+            asin = $('input#ASIN:first').val();
+        } else if (page == PAGE_SEARCH) {
+            if (price.parent().is('a')) { // un-link price tag
+                price.unwrap();
+            }
+            asin = price.closest("li").attr('data-asin');
+        } else {
+            return; // unknown page
+        }
 
         // get top level domain (the simple way)
         var tld = document.domain.split('.').pop();
@@ -54,20 +70,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         }
 
         // direct link
-        var azURL = 'http://amazon.' + tld + '/dp/' + asin;
-        var azICO = 'http://www.amazon.' + tld + '/favicon.ico';
-        //var azLink = createLink(azURL, 'Amazon', '#e47911', azICO,
-        //    (tld == 'de' ? 'Direkter Produktlink' : 'Direct product link'));
+        var azURL = 'https://amazon.' + tld + '/dp/' + asin;
+        var azICO = 'https://www.amazon.' + tld + '/favicon.ico';
 
         // keepa.com
         var keepaIds = { "com": 1, "uk": 2, "de": 3, "fr": 4, "jp": 5, "ca": 6, "cn": 7, "it": 8, "es": 9, "in": 10, "mx": 11, "br": 12, "au": 13 };
         var keepaURL = 'https://keepa.com/#!product/' + keepaIds[tld] + '-' + asin;
         //var keepaICO = 'https://keepa.com/favicon.ico';
-        //var keepaLink = createLink(keepaURL, 'Keepa', '#039', keepaICO,
-        //    (tld == 'de' ? 'Keepa Preishistorie' : 'Keepa price history'));
-
-        // add the links next to the price information
-        var price = $(PRICE_SELECTOR);
 
         // add copy clean amazon link button next to the price
         price.after(`<span style="display: inline-block; vertical-align: middle;">
@@ -79,6 +88,14 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         price.wrapInner('<a target="_blank" class="a-color-price" href="' + keepaURL + '"></a>');
     }
 
-    waitForKeyElements(PRICE_SELECTOR, addAmazonLinks);
-
+    if (/\/dp\/\w{10}\//.test(window.location.pathname)) { // product page
+        waitForKeyElements(PRICE_SELECTOR, (e) => addAmazonLinks(e, PAGE_PRODUCT));
+    } else if (/\/s\//.test(window.location.pathname)) { // search
+        // change price links (normally product link too) to keepa links
+        waitForKeyElements(PRICE_SELECTOR_SEARCH, (e) => addAmazonLinks(e, PAGE_SEARCH));
+        // replace all product links with clean links
+        $('div.a-col-left a.a-link-normal,' // search result product image
+            + 'div.a-col-right a.s-access-detail-page') // search result product title
+            .each((i, a) => cleanLink(a));
+    }
 }());

@@ -25,13 +25,16 @@ To run them install link:https://chrome.google.com/webstore/detail/tampermonkey/
 
 === Amazon Links
 
-`link:amazon-links.user.js[]` adds a direct product link (no unnecessary parameters etc.) and a https://keepa.com[keepa] price to amazon product pages.
+`link:amazon-links.user.js[]` adds a direct product link _(no unnecessary parameters like referrer, affiliations, etc.)_ and a https://keepa.com[keepa] price history link to amazon search and product pages.
 
-* Makes the price a link to the product's keepa price history page
-* Adds a direct amazon product link _(amazon icon)_ next to the price.
+* Product page
+** Makes the price a link to the product's _keepa_ price history page.
+** Adds a direct amazon product link _(amazon icon)_ next to the price.
  +
 image:amazon-links1.png[]
-
+* Search page
+** Replaces search result price links with links to the product's _keepa_ price history page.
+** Replaces search result product links with clean ones.
 
 === Copy URL on Hover
 
