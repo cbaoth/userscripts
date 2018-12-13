@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        IMDB Tweaks
-// @version     0.1.0
+// @version     0.1.1
 // @description Some tweaks for IMDB
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/imdb-tweaks.user.js
 //
@@ -21,7 +21,7 @@
 this.$ = this.jQuery = jQuery.noConflict(true);
 
 (function () {
-    var href_clean = 'https://' + window.location.hostname + window.location.pathname;
+    var href_clean = 'https://' + window.location.hostname + window.location.pathname.replace(/\/*$/, '/');
 
     // tweake episode list
     if (/title\/[^/]+\/episodes/.test(window.location.pathname)) {
@@ -34,7 +34,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             var currentNr = url.searchParams.get("season");
             var anchors = $('select#bySeason > option').map((i, e) => {
                 var nr = $(e).val();
-                return nr == currentNr ? nr : '<a href="' + href_clean + '/?season=' + $(e).val() + '">' + nr + '</a>';
+                return nr == currentNr ? nr : '<a href="' + href_clean + '?season=' + $(e).val() + '">' + nr + '</a>';
             });
             // replace season selection combobox with direct links
             $('select#bySeason').replaceWith('<div style="float: left; padding-top: 3px;">' + Array.join(anchors, "&nbsp;") + '</div>');
