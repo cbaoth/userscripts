@@ -3,6 +3,7 @@ Andreas Weyer <dev@cbaoth.de>
 v1.0, 2018-11-28
 :toc:
 :toc-placement: auto
+:toclevels: 3
 //:sectnums:
 //:sectnumlevels: 3
 :source-highlighter: prettify
