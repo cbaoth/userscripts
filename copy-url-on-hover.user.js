@@ -120,8 +120,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 if (currentMod == keyCode && lastMod != keyCode) {
                     lastMod = keyCode;
                     var newValue = findSrc(e, selector, dict);
-                    if (newValue !== undefined) {
-                        GM_setClipboard(newValue);
+                    if (newValue !== undefined && newValue != "" && newValue != "none") {
+                        var url = /^[./]/.test(newValue) ? document.location.origin + '/' + newValue.replace(/^[./]+/, '') : newValue;
+                        GM_setClipboard(url);
                         tooltip(ttText);
                     }
                 }
@@ -137,9 +138,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         (e) => registerSrcEvent(e, 'a', KCODE_ALT,
             { 'a': ['href'] },
             'Link Copied'));
-    waitForKeyElements('img, video',
+    waitForKeyElements('img, video, source',
         (e) => registerSrcEvent(e, 'img, video', KCODE_CTRL,
-            { 'img': ['src'], 'video': ['src', 'data', 'data-mp4', 'data-webm', 'data-src'] },
+            {
+                'img': ['src'],
+                'video': ['src', 'data', 'data-mp4', 'data-webm', 'data-src'],
+                'source': ['src', 'data', 'data-mp4', 'data-webm', 'data-src']
+            },
             'Media Source Copied'));
     waitForKeyElements('body, div, span', // style could be global so [style*="background-image"] is not an option
         function (e) {
