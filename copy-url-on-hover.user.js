@@ -5,7 +5,7 @@
 //
 // @name        Copy URL on hover
 // @description Copy link and media urls on mouse hover while alt/ctrl is pressed
-// @version     0.1.3
+// @version     0.1.4
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/copy-url-on-hover.user.js
 //
 // @include     *
@@ -23,8 +23,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 (function () {
 
     // global constants
-    const CTRL_CODE = 17;
-    const ALT_CODE = 18;
+    const KCODE_SHIFT = 16;
+    const KCODE_CTRL = 17;
+    const KCODE_ALT = 18;
+
     const POLL_RATE = 25;
     const SHOW_TT = true; // show tooltip?
     const TT_TIMEOUT = 250; // tooltip timeout
@@ -41,58 +43,86 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     }
 
 
-    // register globalkeydown event handling the relevant modifier keys
-    // (last one counts)
-    $(document).on("keydown", function (event) {
+    // register global keydown event handling the relevant modifier keys
+    $(document).on("keydown keydown", function (event) {
         var ev = event || window.event;
-        if (ev.altKey || ev.ctrlKey) {
-            currentMod = ev.which;
+        if (ev.altKey || ev.ctrlKey || ev.shiftKey) {
+            currentMod = ev.which; // last mod only
         }
     });
 
 
-    // register mouse events on media elements
-    function registerMediaEvents(element) {
+    function getSrc(e, dict = { 'a': ['href'] }, includeBgImg = false) {
+        var v;
+        for (var k in dict) {
+            if (e.is(k)) {
+                for (var i in dict[k]) {
+                    var a = dict[k][i];
+                    if (/^css:.*/.test(a)) { // special case for css styles
+                        v = getUrlFromCSS(e, a.replace(/^css:/, ''));
+                    } else {
+                        v = e.attr(a);
+                    }
+                    if (v !== undefined) {
+                        return v; // found?
+                    }
+                }
+            }
+        }
+        return undefined;
+    }
+
+
+    function getUrlFromCSS(e, style) {
+        var bg_img = e.css(style) || "";
+        var src = bg_img.replace(/^url\(['"]?([^'"]*)['"]?\)/, '$1'); // TODO doesn't consider multiple urls
+        return src == "" ? undefined : src;
+    }
+
+
+    // find src/data in element e using selector sel
+    function findSrc(e, sel, dict = { 'a': ['href'] }) {
+        var v = getSrc(e, dict);
+        if (v !== undefined) {
+            return v; // found?
+        }
+        if (sel === undefined) { // no selector? don't search
+            return undefined;
+        }
+        // search for matching children (recursively)
+        e.find(sel).each(function (i, el) { // try to find sources
+            v = getSrc(el, dict);
+            if (v !== undefined) return; // found? break look
+        });
+        return v;
+    }
+
+
+    // register mouse event
+    function registerSrcEvent(element, selector, keyCode, dict, ttText = 'Copied ...') {
 
         // copy video / image url on hover while ctrl is pressed
         $(element).mouseenter(function (event) {
             var ev = event || window.event;
-            var media = $(element);
-            var lastMod = 0;
+            var e = $(event.target || event.srcElement);
+
             // since keyup is not working properly for mod keys, clear currentMod
-            // if mod no longer pressed (key must have been released)
+            // if mod key was released
             // key-event will set currentMod variable if pressed again while hovering
-            if (!ev.ctrlKey && currentMod == CTRL_CODE) {
-                currentMod = 0;
+            var lastMod = 0;
+            if (currentMod == keyCode) {
+                if (ev.which != keyCode) { // current mod no longer pressed?
+                    currentMod = 0;
+                }
             }
+
             this.keyPollIntervalId = setInterval(function () {
-                if (currentMod == CTRL_CODE && lastMod != CTRL_CODE) {
-                    lastMod = CTRL_CODE;
-                    var newValue;
-                    if (media.is('div')) {
-                        var bg_img = media.css('background-image') || "";
-                        newValue = bg_img.replace(/^url\(['"]?([^'"]*)['"]?\)/, '$1');
-                    } else if (media.attr("data")) { // data*
-                        newValue = media.attr("data");
-                    } else if (media.attr("data-mp4")) {
-                        newValue = media.attr("data-mp4");
-                    } else if (media.attr("data-src")) {
-                        newValue = media.attr("data-src");
-                    } else if (media.attr("src")) {
-                        newValue = media.attr("src");
-                    } else { // nothing found
-                        media.find("source").each(function () { // try to find sources
-                            var source = this;
-                            if ($(source).attr("src")) {
-                                newValue = $(source).attr("src");
-                                // TODO: could be improved in the future, e.g. prefered media type
-                                return; // simply take the first match and break the loop
-                            }
-                        });
-                    }
+                if (currentMod == keyCode && lastMod != keyCode) {
+                    lastMod = keyCode;
+                    var newValue = findSrc(e, selector, dict);
                     if (newValue !== undefined) {
                         GM_setClipboard(newValue);
-                        tooltip('Copied Media URL');
+                        tooltip(ttText);
                     }
                 }
             }, POLL_RATE);
@@ -102,36 +132,23 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     }
 
 
-    // register mouse events on link elements
-    function registerLinkEvents(element) {
-
-        // copy link url on hover while alt is pressed
-        $(element).mouseenter(function (event) {
-            var ev = event || window.event;
-            var link = $(element);
-            var lastMod = 0;
-            // since keyup is not working properly for mod keys, clear currentMod
-            // if mod no longer pressed (key must have been released)
-            // key-event will set currentMod variable if pressed again while hovering
-            if ((!ev.altKey && currentMod == ALT_CODE)
-                || (!ev.ctrlKey && currentMod == CTRL_CODE)) {
-                currentMod = 0;
+    // FIXME may need to search for parents too (currently not working e.g. in case a contains img)
+    waitForKeyElements('a',
+        (e) => registerSrcEvent(e, 'a', KCODE_ALT,
+            { 'a': ['href'] },
+            'Link Copied'));
+    waitForKeyElements('img, video',
+        (e) => registerSrcEvent(e, 'img, video', KCODE_CTRL,
+            { 'img': ['src'], 'video': ['src', 'data', 'data-mp4', 'data-webm', 'data-src'] },
+            'Media Source Copied'));
+    waitForKeyElements('body, div, span', // style could be global so [style*="background-image"] is not an option
+        function (e) {
+            if ($(e).css('background-image') == 'none') { // filter
+                return;
             }
-            this.keyPollIntervalId = setInterval(function () {
-                if (currentMod == ALT_CODE && lastMod != ALT_CODE) {
-                    lastMod = ALT_CODE;
-                    GM_setClipboard(link[0].href); // get absolute url
-                    tooltip('Copied Link');
-                }
-            }, POLL_RATE);
-        }).mouseleave(function () {
-            this.keyPollIntervalId && clearInterval(this.keyPollIntervalId);
+            registerSrcEvent(e, undefined, KCODE_CTRL,
+                { 'body, div, span': ['css:background-image'] }, // special case
+                'Media Source Copied');
         });
-    }
-
-
-    cb.waitAndThrottle('a', (e) => registerLinkEvents(e));
-    cb.waitAndThrottle('img, video, div[style*="background-image"]',
-                       (e) => registerMediaEvents(e));
 
 }());
