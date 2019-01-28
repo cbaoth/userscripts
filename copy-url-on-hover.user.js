@@ -5,7 +5,7 @@
 //
 // @name        Copy URL on hover
 // @description Copy link and media urls on mouse hover while alt/ctrl is pressed
-// @version     0.1.4
+// @version     0.1.5
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/copy-url-on-hover.user.js
 //
 // @include     *
@@ -82,7 +82,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // find src/data in element e using selector sel
     function findSrc(e, sel, dict = { 'a': ['href'] }) {
-        var v = getSrc(e, dict);
+        var v = getSrc($(e), dict);
         if (v !== undefined) {
             return v; // found?
         }
@@ -90,8 +90,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             return undefined;
         }
         // search for matching children (recursively)
-        e.find(sel).each(function (i, el) { // try to find sources
-            v = getSrc(el, dict);
+        $(e).find(sel).each(function (i, el) { // try to find sources
+            v = getSrc($(el), dict);
+            if (v !== undefined) return; // found? break look
+        });
+        // search for matching parent (recursively)
+        $(e).parent().closest(sel).each(function (i, el) { // try to find sources
+            v = getSrc($(el), dict);
             if (v !== undefined) return; // found? break look
         });
         return v;
@@ -100,8 +105,6 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // register mouse event
     function registerSrcEvent(element, selector, keyCode, dict, ttText = 'Copied ...') {
-
-        // copy video / image url on hover while ctrl is pressed
         $(element).mouseenter(function (event) {
             var ev = event || window.event;
             var e = $(event.target || event.srcElement);
@@ -132,8 +135,6 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         });
     }
 
-
-    // FIXME may need to search for parents too (currently not working e.g. in case a contains img)
     waitForKeyElements('a',
         (e) => registerSrcEvent(e, 'a', KCODE_ALT,
             { 'a': ['href'] },
@@ -146,7 +147,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 'source': ['src', 'data', 'data-mp4', 'data-webm', 'data-src']
             },
             'Media Source Copied'));
-    waitForKeyElements('body, div, span', // style could be global so [style*="background-image"] is not an option
+
+    // style could be global so [style*="background-image"] is not an option
+    waitForKeyElements('body, div, span',
         function (e) {
             if ($(e).css('background-image') == 'none') { // filter
                 return;
