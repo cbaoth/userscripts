@@ -5,7 +5,7 @@
 //
 // @name        Copy URL on hover
 // @description Copy link and media urls on mouse hover while alt/ctrl is pressed
-// @version     0.1.5
+// @version     0.1.6
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/copy-url-on-hover.user.js
 //
 // @include     *
@@ -126,7 +126,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                     if (newValue !== undefined && newValue != "" && newValue != "none") {
                         var url = /^[./]/.test(newValue) ? document.location.origin + '/' + newValue.replace(/^[./]+/, '') : newValue;
                         GM_setClipboard(url);
-                        tooltip(ttText);
+                        tooltip(ttText + ':<br/><span style="font-size: 0.75em;">' + url + '</span>');
                     }
                 }
             }, POLL_RATE);
