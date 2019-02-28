@@ -45,11 +45,16 @@ image:amazon-links1.png[]
 
 === Copy URL on Hover
 
-`link:copy-url-on-hover.user.js[]` copies link/media URLs to the clipboard on mouse hover.
+`link:copy-url-on-hover.user.js[]` copies link/media URIs to the clipboard on mouse hover.
 
-* Copies the link URL when moving the mouse over a link while `alt` is pressed.
-* Tries to copy the media URL when moving the mouse over an img/video while `ctrl` is pressed.
-* Shows a brief tooltip indicating that the clipboard was changed.
+* Copies link URI into clipboard when hovering over a link while holding `Alt-C`.
+* Tries to copy media (image/video) URI into clipboard when hovering over an image while holding `Alt-B`.
+* Shows a brief tooltip indicating that the clipboard was updated:
+
+image:copy-on-hover-link1.png[]
+
+image:copy-on-hover-media1.png[]
+
 
 === Gerrit Tweaks
 
