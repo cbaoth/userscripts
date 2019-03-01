@@ -51,7 +51,7 @@ image:amazon-links1.png[]
 * Tries to copy media (image/video) URI into clipboard when hovering over an image while holding `Alt-B`.
 * Shows a brief tooltip indicating that the clipboard was updated:
 
-image:copy-on-hover-link1.png[]
+image:copy-on-hover-link1.png[,75%]
 
 image:copy-on-hover-media1.png[]
 
@@ -79,7 +79,7 @@ image:imdb-tweaks-seasons1.png[]
 * Makes the list more compact _(default)_, adds hotkey `d` to toggle details: +
 image:imdb-tweaks-season-list-details.gif[]
 * Adds average season ratings (all users and own): +
-image:imdb-tweaks-seasons-rating1.png[]
+image:imdb-tweaks-seasons-rating1.png[,40%]
 
 === Jenkins Tweaks
 
