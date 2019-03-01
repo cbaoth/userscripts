@@ -76,7 +76,7 @@ image:gerrit-tweaks-code1.png[]
 
 * Adds direct season links to episode list _(top & bottom)_: +
 image:imdb-tweaks-seasons1.png[]
-* Makes the list more compact _(default)_, adding the hotkey `d` to (show) toggle the detailes: +
+* Makes the list more compact _(default)_, adds hotkey `d` to toggle details: +
 image:imdb-tweaks-season-list-details.gif[]
 * Adds average season ratings (all users and own): +
 image:imdb-tweaks-seasons-rating1.png[]
