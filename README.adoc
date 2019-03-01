@@ -78,6 +78,8 @@ image:gerrit-tweaks-code1.png[]
 image:imdb-tweaks-seasons1.png[]
 * Makes the list more compact _(default)_, adding the hotkey `d` to (show) toggle the detailes: +
 image:imdb-tweaks-season-list-details.gif[]
+* Adds average season ratings (all users and own): +
+image:imdb-tweaks-seasons-rating1.png[]
 
 === Jenkins Tweaks
 

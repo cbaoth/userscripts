@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        IMDB Tweaks
-// @version     0.1.1
+// @version     0.1.2
 // @description Some tweaks for IMDB
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/imdb-tweaks.user.js
 //
@@ -42,6 +42,56 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             $('div.eplist').parent().append('<div style="float: left; padding: 20px 5px;">Season: &nbsp;'
                 + Array.join(anchors, "&nbsp;") + '</div>')
         });
+
+        // add season average rating
+        cb.waitAndDebounce('div.eplist', () => {
+            var userRatings = $('div.ipl-rating-widget > div.ipl-rating-star > span.ipl-rating-star__rating');
+            var myRatings = $('label.ipl-rating-interactive__star-container div.ipl-rating-interactive__star span.ipl-rating-star__rating');
+            var userRatedEpisodesCount = 0;
+            var userRatingsSum = 0;
+            var myRatedEpisodesCount = 0;
+            var myRatingsSum = 0;
+            for (i in userRatings) {
+                var userRating = parseInt(userRatings[i].textContent);
+                if (userRating !== NaN && userRating > 0) {
+                    userRatedEpisodesCount++;
+                    userRatingsSum += userRating;
+                }
+                var myRating = parseInt(myRatings[i].textContent);
+                if (myRating !== NaN && myRating > 0) {
+                    myRatedEpisodesCount++;
+                    myRatingsSum += myRating;
+                }
+            }
+            var userAvgRating = userRatingsSum / userRatedEpisodesCount;
+            var myAvgRating = myRatingsSum / myRatedEpisodesCount;
+            //var header = $('div.subpage_title_block > .header');
+            var header = $('#episode_top');
+            header.wrap('<div style="display: table; padding-top: 0.5em;"></div>');
+            var ratingDiv = header.parent();
+            header.wrap('<span style="display: table-cell;vertical-align:top;"></span>');
+            var tSpan = '<span style="display:table-cell; vertical-align:middle;">';
+            var tDiv = '<div style="display: table-cell; padding-left: 1em;"><div style="display: table-row;">';
+            var starSvg = $('div.ipl-rating-star svg.ipl-star-icon')[0];
+            var added = false;
+            if (userAvgRating > 0) {
+                var yellowStar = $(starSvg).clone();
+                yellowStar.css("fill", "#c39400");
+                ratingDiv.append(tDiv + yellowStar[0].outerHTML + tSpan
+                    + Number.parseFloat(userAvgRating).toPrecision(2)
+                    + '</span></div></div>');
+                added = true;
+            }
+            if (myAvgRating > 0) {
+                var blueStar = $(starSvg).clone();
+                blueStar.css("fill", "#4268f1");
+                ratingDiv.append(tDiv + blueStar[0].outerHTML + tSpan
+                    + Number.parseFloat(myAvgRating).toPrecision(2)
+                    + '</span></div>');
+                added = true;
+            }
+        });
+
 
         // always hide 'watch/buy' ads below episode, TODO: maybe show minimal 'watch' link only .amazon-instant-video
         cb.waitAndDebounce('.wtw-option-standalone', () => $('.wtw-option-standalone').remove());
