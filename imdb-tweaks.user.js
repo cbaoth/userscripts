@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        IMDB Tweaks
-// @version     0.1.4
+// @version     0.1.5
 // @description Some tweaks for IMDB
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/imdb-tweaks.user.js
 //
@@ -19,6 +19,10 @@
 // ==/UserScript==
 
 this.$ = this.jQuery = jQuery.noConflict(true);
+
+// constants
+const HREF_CLEAN = 'https://' + window.location.hostname + window.location.pathname.replace(/\/*$/, '/');
+const SEASON_LIST_COMPACT_DETAILS = true; // start page with minimized episode details (toggle using 'd')
 
 function addSeasonAvgRating() {
     var episodeCount = $('div.eplist .list_item').length;
@@ -107,8 +111,6 @@ function addSeasonAvgRating() {
 
 
 function episodeListTweaks() {
-    // constants
-    const SEASON_LIST_COMPACT_DETAILS = true; // start page with minimized episode details (toggle using 'd')
 
     // add season selector
     cb.waitAndDebounce('select#bySeason', () => {
@@ -116,7 +118,7 @@ function episodeListTweaks() {
         var currentNr = url.searchParams.get("season");
         var anchors = $('select#bySeason > option').map((i, e) => {
             var nr = $(e).val();
-            return nr == currentNr ? nr : '<a href="' + href_clean + '?season=' + $(e).val() + '">' + nr + '</a>';
+            return nr == currentNr ? nr : '<a href="' + HREF_CLEAN + '?season=' + $(e).val() + '">' + nr + '</a>';
         });
         // replace season selection combobox with direct links
         $('select#bySeason').replaceWith('<div style="float: left; padding-top: 3px;">' + Array.join(anchors, "&nbsp;") + '</div>');
@@ -158,16 +160,18 @@ function episodeListTweaks() {
     var detailsHidden = false;
     var detailsToggle = function () {
         detailsHidden = !detailsHidden; // toggle
-        $('div.list_item > div.image > div.hover-over-image > image').toggle(); // image
+        $('.list_item > .image > .hover-over-image > image').toggle(); // image
         // resize images and overlay text (season & episode number)
         if (detailsHidden) {
-            $('div.list_item div.hover-over-image').css({ 'width': '40%', 'height': '40%' });
-            $('div.list_item img').css({ 'width': '100%', 'height': '100%' });
-            $('span.add-image-container.episode-list').css({ 'width': '89px', 'height': '50px' });
+            $('.list_item .hover-over-image').css({ 'width': '40%', 'height': '40%' });
+            $('.list_item .hover-over-image > div').css({ 'width': '89px' });
+            $('.add-image-container.episode-list').css({ 'width': '89px', 'height': '50px' });
+            $('.list_item img, .list_item .add-image-icon').css({ 'width': '100%', 'height': '100%' });
         } else {
-            $('div.list_item div.hover-over-image').css({ 'width': '100%', 'height': '100%' });
-            $('div.list_item img').css({ 'width': '100%', 'height': '100%' })
-            $('span.add-image-container.episode-list').css({ 'width': '224px', 'height': '126px' });
+            $('.list_item .hover-over-image').css({ 'width': '100%', 'height': '100%' });
+            $('.list_item .hover-over-image > div').css({ 'width': '' });
+            $('.add-image-container.episode-list').css({ 'width': '224px', 'height': '126px' });
+            $('.list_item img, .list_item .add-image-icon').css({ 'width': '100%', 'height': '65%' });
         }
         $('div.item_description').toggle(!detailsHidden); // toggle description text
     };
@@ -184,8 +188,6 @@ function globalTweaks() {
 
 
 (function () {
-    var href_clean = 'https://' + window.location.hostname + window.location.pathname.replace(/\/*$/, '/');
-
     // all page tweaks
     globalTweaks();
 
