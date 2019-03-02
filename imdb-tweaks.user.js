@@ -32,7 +32,8 @@ function addSeasonAvgRating() {
     var userRatingsSum = 0;
     var myRatedEpisodesCount = 0;
     var myRatingsSum = 0;
-    for (i in userRatings) {
+
+    for (var i in userRatings) {
         var userRating = parseInt(userRatings[i].textContent);
         if (userRating !== NaN && userRating > 0) {
             userRatedEpisodesCount++;
@@ -50,63 +51,61 @@ function addSeasonAvgRating() {
     var ratingDiv = header.parent();
     header.wrap('<span style="display: table-cell;vertical-align:top;"></span>');
 
+    var tDiv = '<div style="display: table-cell; padding-left: 1em; font-size: 1.2em;"><div style="display: table-row;"></div></div>';
     var tSpan = '<span style="display:table-cell; vertical-align:middle;"></span>';
-    var tDiv = '<div style="display: table-cell; padding-left: 1em;"><div style="display: table-row;"></div></div>';
-    var starSvg = $('div.ipl-rating-star svg.ipl-star-icon')[0];
-    var added = false;
+    var starSvg = $('svg.ipl-star-icon')[0];
+    var starBorderSvg = $('svg.ipl-star-border-icon')[0];
 
     var userAvgRating = userRatingsSum / userRatedEpisodesCount;
+    var userAvgRatingDiv = $(tDiv);
+    var userAvgRatingSpan = $(tSpan);
+    var userStar;
     if (userAvgRating > 0) {
-        var yellowStar = $(starSvg).clone();
-        yellowStar.css("fill", "#c39400");
-        var userAvgRatingDiv = $(tDiv);
-        var userAvgRatingSpan = $(tSpan);
+        userStar = $(starSvg).clone();
+        userStar.css("fill", "#c39400");
         userAvgRatingSpan.append(Number.parseFloat(userAvgRating).toPrecision(2));
-        userAvgRatingDiv.children('div').append($(yellowStar));
+        userAvgRatingDiv.children('div').append(userStar);
         userAvgRatingDiv.children('div').append(userAvgRatingSpan);
         if (episodeCount > userRatedEpisodesCount) {
             userAvgRatingDiv.attr('title', 'Inaccurate due to missing ratings');
+            userAvgRatingDiv.css('opacity', '0.5');
             userAvgRatingSpan.after('<span style="vertical-align: super; color: red;">*</span>');
-            /* TODO complete or remove
-            calculate average assuming 5 for unrated episodes (imputation => bad approach)
-            var userAvgRatingM = (userRatingsSum + (episodeCount - userRatedEpisodesCount) * 5) / episodeCount;
-            var userAvgRatingME = $('<span style="' + tSpanStyle + '">' + '(' + Number.parseFloat(myAvgRatingM).toPrecision(2) + ')</span>');
-            userAvgRatingME.css('padding-left', '0.4em');
-            userAvgRatingME.css('font-style', 'italic');
-            userAvgRatingME.css('color', 'grey');
-            userAvgRatingME.attr('title', 'Assuming rating 5 for unrated episodes.');
-            userAvgRatingMSpan = userAvgRatingME[0].outerHTML; */
         }
-        ratingDiv.append(userAvgRatingDiv);
-        added = true;
+    } else {
+        userStar = $(starBorderSvg).clone();
+        userStar.css("fill", "#c39400");
+        userAvgRatingDiv.children('div').append(userStar);
+        //userAvgRatingDiv.children('div').append(userAvgRatingSpan);
+        //userAvgRatingSpan.append('?');
+        userAvgRatingDiv.css('opacity', '0.5');
     }
+    ratingDiv.append(userAvgRatingDiv);
 
     // TODO same stuff as above
     var myAvgRating = myRatingsSum / myRatedEpisodesCount;
+    var myAvgRatingDiv = $(tDiv);
+    var myAvgRatingSpan = $(tSpan);
+    var myStar;
     if (myAvgRating > 0) {
-        var blueStar = $(starSvg).clone();
-        blueStar.css("fill", "#4268f1");
-        var myAvgRatingDiv = $(tDiv);
-        var myAvgRatingSpan = $(tSpan);
+        myStar = $(starSvg).clone();
+        myStar.css("fill", "#4268f1");
         myAvgRatingSpan.append(Number.parseFloat(myAvgRating).toPrecision(2));
-        myAvgRatingDiv.children('div').append($(blueStar));
+        myAvgRatingDiv.children('div').append(myStar);
         myAvgRatingDiv.children('div').append(myAvgRatingSpan);
         if (episodeCount > myRatedEpisodesCount) {
             myAvgRatingDiv.attr('title', 'Inaccurate due to missing ratings');
+            myAvgRatingDiv.css('opacity', '0.5');
             myAvgRatingSpan.after('<span style="vertical-align: super; color: red;">*</span>');
-            /* TODO complete or remove
-            calculate average assuming 5 for unrated episodes (imputation => bad approach)
-            var myAvgRatingM = (myRatingsSum + (episodeCount - myRatedEpisodesCount) * 5) / episodeCount;
-            var myAvgRatingME = $('<span style="' + tSpanStyle + '">' + '(' + Number.parseFloat(myAvgRatingM).toPrecision(2) + ')</span>');
-            myAvgRatingME.css('padding-left', '0.4em');
-            myAvgRatingME.css('font-style', 'italic');
-            myAvgRatingME.css('color', 'grey');
-            myAvgRatingME.attr('title', 'Assuming rating 5 for unrated episodes.');
-            myAvgRatingMSpan = myAvgRatingME[0].outerHTML; */
         }
-        ratingDiv.append(myAvgRatingDiv);
-        added = true;
+    } else {
+        myStar = $(starBorderSvg).clone();
+        myStar.css('fill', '#4268f1');
+        myAvgRatingDiv.children('div').append(myStar);
+        //myAvgRatingDiv.children('div').append(myAvgRatingSpan);
+        //myAvgRatingSpan.append('?');
+        myAvgRatingDiv.css('opacity', '0.5');
     }
+    ratingDiv.append(myAvgRatingDiv);
 }
 
 
