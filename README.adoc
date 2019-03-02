@@ -80,6 +80,7 @@ image:imdb-tweaks-seasons1.png[]
 image:imdb-tweaks-season-list-details.gif[]
 * Adds average season ratings (all users and own): +
 image:imdb-tweaks-seasons-rating1.png[,40%]
+* Adds episode number to title (in episode list).
 
 === Jenkins Tweaks
 
