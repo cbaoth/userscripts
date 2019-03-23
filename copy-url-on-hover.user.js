@@ -5,7 +5,7 @@
 //
 // @name        Copy URL on hover
 // @description Copy link / media urls on mouse-over while alt-c/-b is pressed
-// @version     0.1.8
+// @version     0.1.9
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/copy-url-on-hover.user.js
 //
 // @include     *
@@ -161,6 +161,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             v = getSrc($(el), dict);
             if (v !== undefined) return; // found? break look
         });
+        // search for siblings (sometime sibling divs cover media)
+        $(e).siblings(sel).each(function (i, el) { // try to find sources
+            v = getSrc($(el), dict);
+            if (v !== undefined) return; // found? break look
+        });
         // search for matching parent (recursively)
         $(e).parent().closest(sel).each(function (i, el) { // try to find sources
             v = getSrc($(el), dict);
@@ -191,7 +196,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                     var newValue = findSrc(e, selector, dict);
                     if (newValue !== undefined && newValue != "" && newValue != "none") {
                         var url;
-                        if (/^.*\//.test(newValue) || ! /^(\w+:\/\/)/.test(newValue)) {
+                        if (/^\/\//.test(newValue)) {
+                            url = document.location.protocol + newValue
+                        } else if (/^\.*\//.test(newValue) || ! /^(\w+:\/\/)/.test(newValue)) {
                             url = document.location.origin + '/' + newValue.replace(/^[./]+/, '')
                         } else {
                             url = newValue;
@@ -212,14 +219,16 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             { 'a': ['href'] },
             'Link Copied'));
 
-    waitForKeyElements('img, video, source',
-        (e) => registerSrcEvent(e, 'img, video', { alt: true, keyCode: KCODE_B },
-            {
-                'img': ['src'],
-                'video': ['src', 'data', 'data-mp4', 'data-webm', 'data-src'],
-                'source': ['src', 'data', 'data-mp4', 'data-webm', 'data-src']
-            },
-            'Media Source Copied'));
+    const processMedia = (e) => registerSrcEvent(e, 'img, video', { alt: true, keyCode: KCODE_B },
+        {
+            'img': ['src'],
+            'video': ['src', 'data', 'data-mp4', 'data-webm', 'data-src'],
+            'source': ['src', 'data', 'data-mp4', 'data-webm', 'data-src']
+        },
+        'Media Source Copied');
+    // TODO: added div/span to search for siblings (media), better to search only for siblings
+    waitForKeyElements('img, video, source, div, span', processMedia);
+    //waitForKeyElements($('div, span').siblings('img, video, source'), processMedia);
 
     // style could be global so [style*="background-image"] is not an option
     waitForKeyElements('body, div, span',
