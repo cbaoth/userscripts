@@ -121,7 +121,7 @@ Improvements to the https://netflix.com[Netflix] web player:
 | Shift-Left  | Rewind 1min
 | Ctrl-Right  | Fast-forward 10min
 | Ctrl-Left   | Rewind 10min
-| n           | Next episode
+| Ctrl-. _(period)_ | Next episode
 |=======
 
 ==== Amazon prime video
@@ -140,7 +140,7 @@ Improvements to Amazon's https://www.primevideo.com/:[prime video] web player:
 | Shift-Left  | Rewind 1min
 | Ctrl-Right  | Fast-forward 10min
 | Ctrl-Left   | Rewind 10min
-| n           | Next episode
+| Ctrl-. _(period)_ | Next episode
 |=======
 
 
@@ -157,9 +157,8 @@ Improvements to https://www.youtube.com:[YouTube]:
 | Shift-Left  | Rewind 1min
 | Ctrl-Right  | Fast-forward 10min
 | Ctrl-Left   | Rewind 10min
-| n           | Next episode
-| o           | Hide controls (OSD)
-| O           | Show controls (OSD)
+| Ctrl-. _(period)_ | Next video
+| Ctrl-, _(comma)_ | Previous video _(playlist only)_
 |=======
 
 

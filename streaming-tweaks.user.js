@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.5
+// @version     0.1.6
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -24,6 +24,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
 (function () {
 
+    const KEY_LEFT = 37
+    const KEY_RIGHT = 39
+    const KEY_PERIOD = 190
+    const KEY_COMMA = 188
+    //const KEY_QUOTE = 222
+    //const KEY_SLASH = 191
+
     // register amazon tweaks
     function amazonTweaksReg() {
         // ignore node warnings for repeated click events
@@ -38,14 +45,14 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             cb.clickElement(elements[0], times);
         };
 
-        // keys: n -> next episode
-        cb.bindKeyDown(78, (e) => amazonCtrl($('div.nextTitleButton'), e));
-        // keys: shift+left/right -> skip +/-1min
-        cb.bindKeyDown(37, (e) => amazonCtrl($('div.fastSeekBack'), e, 6), { shift: true });
-        cb.bindKeyDown(39, (e) => amazonCtrl($('div.fastSeekForward'), e, 6), { shift: true });
-        // keys: ctrl+left/right -> skip +/-10min
-        cb.bindKeyDown(37, (e) => amazonCtrl($('div.fastSeekBack'), e, 60), { ctrl: true });
-        cb.bindKeyDown(39, (e) => amazonCtrl($('div.fastSeekForward'), e, 60), { ctrl: true });
+        // keys: ctrl+. -> next episode
+        cb.bindKeyDown(KEY_PERIOD, (e) => amazonCtrl($('div.nextTitleButton'), e), { ctrl: true });
+        // keys: shift+left/+right -> skip +/-1min
+        cb.bindKeyDown(KEY_LEFT, (e) => amazonCtrl($('div.fastSeekBack'), e, 6), { shift: true });
+        cb.bindKeyDown(KEY_RIGHT, (e) => amazonCtrl($('div.fastSeekForward'), e, 6), { shift: true });
+        // keys: ctrl+left/+right -> skip +/-10min
+        cb.bindKeyDown(KEY_LEFT, (e) => amazonCtrl($('div.fastSeekBack'), e, 60), { ctrl: true });
+        cb.bindKeyDown(KEY_RIGHT, (e) => amazonCtrl($('div.fastSeekForward'), e, 60), { ctrl: true });
 
         cb.waitAndThrottle(AMAZON_SEL_SKIP, (e) => $(e).click(), 2000, { tailing: false });
     }
@@ -70,36 +77,42 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             // TODO hide controls (auto pop-up)
         };
 
-        // keys: n -> next episode
-        cb.bindKeyDown(78, (e) => netflixCtrl($('button.button-nfplayerNextEpisode'), e));
-        // keys: shift+left/right -> skip +/-1min
-        cb.bindKeyDown(37, (e) => netflixCtrl($('button.button-nfplayerBackTen'), e, 6), { shift: true });
-        cb.bindKeyDown(39, (e) => netflixCtrl($('button.button-nfplayerFastForward'), e, 6), { shift: true });
-        // keys: ctrl+left/right -> skip +/-10min
-        cb.bindKeyDown(37, (e) => netflixCtrl($('button.button-nfplayerBackTen'), e, 60), { ctrl: true });
-        cb.bindKeyDown(39, (e) => netflixCtrl($('button.button-nfplayerFastForward'), e, 60), { ctrl: true });
+        // keys: ctrl-. -> next episode
+        cb.bindKeyDown(KEY_PERIOD, (e) => netflixCtrl($('button.button-nfplayerNextEpisode'), e), { ctrl: true });
+        // keys: shift+left/+right -> skip +/-1min
+        cb.bindKeyDown(KEY_LEFT, (e) => netflixCtrl($('button.button-nfplayerBackTen'), e, 6), { shift: true });
+        cb.bindKeyDown(KEY_RIGHT, (e) => netflixCtrl($('button.button-nfplayerFastForward'), e, 6), { shift: true });
+        // keys: ctrl+left/+right -> skip +/-10min
+        cb.bindKeyDown(KEY_LEFT, (e) => netflixCtrl($('button.button-nfplayerBackTen'), e, 60), { ctrl: true });
+        cb.bindKeyDown(KEY_RIGHT, (e) => netflixCtrl($('button.button-nfplayerFastForward'), e, 60), { ctrl: true });
 
         // wait for skip elements to appear, then skip
         cb.waitAndThrottle(NETFLIX_SEL_SKIP, netflixCtrl, 5000, { tailing: false });
     }
 
+    var youtubeTweaksControlState = true; // track controls visibility state (no guarantee that true/false is shown/hidden)
+    function youtubeTweaksToggleControls() {
+
+    }
 
     // register youtube tweaks
     function youtubeTweaksReg() {
         var ytplayer = document.getElementById('movie_player') || document.getElementsByTagName('embed')[0];
         if (ytplayer === undefined) return;
 
-        // keys: n -> next episode
-        cb.bindKeyDown(78, () => ytplayer.nextVideo());
-        // keys: shift+left/right -> skip +/-1min
-        cb.bindKeyDown(37, () => ytplayer.seekTo(Math.max(ytplayer.getCurrentTime() - 60, 0)), { shift: true });
-        cb.bindKeyDown(39, () => ytplayer.seekTo(Math.min(ytplayer.getCurrentTime() + 60, ytplayer.getDuration() - 1)), { shift: true });
-        // keys: ctrl+left/right -> skip +/-10min
-        cb.bindKeyDown(37, () => ytplayer.seekTo(Math.max(ytplayer.getCurrentTime() - 600, 0)), { ctrl: true });
-        cb.bindKeyDown(39, () => ytplayer.seekTo(Math.min(ytplayer.getCurrentTime() + 600, ytplayer.getDuration() - 1)), { ctrl: true });
-        // keys: o -> hide controls, O -> show controls
-        cb.bindKeyDown(79, () => ytplayer.hideControls());
-        cb.bindKeyDown(79, () => ytplayer.showControls(), { shift: true });
+        // keys: shift+left/+right -> skip +/-1min
+        cb.bindKeyDown(KEY_LEFT, () => ytplayer.seekTo(Math.max(ytplayer.getCurrentTime() - 60, 0)), { shift: true });
+        cb.bindKeyDown(KEY_RIGHT, () => ytplayer.seekTo(Math.min(ytplayer.getCurrentTime() + 60, ytplayer.getDuration() - 1)), { shift: true });
+        // keys: ctrl+left/+right -> skip +/-10min
+        cb.bindKeyDown(KEY_LEFT, () => ytplayer.seekTo(Math.max(ytplayer.getCurrentTime() - 600, 0)), { ctrl: true });
+        cb.bindKeyDown(KEY_RIGHT, () => ytplayer.seekTo(Math.min(ytplayer.getCurrentTime() + 600, ytplayer.getDuration() - 1)), { ctrl: true });
+        // keys: ctrl+. -> next video, ctrl+, -> previous video
+        cb.bindKeyDown(KEY_PERIOD, () => ytplayer.nextVideo(), { ctrl: true });
+        cb.bindKeyDown(KEY_COMMA, () => ytplayer.previousVideo(), { ctrl: true });
+        // TODO, don't seem to work / be supported atm.
+        // keys: ctrl+'/+/ -> hide / show controls
+        //cb.bindKeyDown(KEY_QUOTE, () => ytplayer.hideControls(), { ctrl: true });
+        //cb.bindKeyDown(KEY_SLASH, () => ytplayer.showControls(), { ctrl: true });
     }
 
     // register tweaks depending on page
