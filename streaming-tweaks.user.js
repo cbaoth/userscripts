@@ -98,7 +98,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // register youtube tweaks
     function youtubeTweaksReg() {
         var ytplayer = document.getElementById('movie_player') || document.getElementsByTagName('embed')[0];
-        if (ytplayer === undefined) return;
+        // https://developers.google.com/youtube/iframe_api_reference
+        // https://developers.google.com/youtube/player_parameters
+        if (ytplayer === undefined) return; // player not found/available
 
         // keys: shift+left/+right -> skip +/-1min
         cb.bindKeyDown(KEY_LEFT, () => ytplayer.seekTo(Math.max(ytplayer.getCurrentTime() - 60, 0)), { shift: true });
