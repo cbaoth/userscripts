@@ -4,12 +4,12 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.6
+// @version     0.1.7
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
 // @include     /^https?://www\.netflix\.com/watch//
-// @include     /^https?://(www|smile)\.amazon\.(de|com)/gp/video//
+// @include     /^https?://(www|smile)\.amazon\.(de|com)/gp/video/
 // @include     /^https?://www\.youtube\.com/watch/
 //
 // @grant       none
@@ -90,11 +90,6 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         cb.waitAndThrottle(NETFLIX_SEL_SKIP, netflixCtrl, 5000, { tailing: false });
     }
 
-    var youtubeTweaksControlState = true; // track controls visibility state (no guarantee that true/false is shown/hidden)
-    function youtubeTweaksToggleControls() {
-
-    }
-
     // register youtube tweaks
     function youtubeTweaksReg() {
         var ytplayer = document.getElementById('movie_player') || document.getElementsByTagName('embed')[0];
@@ -103,18 +98,18 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         if (ytplayer === undefined) return; // player not found/available
 
         // keys: shift+left/+right -> skip +/-1min
-        cb.bindKeyDown(KEY_LEFT, () => ytplayer.seekTo(Math.max(ytplayer.getCurrentTime() - 60, 0)), { shift: true });
-        cb.bindKeyDown(KEY_RIGHT, () => ytplayer.seekTo(Math.min(ytplayer.getCurrentTime() + 60, ytplayer.getDuration() - 1)), { shift: true });
+        cb.bindKeyDown(KEY_LEFT, () => ytplayer.seekTo(Math.max(ytplayer.getCurrentTime() - 60, 0)), { shift: true }, true);
+        cb.bindKeyDown(KEY_RIGHT, () => ytplayer.seekTo(Math.min(ytplayer.getCurrentTime() + 60, ytplayer.getDuration() - 1)), { shift: true }, true);
         // keys: ctrl+left/+right -> skip +/-10min
-        cb.bindKeyDown(KEY_LEFT, () => ytplayer.seekTo(Math.max(ytplayer.getCurrentTime() - 600, 0)), { ctrl: true });
-        cb.bindKeyDown(KEY_RIGHT, () => ytplayer.seekTo(Math.min(ytplayer.getCurrentTime() + 600, ytplayer.getDuration() - 1)), { ctrl: true });
+        cb.bindKeyDown(KEY_LEFT, () => ytplayer.seekTo(Math.max(ytplayer.getCurrentTime() - 600, 0)), { ctrl: true }, true);
+        cb.bindKeyDown(KEY_RIGHT, () => ytplayer.seekTo(Math.min(ytplayer.getCurrentTime() + 600, ytplayer.getDuration() - 1)), { ctrl: true }, true);
         // keys: ctrl+. -> next video, ctrl+, -> previous video
-        cb.bindKeyDown(KEY_PERIOD, () => ytplayer.nextVideo(), { ctrl: true });
-        cb.bindKeyDown(KEY_COMMA, () => ytplayer.previousVideo(), { ctrl: true });
+        cb.bindKeyDown(KEY_PERIOD, () => ytplayer.nextVideo(), { ctrl: true }, true);
+        cb.bindKeyDown(KEY_COMMA, () => ytplayer.previousVideo(), { ctrl: true }, true);
         // TODO, don't seem to work / be supported atm.
         // keys: ctrl+'/+/ -> hide / show controls
-        //cb.bindKeyDown(KEY_QUOTE, () => ytplayer.hideControls(), { ctrl: true });
-        //cb.bindKeyDown(KEY_SLASH, () => ytplayer.showControls(), { ctrl: true });
+        //cb.bindKeyDown(KEY_QUOTE, () => ytplayer.hideControls(), { ctrl: true }, true);
+        //cb.bindKeyDown(KEY_SLASH, () => ytplayer.showControls(), { ctrl: true }, true);
     }
 
     // register tweaks depending on page
