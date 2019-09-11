@@ -78,9 +78,9 @@ image:gerrit-tweaks-code1.png[]
 image:imdb-tweaks-seasons1.png[]
 * Makes the list more compact _(default)_, adds hotkey `d` to toggle details: +
 image:imdb-tweaks-season-list-details.gif[]
-* Adds average season ratings (all users and own): +
+* Adds average season ratings _(all users and own, faded in case of missing ratings)_: +
 image:imdb-tweaks-seasons-rating1.png[,40%]
-* Adds episode number to title (in episode list).
+* Adds episode number to episode titles.
 
 === Jenkins Tweaks
 
@@ -116,12 +116,12 @@ Improvements to the https://netflix.com[Netflix] web player:
 
 [cols="1,3",options="header"]
 |=======
-| Keys        | Action
-| Shift-Right | Fast-forward 1min
-| Shift-Left  | Rewind 1min
-| Ctrl-Right  | Fast-forward 10min
-| Ctrl-Left   | Rewind 10min
-| Ctrl-. _(period)_ | Next episode
+| Keys         | Action
+| Shift-Right  | Fast-forward 1min
+| Shift-Left   | Rewind 1min
+| Ctrl-Right   | Fast-forward 10min
+| Ctrl-Left    | Rewind 10min
+| . _(period)_ | Next episode
 |=======
 
 ==== Amazon prime video
@@ -135,12 +135,12 @@ Improvements to Amazon's https://www.primevideo.com/:[prime video] web player:
 
 [cols="1,3",options="header"]
 |=======
-| Keys        | Action
-| Shift-Right | Fast-forward 1min
-| Shift-Left  | Rewind 1min
-| Ctrl-Right  | Fast-forward 10min
-| Ctrl-Left   | Rewind 10min
-| Ctrl-. _(period)_ | Next episode
+| Keys         | Action
+| Shift-Right  | Fast-forward 1min
+| Shift-Left   | Rewind 1min
+| Ctrl-Right   | Fast-forward 10min
+| Ctrl-Left    | Rewind 10min
+| . _(period)_ | Next episode
 |=======
 
 _Note: If this doesn't work please check the include. Script is currently only in case URL matches `/^https?://(www|smile)\.amazon\.(de|com)/gp/video/`. Depending on how you reach the player, the `/gp/video/` might be missing in the URL._
@@ -153,16 +153,14 @@ Improvements to https://www.youtube.com:[YouTube]:
 
 [cols="1,3",options="header"]
 |=======
-| Keys        | Action
-| Shift-Right | Fast-forward 1min
-| Shift-Left  | Rewind 1min
-| Ctrl-Right  | Fast-forward 10min
-| Ctrl-Left   | Rewind 10min
-| Ctrl-. _(period)_ | Next video
-| Ctrl-, _(comma)_ | Previous video _(playlist only)_
+| Keys         | Action
+| Shift-Right  | Fast-forward 1min
+| Shift-Left   | Rewind 1min
+| Ctrl-Right   | Fast-forward 10min
+| Ctrl-Left    | Rewind 10min
+| . _(period)_ | Next video
+| , _(comma)_  | Previous video _(playlist only)_
 |=======
-
-_Note: All keybindings are disable when an input field (e.g. search or comment) is currently focused, to prevent accidental player actions while typing._
 
 
 == Libs & Resources
@@ -176,3 +174,9 @@ Common libs and resources used in some of the of my scripts.
 |`link:lib/cblib.css[]` | Some common CSS used in my user scripts.
 |`link:dev/[]` | Just some code snippets, notes, etc. that can be helpful while developing user scripts.
 |=======
+
+
+== Q & A
+
+* Q: Why are the hotkeys (sometimes) not working as expected?
+** A: Most of these scripts disable hotkeys while an input field is in focus _(e.g. cursor in YouTube search field while playing video)_ to prevent accidental hotkey execution while typing. Check if this is the case _(e.g. click onto the player first to focus it)_.

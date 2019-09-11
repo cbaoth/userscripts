@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.7
+// @version     0.1.8
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -45,8 +45,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             cb.clickElement(elements[0], times);
         };
 
-        // keys: ctrl+. -> next episode
-        cb.bindKeyDown(KEY_PERIOD, (e) => amazonCtrl($('div.nextTitleButton'), e), { ctrl: true });
+        // keys: . -> next episode
+        cb.bindKeyDown(KEY_PERIOD, (e) => amazonCtrl($('div.nextTitleButton'), e));
         // keys: shift+left/+right -> skip +/-1min
         cb.bindKeyDown(KEY_LEFT, (e) => amazonCtrl($('div.fastSeekBack'), e, 6), { shift: true });
         cb.bindKeyDown(KEY_RIGHT, (e) => amazonCtrl($('div.fastSeekForward'), e, 6), { shift: true });
@@ -54,6 +54,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         cb.bindKeyDown(KEY_LEFT, (e) => amazonCtrl($('div.fastSeekBack'), e, 60), { ctrl: true });
         cb.bindKeyDown(KEY_RIGHT, (e) => amazonCtrl($('div.fastSeekForward'), e, 60), { ctrl: true });
 
+        // TODO add hotkey to toggle auto skip (sometimes not desired / button shown with wrong timing by amazon)
+        // wait for skip elements (intro/outro) to appear, then skip
         cb.waitAndThrottle(AMAZON_SEL_SKIP, (e) => $(e).click(), 2000, { tailing: false });
     }
 
@@ -77,8 +79,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             // TODO hide controls (auto pop-up)
         };
 
-        // keys: ctrl-. -> next episode
-        cb.bindKeyDown(KEY_PERIOD, (e) => netflixCtrl($('button.button-nfplayerNextEpisode'), e), { ctrl: true });
+        // keys: . -> next episode
+        cb.bindKeyDown(KEY_PERIOD, (e) => netflixCtrl($('button.button-nfplayerNextEpisode'), e));
         // keys: shift+left/+right -> skip +/-1min
         cb.bindKeyDown(KEY_LEFT, (e) => netflixCtrl($('button.button-nfplayerBackTen'), e, 6), { shift: true });
         cb.bindKeyDown(KEY_RIGHT, (e) => netflixCtrl($('button.button-nfplayerFastForward'), e, 6), { shift: true });
@@ -86,7 +88,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         cb.bindKeyDown(KEY_LEFT, (e) => netflixCtrl($('button.button-nfplayerBackTen'), e, 60), { ctrl: true });
         cb.bindKeyDown(KEY_RIGHT, (e) => netflixCtrl($('button.button-nfplayerFastForward'), e, 60), { ctrl: true });
 
-        // wait for skip elements to appear, then skip
+        // TODO add hotkey to toggle auto skip (sometimes not desired / button shown with wrong timing by amazon
+        // wait for skip elements (intro/outro) to appear, then skip
         cb.waitAndThrottle(NETFLIX_SEL_SKIP, netflixCtrl, 5000, { tailing: false });
     }
 
@@ -103,11 +106,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         // keys: ctrl+left/+right -> skip +/-10min
         cb.bindKeyDown(KEY_LEFT, () => ytplayer.seekTo(Math.max(ytplayer.getCurrentTime() - 600, 0)), { ctrl: true }, true);
         cb.bindKeyDown(KEY_RIGHT, () => ytplayer.seekTo(Math.min(ytplayer.getCurrentTime() + 600, ytplayer.getDuration() - 1)), { ctrl: true }, true);
-        // keys: ctrl+. -> next video, ctrl+, -> previous video
-        cb.bindKeyDown(KEY_PERIOD, () => ytplayer.nextVideo(), { ctrl: true }, true);
-        cb.bindKeyDown(KEY_COMMA, () => ytplayer.previousVideo(), { ctrl: true }, true);
+        // keys: . -> next video, , -> previous video
+        cb.bindKeyDown(KEY_PERIOD, () => ytplayer.nextVideo(), {}, true);
+        cb.bindKeyDown(KEY_COMMA, () => ytplayer.previousVideo(), {}, true);
         // TODO, don't seem to work / be supported atm.
-        // keys: ctrl+'/+/ -> hide / show controls
+        // keys: ' or / -> hide / show controls
         //cb.bindKeyDown(KEY_QUOTE, () => ytplayer.hideControls(), { ctrl: true }, true);
         //cb.bindKeyDown(KEY_SLASH, () => ytplayer.showControls(), { ctrl: true }, true);
     }
