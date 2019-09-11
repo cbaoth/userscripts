@@ -143,6 +143,7 @@ Improvements to Amazon's https://www.primevideo.com/:[prime video] web player:
 | Ctrl-. _(period)_ | Next episode
 |=======
 
+_Note: If this doesn't work please check the include. Script is currently only in case URL matches `/^https?://(www|smile)\.amazon\.(de|com)/gp/video/`. Depending on how you reach the player, the `/gp/video/` might be missing in the URL._
 
 ==== YouTube
 
@@ -160,6 +161,8 @@ Improvements to https://www.youtube.com:[YouTube]:
 | Ctrl-. _(period)_ | Next video
 | Ctrl-, _(comma)_ | Previous video _(playlist only)_
 |=======
+
+_Note: All keybindings are disable when an input field (e.g. search or comment) is currently focused, to prevent accidental player actions while typing._
 
 
 == Libs & Resources
