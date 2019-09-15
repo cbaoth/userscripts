@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        IMDB Tweaks
-// @version     0.1.5
+// @version     0.1.6
 // @description Some tweaks for IMDB
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/imdb-tweaks.user.js
 //
@@ -34,10 +34,11 @@ function addSeasonAvgRating() {
     var myRatingsSum = 0;
 
     for (var i in userRatings) {
-        var userRating = parseInt(userRatings[i].textContent);
+        var userRating = parseFloat(userRatings[i].textContent);
         if (userRating !== NaN && userRating > 0) {
             userRatedEpisodesCount++;
             userRatingsSum += userRating;
+            debugger
         }
         var myRating = parseInt(myRatings[i].textContent);
         if (myRating !== NaN && myRating > 0) {
