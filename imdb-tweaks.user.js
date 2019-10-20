@@ -176,7 +176,7 @@ function episodeListTweaks() {
         $('div.item_description').toggle(!detailsHidden); // toggle description text
     };
     // hot-key "d" to toggle description (skip in case input field is active)
-    cb.bindKeyDown(68, detailsToggle, {}, true);
+    cb.bindKeyDown(68, detailsToggle, { skipEditable: true });
 }
 
 

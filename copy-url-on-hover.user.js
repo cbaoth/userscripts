@@ -5,7 +5,7 @@
 //
 // @name        Copy URL on hover
 // @description Copy link / media urls on mouse-over while alt-c/-b is pressed
-// @version     0.1.9
+// @version     0.1.10
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/copy-url-on-hover.user.js
 //
 // @include     *
@@ -42,7 +42,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // create or replace tooltip
     function tooltip(html) {
         if (SHOW_TT) {
-            cb.createMouseTT(html, TT_TIMEOUT, { fadeoutTimer: TT_FADEOUT });
+            cb.createMouseTT(html, TT_TIMEOUT, { fadeoutTime: TT_FADEOUT });
         }
     }
 
