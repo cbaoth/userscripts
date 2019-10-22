@@ -180,6 +180,19 @@ Improvements to https://open.spotify.com:[Spotify]:
 |=======
 
 
+=== TradingView
+
+Improvements to https://tradingview.com:[TradingView]:
+
+* Adds new key bindings:
+
+[cols="1,3",options="header"]
+|=======
+| Keys         | Action
+| Alt-1 to 0   | Click favorite quick access timeframe buttons 1 to 10
+|=======
+
+
 == Libs & Resources
 
 Common libs and resources used in some of the of my scripts.
