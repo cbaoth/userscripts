@@ -4,8 +4,8 @@
 // @copyright   2019+, userscript@cbaoth.de
 //
 // @name        TradingView Tweaks
-// @version     0.0.1
-// @description Some tweaks for various streaming sites
+// @version     0.0.2
+// @description Some tweaks for the TradingView.com chart view
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/tradingview-tweaks.user.js
 //
 // @include     https://www.tradingview.com/chart/*
@@ -23,6 +23,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 (function () {
 
     const KEY_0 = 48
+    const KEY_F = 70
+    const KEY_W = 87
 
     // register new key bindings
     function registerKeyBindings() {
@@ -31,6 +33,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             cb.bindKeyDown(KEY_0 + (i % 10), (e) => cb.clickElement($('div#header-toolbar-intervals > div[class*="button"]:nth-child(' + i + ')')),
                            { mods: { alt: true } });
         }
+        // keys: alt-f -> toggle footer chart panel
+        cb.bindKeyDown(KEY_F, (e) => cb.clickElement($('#footer-chart-panel button[data-name="toggle-visibility-button"]')), { mods: { alt: true } });
+        // keys: alt-w -> toggle watch list (right pane)
+        cb.bindKeyDown(KEY_W, (e) => cb.clickElement($('.widgetbar-tabs [data-role="button"]:first-child')), { mods: { alt: true } });
     }
 
 

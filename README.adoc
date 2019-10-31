@@ -190,6 +190,8 @@ Improvements to https://tradingview.com:[TradingView]:
 |=======
 | Keys         | Action
 | Alt-1 to 0   | Click favorite quick access timeframe buttons 1 to 10
+| Alt-f        | Toggle footer pane (_Pine Editor_, _Strategy Tester_, etc.)
+| Alt-w        | Toggle _Watch List_ (right pane)
 |=======
 
 
