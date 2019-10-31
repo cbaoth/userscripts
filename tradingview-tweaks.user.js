@@ -4,7 +4,7 @@
 // @copyright   2019+, userscript@cbaoth.de
 //
 // @name        TradingView Tweaks
-// @version     0.0.2
+// @version     0.0.3
 // @description Some tweaks for the TradingView.com chart view
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/tradingview-tweaks.user.js
 //
@@ -35,10 +35,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         }
         // keys: alt-f -> toggle footer chart panel
         cb.bindKeyDown(KEY_F, (e) => cb.clickElement($('#footer-chart-panel button[data-name="toggle-visibility-button"]')), { mods: { alt: true } });
+        // keys: alt-shift-f -> toggle footer chart panel maximiziation
+        cb.bindKeyDown(KEY_F, (e) => cb.clickElement($('#footer-chart-panel button[data-name="toggle-maximize-button"]')), { mods: { alt: true, shift: true } });
         // keys: alt-w -> toggle watch list (right pane)
         cb.bindKeyDown(KEY_W, (e) => cb.clickElement($('.widgetbar-tabs [data-role="button"]:first-child')), { mods: { alt: true } });
     }
-
 
     // register tweaks depending on page
     registerKeyBindings();
