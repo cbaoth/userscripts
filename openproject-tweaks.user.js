@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        OpenProject Tweaks
-// @version     0.1.4
+// @version     0.1.5
 // @description Some tweaks for OpenProject
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/openproject-tweaks.user.js
 //
@@ -20,7 +20,6 @@
 
 // prevent jQuery version conflicts (with page)
 this.$ = this.jQuery = jQuery.noConflict(true);
-
 
 (function () {
 
@@ -135,7 +134,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         [/(In Progress)/gi, "$1", { "color": "rgb(11, 73, 191)" }],
         [/(Resolved)/gi, "$1", { "color": "#229954" }],
         [/(Closed)/gi, "$1", { "color": "silver" }],
-        [/(Rejected)/gi, "$1", { "color": "silver" }]]]
+        [/(Rejected)/gi, "$1", { "color": "silver" }]]],
+
+        // shorten long table headers (to reduce column widht)
+        ["th.wp-table--table-header a#storyPoints", [[/Story Points/gi, "SP", {}]]],
+        ["th.wp-table--table-header a#priority", [[/Priority/gi, "Prio", {}]]]
 
         // highlight / shorten category names
         //[ "span.category",
