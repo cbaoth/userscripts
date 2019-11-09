@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.9
+// @version     0.1.10
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -31,6 +31,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const KEY_PERIOD = 190
     const KEY_COMMA = 188
     const KEY_SLASH = 191
+    const KEY_BRACKET_LEFT = 219
+    const KEY_BRACKET_RIGHT = 221
+    const KEY_EQUAL = 187
     const KEY_R = 82
     const KEY_S = 83
     const KEY_F = 70
@@ -52,11 +55,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         // keys: . -> next episode
         cb.bindKeyDown(KEY_PERIOD, (e) => amazonCtrl($('div.nextTitleButton'), e));
         // keys: shift+left/+right -> skip +/-1min
-        cb.bindKeyDown(KEY_LEFT, (e) => amazonCtrl($('div.fastSeekBack'), e, 6), { mods: { shift: true } });
-        cb.bindKeyDown(KEY_RIGHT, (e) => amazonCtrl($('div.fastSeekForward'), e, 6), { mods: { shift: true } });
+        cb.bindKeyDown(KEY_LEFT, (e) => amazonCtrl($('div.fastSeekBack'), e, 6), { mods: { shift: true }});
+        cb.bindKeyDown(KEY_RIGHT, (e) => amazonCtrl($('div.fastSeekForward'), e, 6), { mods: { shift: true }});
         // keys: ctrl+left/+right -> skip +/-10min
-        cb.bindKeyDown(KEY_LEFT, (e) => amazonCtrl($('div.fastSeekBack'), e, 60), { mods: { ctrl: true } });
-        cb.bindKeyDown(KEY_RIGHT, (e) => amazonCtrl($('div.fastSeekForward'), e, 60), { mods: { ctrl: true } });
+        cb.bindKeyDown(KEY_LEFT, (e) => amazonCtrl($('div.fastSeekBack'), e, 60), { mods: { ctrl: true }});
+        cb.bindKeyDown(KEY_RIGHT, (e) => amazonCtrl($('div.fastSeekForward'), e, 60), { mods: { ctrl: true }});
 
         // TODO add hotkey to toggle auto skip (sometimes not desired / button shown with wrong timing by amazon)
         // wait for skip elements (intro/outro) to appear, then skip
@@ -86,11 +89,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         // keys: . -> next episode
         cb.bindKeyDown(KEY_PERIOD, (e) => netflixCtrl($('button.button-nfplayerNextEpisode'), e));
         // keys: shift+left/+right -> skip +/-1min
-        cb.bindKeyDown(KEY_LEFT, (e) => netflixCtrl($('button.button-nfplayerBackTen'), e, 6), { mods: { shift: true } });
-        cb.bindKeyDown(KEY_RIGHT, (e) => netflixCtrl($('button.button-nfplayerFastForward'), e, 6), { mods: { shift: true } });
+        cb.bindKeyDown(KEY_LEFT, (e) => netflixCtrl($('button.button-nfplayerBackTen'), e, 6), { mods: { shift: true }});
+        cb.bindKeyDown(KEY_RIGHT, (e) => netflixCtrl($('button.button-nfplayerFastForward'), e, 6), { mods: { shift: true }});
         // keys: ctrl+left/+right -> skip +/-10min
-        cb.bindKeyDown(KEY_LEFT, (e) => netflixCtrl($('button.button-nfplayerBackTen'), e, 60), { mods: { ctrl: true } });
-        cb.bindKeyDown(KEY_RIGHT, (e) => netflixCtrl($('button.button-nfplayerFastForward'), e, 60), { mods: { ctrl: true } });
+        cb.bindKeyDown(KEY_LEFT, (e) => netflixCtrl($('button.button-nfplayerBackTen'), e, 60), { mods: { ctrl: true }});
+        cb.bindKeyDown(KEY_RIGHT, (e) => netflixCtrl($('button.button-nfplayerFastForward'), e, 60), { mods: { ctrl: true }});
 
         // TODO add hotkey to toggle auto skip (sometimes not desired / button shown with wrong timing by amazon
         // wait for skip elements (intro/outro) to appear, then skip
@@ -101,23 +104,42 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // register youtube tweaks
     function youtubeTweaksReg() {
         var ytplayer = document.getElementById('movie_player') || document.getElementsByTagName('embed')[0];
+        const PLAYBACK_RATES = ytplayer.getAvailablePlaybackRates();
         // https://developers.google.com/youtube/iframe_api_reference
         // https://developers.google.com/youtube/player_parameters
         if (ytplayer === undefined) return; // player not found/available
 
+        function ytRateChange(up)
+        {
+            var idx = PLAYBACK_RATES.indexOf(ytplayer.getPlaybackRate())
+            if (up) {
+                if (idx < PLAYBACK_RATES.length-1) {
+                    ytplayer.setPlaybackRate(PLAYBACK_RATES[idx+1]);
+                }
+            } else {
+                if (idx > 0) {
+                    ytplayer.setPlaybackRate(PLAYBACK_RATES[idx-1]);
+                }
+            }
+        }
+
         // keys: shift+left/+right -> skip +/-1min
         cb.bindKeyDown(KEY_LEFT, () => ytplayer.seekTo(Math.max(ytplayer.getCurrentTime() - 60, 0)),
-            { mods: { shift: true }, skipEditable: true });
+                       { mods:{ shift: true }, skipEditable: true });
         cb.bindKeyDown(KEY_RIGHT, () => ytplayer.seekTo(Math.min(ytplayer.getCurrentTime() + 60, ytplayer.getDuration() - 1)),
-            { mods: { shift: true }, skipEditable: true });
+                       { mods:{ shift: true }, skipEditable: true });
         // keys: ctrl+left/+right -> skip +/-10min
         cb.bindKeyDown(KEY_LEFT, () => ytplayer.seekTo(Math.max(ytplayer.getCurrentTime() - 600, 0)),
-            { mods: { ctrl: true }, skipEditable: true });
+                       { mods:{ ctrl: true }, skipEditable: true });
         cb.bindKeyDown(KEY_RIGHT, () => ytplayer.seekTo(Math.min(ytplayer.getCurrentTime() + 600, ytplayer.getDuration() - 1)),
-            { mods: { ctrl: true }, skipEditable: true });
+                       { mods:{ ctrl: true }, skipEditable: true });
         // keys: . -> next video, , -> previous video
         cb.bindKeyDown(KEY_PERIOD, () => ytplayer.nextVideo(), { skipEditable: true });
         cb.bindKeyDown(KEY_COMMA, () => ytplayer.previousVideo(), { skipEditable: true });
+        // keys: ]/[/= -> playback speed up / down / reset to default (1)
+        cb.bindKeyDown(KEY_BRACKET_RIGHT, () => ytRateChange(true), { skipEditable: true });
+        cb.bindKeyDown(KEY_BRACKET_LEFT, () => ytRateChange(false), { skipEditable: true });
+        cb.bindKeyDown(KEY_EQUAL, () => ytplayer.setPlaybackRate(1), { skipEditable: true });
         // TODO, don't seem to work / be supported atm.
         // keys: ' or / -> hide / show controls
         //cb.bindKeyDown(KEY_QUOTE, () => ytplayer.hideControls(), { mods: { ctrl: true }, skipEditable: true});
@@ -133,7 +155,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         // keys: s -> toggle shuffle
         cb.bindKeyDown(KEY_S, (e) => cb.clickElement($('.player-controls button[class*="shuffle"]')), { skipEditable: true });
         // keys: r -> switch repeat mode
-        cb.bindKeyDown(KEY_R, (e) => cb.clickElement($('.player-controls button[class*="repeat"]')), { skipEditable: true });
+        cb.bindKeyDown(KEY_R, (e) => cb.clickElement($('.player-controls button[class*="repeat"]')), { skipEditable: true});
         // keys: / -> search
         cb.bindKeyDown(KEY_SLASH, (e) => cb.clickElement($('.navBar div[class*="search-icon"]')), { skipEditable: true, preventDefault: true });
         // keys: ESC -> home screen (works in search field)
