@@ -89,7 +89,7 @@ image:imdb-tweaks-season-list-details.gif[]
 image:imdb-tweaks-seasons-rating1.png[,40%]
 * Adds episode number to episode titles.
 * Changes own rating star colors
-** 1-4 -> red _(slightly transparent in list)_
+** 1-4 -> red
 ** 5-6 -> purple
 ** 7 -> blue _(average IMDB rating, regular star color)_
 ** 8-9 -> gold
