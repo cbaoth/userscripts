@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        IMDB Tweaks
-// @version     0.1.9
+// @version     0.1.10
 // @description Some tweaks for IMDB
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/imdb-tweaks.user.js
 //
@@ -259,14 +259,19 @@ $ = jQuery = jQuery.noConflict(true);
             var elements = $('div.item_description');
             elements.css({ 'padding-bottom': '0px', 'margin-bottom': '0px', 'line-height': '125%' });
             elements.each((i, e) => $(e).text(cb.stringShorten($(e).text(), 200)));
-            if (GM_config.get('imdb-weaks-eplist-start-compact')) detailsToggle();
+            detailsToggle(GM_config.get('imdb-weaks-eplist-start-compact'));
         });
 
 
         // toggle episode description
         var detailsHidden = false;
-        var detailsToggle = function () {
-            detailsHidden = !detailsHidden; // toggle
+        var detailsToggle = function (compact) {
+            if (compact === void 0) {
+                detailsHidden = !detailsHidden; // toggle
+            } else {
+                detailsHidden = compact
+                //GM_config.set('imdb-weaks-eplist-start-compact', detailsHidden); // update settings
+            }
             $('.list_item > .image > .hover-over-image > image').toggle(); // image
             // resize images and overlay text (season & episode number)
             if (detailsHidden) {
@@ -283,7 +288,7 @@ $ = jQuery = jQuery.noConflict(true);
             $('div.item_description').toggle(!detailsHidden); // toggle description text
         };
         // hot-key "d" to toggle description (skip in case input field is active)
-        cb.bindKeyDown(68, detailsToggle, { skipEditable: true });
+        cb.bindKeyDown(68, () => detailsToggle(void 0), { skipEditable: true });
     }
 
 
