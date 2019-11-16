@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        IMDB Tweaks
-// @version     0.1.10
+// @version     0.1.11
 // @description Some tweaks for IMDB
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/imdb-tweaks.user.js
 //
@@ -88,25 +88,23 @@ $ = jQuery = jQuery.noConflict(true);
             case 1:
             case 2:
             case 3:
-            case 4: // light gray
-                _fill("#d9d8d8");
-                //svg.css('opacity', '0.5');
+            case 4: // red (transparent)
+                _fill("#f14242");
+                svg.css('opacity', '0.5');
                 break;
             case 5:
-            case 6: // light blue
-                _fill("#bbcaff");
+            case 6: // purple
+                _fill("#a765ff");
                 break;
             case 7: // blue
                 _fill("#4268f1");
                 break;
-            case 8: // purple
-                _fill("#db4fff");
+            case 8:
+            case 9: // gold
+                _fill("#ffa826");
                 break;
-            case 9: // red
-                _fill("#f14242");
-                break;
-            case 10: // red and large
-                _fill("#f14242");
+            case 10: // gold and large
+                _fill("#ffa826");
                 svg.css("width", "1.75em");
                 svg.css("height", "1.75em");
                 //svgGlowFilter(myStar); // TODO
