@@ -92,8 +92,8 @@ image:imdb-tweaks-seasons-rating1.png[,40%]
 ** 1-4 -> red _(slightly transparent in list)_
 ** 5-6 -> purple
 ** 7 -> blue _(average IMDB rating, regular star color)_
-** 8-9 -> red
-** 10 -> red _(larger star)_
+** 8-9 -> gold
+** 10 -> gold _(larger star)_
 * Adds new key bindings:
 
 [cols="1,3",options="header"]
