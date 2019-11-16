@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.10
+// @version     0.1.11
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -150,16 +150,16 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // register spotify tweaks
     function spotifyTweaksReg() {
         // keys: ./, -> next/previous track
-        cb.bindKeyDown(KEY_PERIOD, (e) => cb.clickElement($('.player-controls button[class*="forward"]')), { skipEditable: true });
-        cb.bindKeyDown(KEY_COMMA, (e) => cb.clickElement($('.player-controls button[class*="back"]')), { skipEditable: true });
+        cb.bindKeyDown(KEY_PERIOD, (e) => cb.clickElement($('.player-controls button[class*="forward"]')[0]), { skipEditable: true });
+        cb.bindKeyDown(KEY_COMMA, (e) => cb.clickElement($('.player-controls button[class*="back"]')[0]), { skipEditable: true });
         // keys: s -> toggle shuffle
-        cb.bindKeyDown(KEY_S, (e) => cb.clickElement($('.player-controls button[class*="shuffle"]')), { skipEditable: true });
+        cb.bindKeyDown(KEY_S, (e) => cb.clickElement($('.player-controls button[class*="shuffle"]')[0]), { skipEditable: true });
         // keys: r -> switch repeat mode
-        cb.bindKeyDown(KEY_R, (e) => cb.clickElement($('.player-controls button[class*="repeat"]')), { skipEditable: true});
+        cb.bindKeyDown(KEY_R, (e) => cb.clickElement($('.player-controls button[class*="repeat"]')[0]), { skipEditable: true});
         // keys: / -> search
-        cb.bindKeyDown(KEY_SLASH, (e) => cb.clickElement($('.navBar div[class*="search-icon"]')), { skipEditable: true, preventDefault: true });
+        cb.bindKeyDown(KEY_SLASH, (e) => cb.clickElement($('.navBar div[class*="search-icon"]')[0]), { skipEditable: true, preventDefault: true });
         // keys: ESC -> home screen (works in search field)
-        //cb.bindKeyDown(KEY_ESC, (e) => cb.clickElement($('.navBar div[class*="home-icon"]')), { preventDefault: true });
+        //cb.bindKeyDown(KEY_ESC, (e) => cb.clickElement($('.navBar div[class*="home-icon"]')[0]), { preventDefault: true });
     }
 
 
