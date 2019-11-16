@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        IMDB Tweaks
-// @version     0.1.11
+// @version     0.1.12
 // @description Some tweaks for IMDB
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/imdb-tweaks.user.js
 //
@@ -75,7 +75,7 @@ $ = jQuery = jQuery.noConflict(true);
         $(svg).children("path").attr("filter", `url(#${id})`);
     }
 
-    function myStarSetStyle(myStar, myRating) {
+    function myStarSetStyle(myStar, myRating, isAverageStar=false) {
         var svg = $(myStar);
 
         function _fill(color) {
@@ -105,8 +105,8 @@ $ = jQuery = jQuery.noConflict(true);
                 break;
             case 10: // gold and large
                 _fill("#ffa826");
-                svg.css("width", "1.75em");
-                svg.css("height", "1.75em");
+                svg.css("width", isAverageStar ? "2em" : "1.75em");
+                svg.css("height", isAverageStar ? "2em" : "1.75em");
                 //svgGlowFilter(myStar); // TODO
                 break;
             default:
@@ -154,7 +154,7 @@ $ = jQuery = jQuery.noConflict(true);
         var ratingDiv = header.parent();
         header.wrap('<span style="display: table-cell;vertical-align:top;"></span>');
 
-        var tDiv = '<div style="display: table-cell; padding-left: 1em; font-size: 1.2em;"><div style="display: table-row;"></div></div>';
+        var tDiv = '<div style="display: table-cell; vertical-align:middle; padding-left: 1em; font-size: 1.2em;"><div style="display: table-row;"></div></div>';
         var tSpan = '<span style="display:table-cell; vertical-align:middle;"></span>';
         var starSvg = $('svg.ipl-star-icon')[0];
         var starBorderSvg = $('svg.ipl-star-border-icon')[0];
@@ -191,7 +191,7 @@ $ = jQuery = jQuery.noConflict(true);
         var myStar;
         if (myAvgRating > 0) {
             myStar = $(starSvg).clone();
-            myStarSetStyle(myStar, myAvgRating);
+            myStarSetStyle(myStar, myAvgRating, true);
             myAvgRatingSpan.append(Number.parseFloat(myAvgRating).toPrecision(2));
             myAvgRatingDiv.children('div').append(myStar);
             myAvgRatingDiv.children('div').append(myAvgRatingSpan);
