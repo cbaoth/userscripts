@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        IMDB Tweaks
-// @version     0.1.14
+// @version     0.1.15
 // @description Some tweaks for IMDB
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/imdb-tweaks.user.js
 //
@@ -56,6 +56,10 @@ $ = jQuery = jQuery.noConflict(true);
             }
         }
     });
+
+
+    // change empty rating star style
+    GM_addStyle (`.ipl-star-border-icon { fill: #baccff !important; }`);
 
 
     function svgGlowFilter(svg, {id = "glow", color = "gold", floodOpacity = 0.75, radius = 1.75, stdDeviation = 1.5 } = {}) {
