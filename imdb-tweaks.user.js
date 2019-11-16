@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        IMDB Tweaks
-// @version     0.1.13
+// @version     0.1.14
 // @description Some tweaks for IMDB
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/imdb-tweaks.user.js
 //
@@ -88,13 +88,13 @@ $ = jQuery = jQuery.noConflict(true);
             case 1:
             case 2:
             case 3:
-            case 4: // red (transparent)
-                _fill("#f14242");
+            case 4: // light gray
+                _fill("#d1d1d1");
                 //svg.css('opacity', '0.5');
                 break;
             case 5:
-            case 6: // purple
-                _fill("#a765ff");
+            case 6: // gray
+                _fill("#a6a6a6");
                 break;
             case 7: // blue
                 _fill("#4268f1");
