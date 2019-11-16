@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        IMDB Tweaks
-// @version     0.1.8
+// @version     0.1.9
 // @description Some tweaks for IMDB
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/imdb-tweaks.user.js
 //
@@ -19,7 +19,11 @@
 // @require     https://openuserjs.org/src/libs/sizzle/GM_config.min.js
 // ==/UserScript==
 
-this.$ = this.jQuery = jQuery.noConflict(true);
+// TODO update average rating and star style when my ratings change
+// TODO add glow to 10 star rating
+// TODO consider changing star style inside rating widget
+
+$ = jQuery = jQuery.noConflict(true);
 
 (function () {
 
@@ -52,6 +56,77 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             }
         }
     });
+
+
+    function svgGlowFilter(svg, {id = "glow", color = "gold", floodOpacity = 0.75, radius = 1.75, stdDeviation = 1.5 } = {}) {
+        var defs = `<defs>
+            <filter id="${id}" x="-5000%" y="-5000%" width="10000%" height="10000%">
+                <feFlood result="flood" flood-color="${color}" flood-opacity="${floodOpacity}"></feFlood>
+                <feComposite in="flood" result="mask" in2="SourceGraphic" operator="in"></feComposite>
+                <feMorphology in="mask" result="dilated" operator="dilate" radius="${radius}"></feMorphology>
+                <feGaussianBlur in="dilated" result="blurred" stdDeviation="${stdDeviation}"></feGaussianBlur>
+                <feMerge>
+                    <feMergeNode in="blurred"></feMergeNode>
+                    <feMergeNode in="SourceGraphic"></feMergeNode>
+                </feMerge>
+             </filter>
+         </defs>`;
+        $(svg).prepend($.parseXML(defs).documentElement); // case sensitive
+        $(svg).children("path").attr("filter", `url(#${id})`);
+    }
+
+    function myStarSetStyle(myStar, myRating) {
+        var svg = $(myStar);
+
+        function _fill(color) {
+            svg.attr("fill", color);
+            svg.css("fill", color);
+        }
+
+        switch (Math.floor(myRating)) {
+            case 0:
+            case 1:
+            case 2:
+            case 3:
+            case 4: // light gray
+                _fill("#d9d8d8");
+                //svg.css('opacity', '0.5');
+                break;
+            case 5:
+            case 6: // light blue
+                _fill("#bbcaff");
+                break;
+            case 7: // blue
+                _fill("#4268f1");
+                break;
+            case 8: // purple
+                _fill("#db4fff");
+                break;
+            case 9: // red
+                _fill("#f14242");
+                break;
+            case 10: // red and large
+                _fill("#f14242");
+                svg.css("width", "1.75em");
+                svg.css("height", "1.75em");
+                //svgGlowFilter(myStar); // TODO
+                break;
+            default:
+                break; // unexpected rating: < 0 | > 10
+        }
+    }
+
+
+    function updateMyStarStyle() {
+        $('label.ipl-rating-interactive__star-container svg.ipl-star-icon').each(function(i, svg) {
+            var ratingDiv = $(svg).parent().siblings("span.ipl-rating-star__rating")[0];
+            if (ratingDiv === undefined) {
+                return;
+            }
+            var rating = parseInt(ratingDiv.textContent);
+            myStarSetStyle(svg, rating);
+        });
+    }
 
 
     function addSeasonAvgRating() {
@@ -118,7 +193,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         var myStar;
         if (myAvgRating > 0) {
             myStar = $(starSvg).clone();
-            myStar.css("fill", "#4268f1");
+            myStarSetStyle(myStar, myAvgRating);
             myAvgRatingSpan.append(Number.parseFloat(myAvgRating).toPrecision(2));
             myAvgRatingDiv.children('div').append(myStar);
             myAvgRatingDiv.children('div').append(myAvgRatingSpan);
@@ -159,6 +234,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         cb.waitAndDebounce('div.eplist', (e) => {
             // add season average rating
             addSeasonAvgRating();
+
+            // update my rating star style
+            updateMyStarStyle();
 
             // add episode number to title
             $('.eplist .list_item').each((i, e) => {
