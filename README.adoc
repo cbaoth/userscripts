@@ -76,7 +76,7 @@ image:gerrit-tweaks-code1.png[]
 [cols="1,3",options="header"]
 |=======
 | Keys         | Action
-| Alt-F12      | Open script configuration
+| Alt-F12      | Open script configuration (ESC to close)
 |=======
 
 ==== Episode List
@@ -180,11 +180,14 @@ Improvements to https://www.youtube.com:[YouTube]:
 | Ctrl-Left    | Rewind 10min
 | . _(period)_ | Next video
 | , _(comma)_  | Previous video _(playlist only)_
-| ]            | Increase playback rate (down to 2x)
-| [            | Decrease playback rate (up to 0.25x)
+| ]            | Increase playback rate (up to 2x)
+| [            | Decrease playback rate (down to 0.25x)
 | =            | Default playback rate (1x)
+| Alt-F12      | Open script configuration (ESC to close)
 |=======
 
+* Configuration for:
+** Default playback rate (default: 1x)
 
 ==== Spotify
 

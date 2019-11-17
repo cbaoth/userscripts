@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.11
+// @version     0.1.12
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -19,6 +19,7 @@
 // @require     https://gist.github.com/raw/2625891/waitForKeyElements.js
 // @require     https://raw.githubusercontent.com/jashkenas/underscore/master/underscore.js
 // @require     https://github.com/cbaoth/userscripts/raw/master/lib/cblib.js
+// @require     https://openuserjs.org/src/libs/sizzle/GM_config.min.js
 // ==/UserScript==
 
 this.$ = this.jQuery = jQuery.noConflict(true);
@@ -36,7 +37,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const KEY_EQUAL = 187
     const KEY_R = 82
     const KEY_S = 83
-    const KEY_F = 70
+    //const KEY_F = 70
+    const KEY_F12 = 123
 
     // register amazon tweaks
     function amazonTweaksReg() {
@@ -103,6 +105,36 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // register youtube tweaks
     function youtubeTweaksReg() {
+        // GM_config
+        const GM_CONFIG_ID = 'StreamingTweaks_YouTube_Config'
+        const GM_CONFIG_FIELDS = {
+            'yt-default-playback-rate': {
+                'label': 'Default Playback Rate',
+                'labelPos': 'above',
+                'type': 'select',
+                'options': ["0.25", "0.5", "0.75", "1", "1.25", "1.5", "1.75", "2"],
+                'default': '1'
+            }
+        }
+        GM_config.init({
+            'id': GM_CONFIG_ID,
+            'title': 'Streaming Tweaks - YouTube Config',
+            'fields': GM_CONFIG_FIELDS,
+            'events': {
+                'open': function(doc) {
+                    var config = this;
+                    doc.getElementById(config.id + '_closeBtn').textContent = 'Cancel';
+                },
+                'save': function(values) {
+                    var config = this;
+                    config.close();
+                }
+            }
+        });
+        // hot-key alt-F12 / ESC -> Open / close config dialog
+        cb.bindKeyDown(KEY_F12, () => GM_config.open(), { mods: { alt: true } });
+        cb.bindKeyDown(KEY_ESC, () => { $('#' + GM_CONFIG_ID).length && GM_config.close() }, { skipEditable: true });
+
         var ytplayer = document.getElementById('movie_player') || document.getElementsByTagName('embed')[0];
         const PLAYBACK_RATES = ytplayer.getAvailablePlaybackRates();
         // https://developers.google.com/youtube/iframe_api_reference
@@ -122,6 +154,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 }
             }
         }
+
+        // set configured default playback rate
+        ytplayer.setPlaybackRate(parseFloat(GM_config.get('yt-default-playback-rate')));
 
         // keys: shift+left/+right -> skip +/-1min
         cb.bindKeyDown(KEY_LEFT, () => ytplayer.seekTo(Math.max(ytplayer.getCurrentTime() - 60, 0)),
