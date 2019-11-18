@@ -188,6 +188,7 @@ Improvements to https://www.youtube.com:[YouTube]:
 
 * Configuration for:
 ** Default playback rate (default: 1x)
+** Stop auto-playback (stop playback when page opens, default: true)
 
 ==== Spotify
 

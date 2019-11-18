@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.12
+// @version     0.1.13
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -114,6 +114,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 'type': 'select',
                 'options': ["0.25", "0.5", "0.75", "1", "1.25", "1.5", "1.75", "2"],
                 'default': '1'
+            },
+            'yt-prevent-auto-playback': {
+                'label': 'Prevent Auto-Playback',
+                'type': 'checkbox',
+                'default': true
             }
         }
         GM_config.init({
@@ -157,6 +162,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
         // set configured default playback rate
         ytplayer.setPlaybackRate(parseFloat(GM_config.get('yt-default-playback-rate')));
+        // prevent auto-playback?
+        if (GM_config.get('yt-prevent-auto-playback')) {
+            ytplayer.pauseVideo();
+        }
 
         // keys: shift+left/+right -> skip +/-1min
         cb.bindKeyDown(KEY_LEFT, () => ytplayer.seekTo(Math.max(ytplayer.getCurrentTime() - 60, 0)),
