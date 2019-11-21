@@ -4,11 +4,11 @@
 // @copyright   2015+, userscript@cbaoth.de
 //
 // @name        Amazon Tweaks
-// @version     0.7
+// @version     0.8
 // @description Some improvments to amazon shop pages
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/amazon-links.user.js
 //
-// @include     /^https?://[^/]*amazon.\w+//
+// @include     /^https?://(www\.|smile\.)?amazon\.\w+//
 //
 // @grant       none
 //
@@ -21,16 +21,10 @@
 this.$ = this.jQuery = jQuery.noConflict(true);
 
 (function () {
-
-    // config parameters
-    //const SHOW_LINK_ICON = 1; // toggle link fav icons
-    //const LINK_STYLE = "font-weight: bold; font-style: italic;";
-    //const SHOW_LINK_TEXT = 1; // toggle link text
-
     // constants
     const PAGE_PRODUCT = 1;
     const PAGE_SEARCH = 2;
-    const PRICE_SELECTOR = 'span#priceblock_ourprice';
+    const PRICE_SELECTOR = 'span#priceblock_ourprice, span#priceblock_dealprice';
     const PRICE_SELECTOR_SEARCH = 'span.a-color-price';
     const KEEPA_ICO = 'https://keepa.com/favicon.ico';
 
@@ -98,7 +92,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         price.wrapInner(`<a target="_blank" class="a-color-price" href="${keepaURL}" title="Keepa price watch (click to open in new tab)."></a>`);
     }
 
-    // redirect to smile. page
+
     function smileRedirect() {
         if (/^(www\.)?amazon.(\w+)/.test(window.location.hostname) && ! /^smile\./.test(window.location.hostname)) {
             var smileURL = window.location.href.replace(/\/\/(www\.)?amazon\.(\w{2})/g, '//smile.amazon.$2');
@@ -108,13 +102,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         }
     }
 
-    if (/\/[dg]p\/(product\/)?\w{10}\//.test(window.location.pathname)) { // product page
-        smileRedirect();
+    if (/\/[dg]p\/(product\/)?\w{10}([/?].+)?$/.test(window.location.pathname)) { // product page
         waitForKeyElements(PRICE_SELECTOR, (e) => addAmazonLinks(e, PAGE_PRODUCT));
         // auto selection of one-time buy option (instead of default: subscription)
         waitForKeyElements("#oneTimeBuyBox .a-accordion-radio", (e) => cb.clickElement(e));
     } else if (/\/s\//.test(window.location.pathname)) { // search result
-        smileRedirect();
         // change price links (normally product link too) to keepa links
         waitForKeyElements(PRICE_SELECTOR_SEARCH, (e) => addAmazonLinks(e, PAGE_SEARCH));
         // replace all product links with clean links
@@ -122,4 +114,6 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             + 'div.a-col-right a.s-access-detail-page') // search result product title
             .each((i, a) => cleanLink(a));
     }
+
+    smileRedirect();
 }());
