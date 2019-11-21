@@ -145,7 +145,11 @@ Improvements to the https://netflix.com[Netflix] web player:
 | Ctrl-Right   | Fast-forward 10min
 | Ctrl-Left    | Rewind 10min
 | . _(period)_ | Next episode
+| Alt-F12      | Open script configuration (ESC to close)
 |=======
+
+* Configuration for:
+** Auto-skip intro and outro/to next episode (default: true)
 
 ==== Amazon prime video
 
@@ -164,7 +168,12 @@ Improvements to Amazon's https://www.primevideo.com/:[prime video] web player:
 | Ctrl-Right   | Fast-forward 10min
 | Ctrl-Left    | Rewind 10min
 | . _(period)_ | Next episode
+| Alt-F12      | Open script configuration (ESC to close)
 |=======
+
+* Configuration for:
+** Auto-skip intro and outro/to next episode (default: true)
+** Auto-skip ads (default: true)
 
 _Note: If this doesn't work please check the include. Script is currently only in case URL matches `/^https?://(www|smile)\.amazon\.(de|com)/gp/video/`. Depending on how you reach the player, the `/gp/video/` might be missing in the URL._
 

@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.13
+// @version     0.1.14
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -46,7 +46,41 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         if (document.emitter !== undefined) document.emitter.setMaxListeners(0);
 
         // auto skip intro/credits/ads
-        const AMAZON_SEL_SKIP = `.skipElement, .countdown, .adSkipButton`;
+        const AMAZON_SEL_SKIP = `.skipElement, .countdown`;
+        const AMAZON_SEL_SKIP_ADS = `.adSkipButton`;
+
+        // GM_config
+        const GM_CONFIG_ID = 'StreamingTweaks_AmazonPrimeVideo_Config'
+        const GM_CONFIG_FIELDS = {
+            'az-auto-skip': {
+                'label': 'Auto Skip Intro/Outro (next episode)',
+                'type': 'checkbox',
+                'default': true
+            },
+            'az-auto-skip-ads': {
+                'label': 'Auto Skip Ads',
+                'type': 'checkbox',
+                'default': true
+            }
+        }
+        GM_config.init({
+            'id': GM_CONFIG_ID,
+            'title': 'Streaming Tweaks - Amazon Prime Video Config',
+            'fields': GM_CONFIG_FIELDS,
+            'events': {
+                'open': function(doc) {
+                    var config = this;
+                    doc.getElementById(config.id + '_closeBtn').textContent = 'Cancel';
+                },
+                'save': function(values) {
+                    var config = this;
+                    config.close();
+                }
+            }
+        });
+        // hot-key alt-F12 / ESC -> Open / close config dialog
+        cb.bindKeyDown(KEY_F12, () => GM_config.open(), { mods: { alt: true } });
+        cb.bindKeyDown(KEY_ESC, () => { $('#' + GM_CONFIG_ID).length && GM_config.close() }, { skipEditable: true });
 
         // control (click) function
         var amazonCtrl = (elements, event, times = 1) => {
@@ -63,9 +97,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         cb.bindKeyDown(KEY_LEFT, (e) => amazonCtrl($('div.fastSeekBack'), e, 60), { mods: { ctrl: true }});
         cb.bindKeyDown(KEY_RIGHT, (e) => amazonCtrl($('div.fastSeekForward'), e, 60), { mods: { ctrl: true }});
 
-        // TODO add hotkey to toggle auto skip (sometimes not desired / button shown with wrong timing by amazon)
         // wait for skip elements (intro/outro) to appear, then skip
-        cb.waitAndThrottle(AMAZON_SEL_SKIP, (e) => $(e).click(), 2000, { tailing: false });
+        cb.waitAndThrottle(AMAZON_SEL_SKIP, (e) => { GM_config.get('az-auto-skip') && $(e).click(); }, 2000, { tailing: false });
+        cb.waitAndThrottle(AMAZON_SEL_SKIP_ADS, (e) => { GM_config.get('az-auto-skip-ads') && $(e).click(); }, 2000, { tailing: false });
     }
 
 
@@ -73,6 +107,34 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     function netflixTweaksReg() {
         // auto skip intro/credits
         const NETFLIX_SEL_SKIP = `.skip-credits > a > span, .WatchNext-still-container`;
+
+        // GM_config
+        const GM_CONFIG_ID = 'StreamingTweaks_Netflix_Config'
+        const GM_CONFIG_FIELDS = {
+            'nf-auto-skip': {
+                'label': 'Auto Skip Intro/Outro',
+                'type': 'checkbox',
+                'default': true
+            }
+        }
+        GM_config.init({
+            'id': GM_CONFIG_ID,
+            'title': 'Streaming Tweaks - Netflix Config (next episode)',
+            'fields': GM_CONFIG_FIELDS,
+            'events': {
+                'open': function(doc) {
+                    var config = this;
+                    doc.getElementById(config.id + '_closeBtn').textContent = 'Cancel';
+                },
+                'save': function(values) {
+                    var config = this;
+                    config.close();
+                }
+            }
+        });
+        // hot-key alt-F12 / ESC -> Open / close config dialog
+        cb.bindKeyDown(KEY_F12, () => GM_config.open(), { mods: { alt: true } });
+        cb.bindKeyDown(KEY_ESC, () => { $('#' + GM_CONFIG_ID).length && GM_config.close() }, { skipEditable: true });
 
         // control (click) function
         var netflixCtrl = (elements, event, times = 1, { autoplay } = { autoplay: true }) => {
@@ -97,9 +159,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         cb.bindKeyDown(KEY_LEFT, (e) => netflixCtrl($('button.button-nfplayerBackTen'), e, 60), { mods: { ctrl: true }});
         cb.bindKeyDown(KEY_RIGHT, (e) => netflixCtrl($('button.button-nfplayerFastForward'), e, 60), { mods: { ctrl: true }});
 
-        // TODO add hotkey to toggle auto skip (sometimes not desired / button shown with wrong timing by amazon
         // wait for skip elements (intro/outro) to appear, then skip
-        cb.waitAndThrottle(NETFLIX_SEL_SKIP, netflixCtrl, 5000, { tailing: false });
+        cb.waitAndThrottle(NETFLIX_SEL_SKIP, (e) => { GM_config.get('nf-auto-skip') && netflixCtrl(e); }, 5000, { tailing: false });
     }
 
 
