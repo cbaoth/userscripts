@@ -4,7 +4,7 @@
 // @copyright   2015+, userscript@cbaoth.de
 //
 // @name        Amazon Tweaks
-// @version     0.5
+// @version     0.6
 // @description Some improvments to amazon shop pages
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/amazon-links.user.js
 //
@@ -98,11 +98,24 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         price.wrapInner(`<a target="_blank" class="a-color-price" href="${keepaURL}" title="Keepa price watch (click to open in new tab)."></a>`);
     }
 
+
+    function smileRedirect() {
+        debugger;
+        if (/^(www\.)?amazon.(\w+)/.test(window.location.hostname) && ! /^smile\./.test(window.location.hostname)) {
+            var smileURL = window.location.href.replace(/\/\/(www\.)?amazon\.(\w{2})/g, '//smile.amazon.$2');
+            if (window.location.href != smileURL) {
+                window.location.replace(smileURL);
+            }
+        }
+    }
+
     if (/\/[dg]p\/(product\/)?\w{10}\//.test(window.location.pathname)) { // product page
+        smileRedirect();
         waitForKeyElements(PRICE_SELECTOR, (e) => addAmazonLinks(e, PAGE_PRODUCT));
         // auto selection of one-time buy option (instead of default: subscription)
-        waitForKeyElements("#oneTimeBuyBox .a-accordion-radio", () => cb.clickElement($("#oneTimeBuyBox .a-accordion-radio")));
-    } else if (/\/s\//.test(window.location.pathname)) { // search
+        waitForKeyElements("#oneTimeBuyBox .a-accordion-radio", (e) => cb.clickElement(e));
+    } else if (/\/s\//.test(window.location.pathname)) { // search result
+        smileRedirect();
         // change price links (normally product link too) to keepa links
         waitForKeyElements(PRICE_SELECTOR_SEARCH, (e) => addAmazonLinks(e, PAGE_SEARCH));
         // replace all product links with clean links
