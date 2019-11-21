@@ -4,7 +4,7 @@
 // @copyright   2015+, userscript@cbaoth.de
 //
 // @name        Amazon Tweaks
-// @version     0.6
+// @version     0.7
 // @description Some improvments to amazon shop pages
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/amazon-links.user.js
 //
@@ -98,9 +98,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         price.wrapInner(`<a target="_blank" class="a-color-price" href="${keepaURL}" title="Keepa price watch (click to open in new tab)."></a>`);
     }
 
-
+    // redirect to smile. page
     function smileRedirect() {
-        debugger;
         if (/^(www\.)?amazon.(\w+)/.test(window.location.hostname) && ! /^smile\./.test(window.location.hostname)) {
             var smileURL = window.location.href.replace(/\/\/(www\.)?amazon\.(\w{2})/g, '//smile.amazon.$2');
             if (window.location.href != smileURL) {
