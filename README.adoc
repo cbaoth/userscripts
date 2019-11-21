@@ -24,18 +24,21 @@ My browser user scripts.
 
 To run them install link:https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo[Tampermonkey] (link:https://www.google.com/chrome/[Chrome]), link:https://addons.mozilla.org/en-US/firefox/addon/greasemonkey/[Greasemonkey] (link:https://www.mozilla.org/en-US/firefox/developer/[Firefox]), or no extension at all (link:https://vivaldi.com/[Vivaldi]) and click on the linked `*.user.js` file, then click on "Raw" to install the script. Note that, except when using the integrated Vivaldi solution, the user scripts will be **updated automatically** _(default settings)_ as soon as I commit a new version.
 
-=== Amazon Links
+=== Amazon Tweaks
 
-`link:amazon-links.user.js[]` adds a direct product link _(no unnecessary parameters like referrer, affiliations, etc.)_ and a https://keepa.com[keepa] price history link to amazon search and product pages.
+`link:amazon-links.user.js[]` improves amazon shop pages.
 
 * Product page
-** Makes the price a link to the product's _keepa_ price history page.
-** Adds a direct amazon product link _(amazon icon)_ next to the price.
+** Auto select _one-time_ buy option (instead of default: subscription)
+** Adds a new _keepa_ icon next to the price, and makes icon and price a link _(open in new tab)_ the the product's https://keepa.com[keepa] price tracking page.
+*** Note that the keepa page will show the default amazon region and language _(top right selection)_ but the price information will match the correct region of the source amazon page.
+** Adds a new _amazon_ icon next to the price with a direct link to the product's page _(short URL, no tracking, affiliation, etc.)_ e.g. for sharing.
  +
 image:amazon-links1.png[]
-* Search page
-** Replaces search result price links with links to the product's _keepa_ price history page.
-** Replaces search result product links with clean ones.
+// FIXME currently not working
+//* Search page
+//** Replaces search result price links with links to the product's https://keepa.com[keepa] price history page.
+//** Replaces search result product links with clean ones _(short URL, no tracking, affiliation, etc.)_.
 
 
 === Auto Show Forum Spoilers
