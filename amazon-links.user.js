@@ -4,7 +4,7 @@
 // @copyright   2015+, userscript@cbaoth.de
 //
 // @name        Amazon Tweaks
-// @version     0.10
+// @version     0.11
 // @description Some improvments to amazon shop pages
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/amazon-links.user.js
 //
@@ -40,9 +40,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         }
         var custReview = /#customerReviews/.test(href) ? '#customerReviews' : ''
         if (/^\s*http/.test(href)) { // absolute link?
-            $(a).attr('href', href.replace(/(?<=\w)\/.*(\/[dg]p\/\w{10})[/?].+/, '$1/') + custReview);
+            $(a).attr('href', toSmileURL(href).replace(/(?<=\w)\/.*(\/[dg]p\/\w{10})[/?].+/, '$1/') + custReview);
         } else {
-            $(a).attr('href', href.replace(/.*(\/[dg]p\/\w{10})[/?].+/, '$1/') + custReview);
+            $(a).attr('href', toSmileURL(href).replace(/.*(\/[dg]p\/\w{10})[/?].+/, '$1/') + custReview);
         }
     }
 
@@ -72,7 +72,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         }
 
         // direct link
-        var azURL = `https://amazon.${tld}/dp/${asin}`;
+        var azURL = `https://smile.amazon.${tld}/dp/${asin}`;
         var azICO = `https://www.amazon.${tld}/favicon.ico`;
 
         // styles
@@ -98,9 +98,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     }
 
 
+    function toSmileURL(url) {
+        return url.replace(/\/\/(www\.)?amazon\.(\w{2})/g, '//smile.amazon.$2');
+    }
+
     function smileRedirect() {
         if (/^(www\.)?amazon.(\w+)/.test(window.location.hostname) && ! /^smile\./.test(window.location.hostname)) {
-            var smileURL = window.location.href.replace(/\/\/(www\.)?amazon\.(\w{2})/g, '//smile.amazon.$2');
+            var smileURL = toSmileURL(window.location.href);
             if (window.location.href != smileURL) {
                 window.location.replace(smileURL);
             }
