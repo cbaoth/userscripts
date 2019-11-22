@@ -4,7 +4,7 @@
 // @copyright   2015+, userscript@cbaoth.de
 //
 // @name        Amazon Tweaks
-// @version     0.9
+// @version     0.10
 // @description Some improvments to amazon shop pages
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/amazon-links.user.js
 //
@@ -26,7 +26,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const PAGE_SEARCH = 2;
     const PRICE_SELECTOR = 'span#priceblock_ourprice, span#priceblock_dealprice';
     const PRICE_SELECTOR_SEARCH = `span.a-price-whole, span.a-color-price.a-size-base`;
-    const LINK_SELECTORS_SEARCH = `div[data-asin][data-cel-widget] a.a-text-normal[href*="/dp/"],
+    const LINK_SELECTOR_SEARCH = `div[data-asin][data-cel-widget] a.a-text-normal[href*="/dp/"],
                                    div[data-asin][data-cel-widget] a.a-link-normal[href*="/dp/"],
                                    li[data-asin] a.s-access-detail-page,
                                    li[data-asin] a.a-text-normal`
@@ -35,14 +35,14 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // clean-up product page link (strip all parameters and unnecessary texts)
     function cleanLink(a) {
         var href = $(a).attr('href');
-        if (! /\/[dg]p\/\w{10}\//.test(href)) { // not a product page links?
+        if (! /\/[dg]p\/\w{10}([/?].+)?$/.test(href)) { // not a product page links?
             return; // do nothing
         }
         var custReview = /#customerReviews/.test(href) ? '#customerReviews' : ''
         if (/^\s*http/.test(href)) { // absolute link?
-            $(a).attr('href', href.replace(/(?<=\w)\/.*(\/[dg]p\/\w{10}\/).*/, '$1') + custReview);
+            $(a).attr('href', href.replace(/(?<=\w)\/.*(\/[dg]p\/\w{10})[/?].+/, '$1/') + custReview);
         } else {
-            $(a).attr('href', href.replace(/.*(\/[dg]p\/\w{10}\/).*/, '$1') + custReview);
+            $(a).attr('href', href.replace(/.*(\/[dg]p\/\w{10})[/?].+/, '$1/') + custReview);
         }
     }
 
@@ -114,9 +114,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     } else if (/\/s([/?].+)?$/.test(window.location.pathname)) { // search result
         // change price links (normally product link too) to keepa links
         waitForKeyElements(PRICE_SELECTOR_SEARCH, (e) => addAmazonLinks(e, PAGE_SEARCH));
-        // selectors for result product title links and images (for different types of result pages)
         // replace all product links in search result with clean links
-        waitForKeyElements(LINK_SELECTORS_SEARCH, (e) => cleanLink(e));
+        waitForKeyElements(LINK_SELECTOR_SEARCH, (e) => cleanLink(e));
     }
 
     smileRedirect();
