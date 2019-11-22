@@ -35,10 +35,9 @@ To run them install link:https://chrome.google.com/webstore/detail/tampermonkey/
 ** Adds a new _amazon_ icon next to the price with a direct link to the product's page _(short URL, no tracking, affiliation, etc.)_ e.g. for sharing.
  +
 image:amazon-links1.png[]
-// FIXME currently not working
-//* Search page
-//** Replaces search result price links with links to the product's https://keepa.com[keepa] price history page.
-//** Replaces search result product links with clean ones _(short URL, no tracking, affiliation, etc.)_.
+* Search page
+** Replaces search result prices with links to the product's https://keepa.com[keepa] price history page.
+** Replaces search result product links with clean ones _(short URL, no tracking, affiliation, etc.)_.
 
 
 === Auto Show Forum Spoilers

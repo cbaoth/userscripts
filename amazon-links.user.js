@@ -4,7 +4,7 @@
 // @copyright   2015+, userscript@cbaoth.de
 //
 // @name        Amazon Tweaks
-// @version     0.8
+// @version     0.9
 // @description Some improvments to amazon shop pages
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/amazon-links.user.js
 //
@@ -25,18 +25,24 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const PAGE_PRODUCT = 1;
     const PAGE_SEARCH = 2;
     const PRICE_SELECTOR = 'span#priceblock_ourprice, span#priceblock_dealprice';
-    const PRICE_SELECTOR_SEARCH = 'span.a-color-price';
+    const PRICE_SELECTOR_SEARCH = `span.a-price-whole, span.a-color-price.a-size-base`;
+    const LINK_SELECTORS_SEARCH = `div[data-asin][data-cel-widget] a.a-text-normal[href*="/dp/"],
+                                   div[data-asin][data-cel-widget] a.a-link-normal[href*="/dp/"],
+                                   li[data-asin] a.s-access-detail-page,
+                                   li[data-asin] a.a-text-normal`
     const KEEPA_ICO = 'https://keepa.com/favicon.ico';
 
+    // clean-up product page link (strip all parameters and unnecessary texts)
     function cleanLink(a) {
         var href = $(a).attr('href');
         if (! /\/[dg]p\/\w{10}\//.test(href)) { // not a product page links?
             return; // do nothing
         }
+        var custReview = /#customerReviews/.test(href) ? '#customerReviews' : ''
         if (/^\s*http/.test(href)) { // absolute link?
-            $(a).attr('href', href.replace(/(?<=\w)\/.*(\/[dg]p\/\w{10}\/).*/, '$1'));
+            $(a).attr('href', href.replace(/(?<=\w)\/.*(\/[dg]p\/\w{10}\/).*/, '$1') + custReview);
         } else {
-            $(a).attr('href', href.replace(/.*(\/[dg]p\/\w{10}\/).*/, '$1'));
+            $(a).attr('href', href.replace(/.*(\/[dg]p\/\w{10}\/).*/, '$1') + custReview);
         }
     }
 
@@ -44,7 +50,6 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     function addAmazonLinks(e, page) {
         // get price tag
         var price = $(e);
-
         // get the ASIN (product id)
         var asin;
         if (page == PAGE_PRODUCT) {
@@ -53,7 +58,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             if (price.parent().is('a')) { // un-link price tag
                 price.unwrap();
             }
-            asin = price.closest("li").attr('data-asin');
+            asin = price.closest('li[data-asin], div[data-asin]').attr('data-asin');
         } else {
             return; // unknown page
         }
@@ -106,13 +111,12 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         waitForKeyElements(PRICE_SELECTOR, (e) => addAmazonLinks(e, PAGE_PRODUCT));
         // auto selection of one-time buy option (instead of default: subscription)
         waitForKeyElements("#oneTimeBuyBox .a-accordion-radio", (e) => cb.clickElement(e));
-    } else if (/\/s\//.test(window.location.pathname)) { // search result
+    } else if (/\/s([/?].+)?$/.test(window.location.pathname)) { // search result
         // change price links (normally product link too) to keepa links
         waitForKeyElements(PRICE_SELECTOR_SEARCH, (e) => addAmazonLinks(e, PAGE_SEARCH));
-        // replace all product links with clean links
-        $('div.a-col-left a.a-link-normal,' // search result product image
-            + 'div.a-col-right a.s-access-detail-page') // search result product title
-            .each((i, a) => cleanLink(a));
+        // selectors for result product title links and images (for different types of result pages)
+        // replace all product links in search result with clean links
+        waitForKeyElements(LINK_SELECTORS_SEARCH, (e) => cleanLink(e));
     }
 
     smileRedirect();
