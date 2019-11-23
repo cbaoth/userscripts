@@ -4,7 +4,7 @@
 // @copyright   2015+, userscript@cbaoth.de
 //
 // @name        Amazon Tweaks
-// @version     0.11
+// @version     0.12
 // @description Some improvments to amazon shop pages
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/amazon-links.user.js
 //
@@ -49,7 +49,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // add links
     function addAmazonLinks(e, page) {
         // get price tag
-        var price = $(e);
+        var price = $(e).hasClass('a-price-whole') ? $(e).parent() : $(e);
         // get the ASIN (product id)
         var asin;
         if (page == PAGE_PRODUCT) {
