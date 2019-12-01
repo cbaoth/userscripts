@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        OpenProject Tweaks
-// @version     0.1.5
+// @version     0.1.6
 // @description Some tweaks for OpenProject
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/openproject-tweaks.user.js
 //
@@ -62,12 +62,15 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // user name found?
     if (MY_NAME !== undefined && MY_NAME != '') {
+        // highlight own user name
         SET_CSS_BY_TEXT_MATCH.push(["span.user > a" // activity details comments section
-            + ", span.assignee" // work_packages and activity details
             + ", span.author" // work_packages and activity details
             + ", user-link.user-link > a" // task created by (samll text on top)
             + ", user-link.user-link > a", // task created by (samll text on top)
-        [[new RegExp(MY_NAME), { "color": "rgb(11, 73, 191)", "animation": "blinker 1.5s linear infinite" }]]]);
+        [[new RegExp(MY_NAME), { "color": "rgb(11, 73, 191)" }]]]);
+        // additional color highlighting in case user name is assignee
+        SET_CSS_BY_TEXT_MATCH.push(["span.assignee",
+        [[new RegExp(MY_NAME), { "color": "rgb(255, 102, 65)", "animation": "blinker 1.5s linear infinite" }]]]);
     };
 
     /**
@@ -108,6 +111,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             + ", div.subject", // backlog
         [[/(\[[^\]]+\])/g, "$1", { "color": "rgb(11, 73, 191)" }],
         [/(\[Story\])/gi, "[STORY]", {}], // just upper case (style added with pattern above)
+        [/(\[concept\])/gi, "[Concept]", { "color": "rgb(32, 173, 147)" }],
+        [/(\[idea\])/gi, "[Idea]", { "color": "gray" }],
         [/(\*[^ ][^*]+[^ ]\*)/g, "$1", { "color": "rgb(255, 102, 65)" }]]], // make *bold* text orange
 
         // highlight / shorten tracker names (by type)
