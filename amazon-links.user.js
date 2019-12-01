@@ -4,7 +4,7 @@
 // @copyright   2015+, userscript@cbaoth.de
 //
 // @name        Amazon Tweaks
-// @version     0.12
+// @version     0.13
 // @description Some improvments to amazon shop pages
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/amazon-links.user.js
 //
@@ -103,6 +103,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     }
 
     function smileRedirect() {
+        // are we logged in? if not, don't redirect (won't work, infinite loop)
+        if ($('#nav-link-accountList[data-nav-role="signin"]').length) {
+            return;
+        }
         if (/^(www\.)?amazon.(\w+)/.test(window.location.hostname) && ! /^smile\./.test(window.location.hostname)) {
             var smileURL = toSmileURL(window.location.href);
             if (window.location.href != smileURL) {
@@ -111,16 +115,23 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         }
     }
 
+    // tweak pages, currently only
+    // smile rederict only on these pages (to be safe, pages might exist where this will not work)
     if (/\/[dg]p\/(product\/)?\w{10}([/?].+)?$/.test(window.location.pathname)) { // product page
+        // redirect to smile (if not already the case)
+        smileRedirect();
         waitForKeyElements(PRICE_SELECTOR, (e) => addAmazonLinks(e, PAGE_PRODUCT));
         // auto selection of one-time buy option (instead of default: subscription)
         waitForKeyElements("#oneTimeBuyBox .a-accordion-radio", (e) => cb.clickElement(e));
     } else if (/\/s([/?].+)?$/.test(window.location.pathname)) { // search result
+        // redirect to smile (if not already the case)
+        smileRedirect();
         // change price links (normally product link too) to keepa links
         waitForKeyElements(PRICE_SELECTOR_SEARCH, (e) => addAmazonLinks(e, PAGE_SEARCH));
         // replace all product links in search result with clean links
         waitForKeyElements(LINK_SELECTOR_SEARCH, (e) => cleanLink(e));
+    } else if (/\/gp\/cart\//.test(window.location.pathname)) { // shopping cart
+        // redirect to smile (if not already the case)
+        smileRedirect(); // most important smile redirect (checkout)
     }
-
-    smileRedirect();
 }());
