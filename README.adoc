@@ -68,6 +68,17 @@ image:copy-on-hover-media1.png[]
 image:gerrit-tweaks-code1.png[]
 
 
+=== Image Search Tweaks
+
+`link:image-search-tweaks.user.js[]` improves the https://images.google.com[google] and https://yandex.ru/images[yandex] image search.
+
+[cols="1,3",options="header"]
+|=======
+| Keys         | Action
+| alt-s        | Shuffle search result images footnote:[Only affets those images that are already loaded, to load more images page down first _(slowly, or you might end up with empty image frames only)_]
+|=======
+
+
 === IMDB Tweaks
 
 `link:imdb-tweaks.user.js[]` improves https://www.imdb.com/[imdb]:
