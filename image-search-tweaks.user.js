@@ -4,7 +4,7 @@
 // @copyright   2019+, userscript@cbaoth.de
 //
 // @name        Image Search Tweaks
-// @version     0.1
+// @version     0.2
 // @description Some tweaks for Google and Yandex Image Search
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/image-search-tweaks.user.js
 //
@@ -12,8 +12,8 @@
 // @include     //https://www.pinterest.com/search/pins/?*q=*
 // @include     https://www.google.com/search*tbm=isch*
 // @include     https://www.google.de/search*tbm=isch*
-// @include     https://yandex.ru/images/search*
-// @include     https://yandex.com/images/search*
+// @include     https://yandex.ru/images/*
+// @include     https://yandex.com/images/*
 //
 // @grant       none
 //
@@ -25,7 +25,7 @@
 
 this.$ = this.jQuery = jQuery.noConflict(true);
 
-(function() {
+(function () {
 
     const KEY_S = 82;
 
@@ -43,7 +43,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     if (/google/.test(window.location.hostname)) {
         cb.bindKeyDown(KEY_S, () => shuffleResult('div[data-async-rclass="search"]', 'div'), { mods: { alt: true }, skipEditable: true });
     } else if (/yandex/.test(window.location.hostname)) {
-        cb.bindKeyDown(KEY_S, () => shuffleResult('div.serp-list', 'div'), { mods: { alt: true }, skipEditable: true });
+        cb.bindKeyDown(KEY_S, () => shuffleResult('div.serp-list, div.cl-masonry', 'div'), { mods: { alt: true }, skipEditable: true });
     }
 
 })();
