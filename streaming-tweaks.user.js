@@ -4,12 +4,12 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.14
+// @version     0.1.15
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
 // @include     /^https?://www\.netflix\.com/watch//
-// @include     /^https?://(www|smile)\.amazon\.(de|com)/gp/video/
+// @include     /^https?://(www|smile)\.amazon\.(de|com)/(.*/)*[dg]p//
 // @include     /^https?://www\.youtube\.com/watch/
 // @include     https://open.spotify.com/*
 //
@@ -106,7 +106,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // register netflix tweaks
     function netflixTweaksReg() {
         // auto skip intro/credits
-        const NETFLIX_SEL_SKIP = `.skip-credits > a > span, .WatchNext-still-container`;
+        const NETFLIX_SEL_SKIP = `.skip-credits > a > span, .WatchNext-still-container, button[data-uia='next-episode-seamless-button']`;
 
         // GM_config
         const GM_CONFIG_ID = 'StreamingTweaks_Netflix_Config'
