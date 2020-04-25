@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        IMDB Tweaks
-// @version     0.1.15
+// @version     0.1.16
 // @description Some tweaks for IMDB
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/imdb-tweaks.user.js
 //
@@ -118,9 +118,19 @@ $ = jQuery = jQuery.noConflict(true);
         }
     }
 
+    // star change style update on input style change
+    var scObserver = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutationRecord) {
+            updateMyStarStyle();
+        });
+    });
 
-    function updateMyStarStyle() {
+    // update style of own rating stars and add change listener (first time only)
+    function updateMyStarStyle(firstTime = false) {
         $('label.ipl-rating-interactive__star-container svg.ipl-star-icon').each(function(i, svg) {
+            if (firstTime) { // first time (element creation)? add style change observer
+                scObserver.observe($(svg).closest('label')[0], { attributes : true, attributeFilter : ['style'] });
+            }
             var ratingDiv = $(svg).parent().siblings("span.ipl-rating-star__rating")[0];
             if (ratingDiv === undefined) {
                 return;
@@ -238,7 +248,7 @@ $ = jQuery = jQuery.noConflict(true);
             addSeasonAvgRating();
 
             // update my rating star style
-            updateMyStarStyle();
+            updateMyStarStyle(true);
 
             // add episode number to title
             $('.eplist .list_item').each((i, e) => {
