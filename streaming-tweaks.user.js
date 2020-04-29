@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.16
+// @version     0.1.17
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -257,7 +257,23 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     function disneyPlusTweaksReg() {
         // auto skip intro/credits
         const DISNEY_FS = `button.fullscreen-icon, button.exit-fullscreen-icon`;
+        const DISNEY_RWD = `button.rwd-10sec-icon`;
+        const DISNEY_FF = `button.ff-10sec-icon`;
+
+        // keys: f -> toggle fullscreen
         cb.bindKeyDown(KEY_F, () => cb.clickElement($(DISNEY_FS)[0]), { skipEditable: true });
+        // keys: shift+left/+right -> skip +/-1min
+        cb.bindKeyDown(KEY_LEFT, () => cb.clickElement($(DISNEY_RWD)[0] ,6),
+                       { mods:{ shift: true }, skipEditable: true });
+        cb.bindKeyDown(KEY_RIGHT, () => cb.clickElement($(DISNEY_FF)[0], 6),
+                       { mods:{ shift: true }, skipEditable: true });
+        // keys: ctrl+left/+right -> skip +/-10min
+        cb.bindKeyDown(KEY_LEFT, () => cb.clickElement($(DISNEY_RWD)[0], 60),
+                       { mods:{ ctrl: true }, skipEditable: true });
+        cb.bindKeyDown(KEY_RIGHT, () => cb.clickElement($(DISNEY_FF)[0], 60),
+                       { mods:{ ctrl: true }, skipEditable: true });
+
+        cb.bindKeyDown(() => cb.clickElement($()))
     }
 
 

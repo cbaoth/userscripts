@@ -221,6 +221,10 @@ Improvements to the https://disneyplus.com[Disney+] web player:
 [cols="1,3",options="header"]
 |=======
 | Keys         | Action
+| Shift-Right  | Fast-forward 1min
+| Shift-Left   | Rewind 1min
+| Ctrl-Right   | Fast-forward 10min
+| Ctrl-Left    | Rewind 10min
 | F            | Toggle fullscreen
 |=======
 
