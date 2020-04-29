@@ -4,13 +4,14 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.15
+// @version     0.1.16
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
 // @include     /^https?://www\.netflix\.com/watch//
 // @include     /^https?://(www|smile)\.amazon\.(de|com)/(.*/)*[dg]p//
 // @include     /^https?://www\.youtube\.com/watch/
+// @include     /^https?://www\.disneyplus\.com/video//
 // @include     https://open.spotify.com/*
 //
 // @grant       none
@@ -37,7 +38,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const KEY_EQUAL = 187
     const KEY_R = 82
     const KEY_S = 83
-    //const KEY_F = 70
+    const KEY_F = 70
     const KEY_F12 = 123
 
     // register amazon tweaks
@@ -252,6 +253,14 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     }
 
 
+    // register disney+ tweaks
+    function disneyPlusTweaksReg() {
+        // auto skip intro/credits
+        const DISNEY_FS = `button.fullscreen-icon, button.exit-fullscreen-icon`;
+        cb.bindKeyDown(KEY_F, () => cb.clickElement($(DISNEY_FS)[0]), { skipEditable: true });
+    }
+
+
     // register spotify tweaks
     function spotifyTweaksReg() {
         // keys: ./, -> next/previous track
@@ -275,6 +284,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         netflixTweaksReg();
     } else if (/youtube/.test(window.location.host)) { // YouTube
         youtubeTweaksReg();
+    } else if (/disneyplus/.test(window.location.host)) { // Disney+
+        disneyPlusTweaksReg();
     } else if (/spotify/.test(window.location.host)) { // Spotify
         spotifyTweaksReg();
     }
