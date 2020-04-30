@@ -227,6 +227,7 @@ Improvements to the https://disneyplus.com[Disney+] web player:
 | Ctrl-Left    | Rewind 10min
 | F            | Toggle fullscreen
 | S            | Skip intro/outro (if auto-skip is off)
+| BACKSPACE    | Exit player
 | Alt-F12      | Open script configuration (ESC to close)
 |=======
 
