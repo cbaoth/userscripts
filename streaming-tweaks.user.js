@@ -4,14 +4,14 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.17
+// @version     0.1.18
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
 // @include     /^https?://www\.netflix\.com/watch//
 // @include     /^https?://(www|smile)\.amazon\.(de|com)/(.*/)*[dg]p//
 // @include     /^https?://www\.youtube\.com/watch/
-// @include     /^https?://www\.disneyplus\.com/video//
+// @include     /^https?://www\.disneyplus\.com//
 // @include     https://open.spotify.com/*
 //
 // @grant       none
@@ -39,6 +39,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const KEY_R = 82
     const KEY_S = 83
     const KEY_F = 70
+    const KEY_BACKSPACE = 8
     const KEY_F12 = 123
 
     // register amazon tweaks
@@ -259,6 +260,40 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         const DISNEY_FS = `button.fullscreen-icon, button.exit-fullscreen-icon`;
         const DISNEY_RWD = `button.rwd-10sec-icon`;
         const DISNEY_FF = `button.ff-10sec-icon`;
+        const DISNEY_RETURN = `button.control-icon-btn.back-arrow`;
+        //const DISNEY_SEARCH = `a[data-route="SEARCH"]`
+        const DISNEY_SKIP_INTRO = `button.skip__button`;
+        const DISNEY_SKIP_NEXT = `div[role=alert] button.play`;
+        const DISNEY_SKIP = DISNEY_SKIP_INTRO + ", " + DISNEY_SKIP_NEXT;
+
+        // GM_config
+        const GM_CONFIG_ID = 'StreamingTweaks_DisneyPlus_Config'
+        const GM_CONFIG_FIELDS = {
+            'dn-auto-skip': {
+                'label': 'Auto Skip Intro/Outro',
+                'type': 'checkbox',
+                'default': true
+            }
+        }
+        GM_config.init({
+            'id': GM_CONFIG_ID,
+            'title': 'Streaming Tweaks - Disney+ Config (next episode)',
+            'fields': GM_CONFIG_FIELDS,
+            'events': {
+                'open': function(doc) {
+                    var config = this;
+                    doc.getElementById(config.id + '_closeBtn').textContent = 'Cancel';
+                },
+                'save': function(values) {
+                    var config = this;
+                    config.close();
+                }
+            }
+        });
+        // hot-key alt-F12 / ESC -> Open / close config dialog
+        cb.bindKeyDown(KEY_F12, () => GM_config.open(), { mods: { alt: true } });
+        cb.bindKeyDown(KEY_ESC, () => { $('#' + GM_CONFIG_ID).length && GM_config.close() }, { skipEditable: true });
+
 
         // keys: f -> toggle fullscreen
         cb.bindKeyDown(KEY_F, () => cb.clickElement($(DISNEY_FS)[0]), { skipEditable: true });
@@ -272,8 +307,15 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                        { mods:{ ctrl: true }, skipEditable: true });
         cb.bindKeyDown(KEY_RIGHT, () => cb.clickElement($(DISNEY_FF)[0], 60),
                        { mods:{ ctrl: true }, skipEditable: true });
+        // keys: BACKSPACE -> exit playback
+        cb.bindKeyDown(KEY_BACKSPACE, () => cb.clickElement($(DISNEY_RETURN)[0]), { skipEditable: true });
+        // keys: s-> skip (e.g. intro)
+        cb.bindKeyDown(KEY_S, () => cb.clickElement($(DISNEY_SKIP)[0]), { skipEditable: true });
+        //// keys: s -> search
+        //cb.bindKeyDown(KEY_S, () => cb.clickElement($(DISNEY_SEARCH).children()[0]), { skipEditable: true });
 
-        cb.bindKeyDown(() => cb.clickElement($()))
+        // wait for skip elements (intro/outro) to appear, then skip
+        cb.waitAndThrottle(DISNEY_SKIP, (e) => { GM_config.get('dn-auto-skip') && $(e).click(); }, 2000, { tailing: false });
     }
 
 

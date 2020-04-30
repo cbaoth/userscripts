@@ -226,7 +226,12 @@ Improvements to the https://disneyplus.com[Disney+] web player:
 | Ctrl-Right   | Fast-forward 10min
 | Ctrl-Left    | Rewind 10min
 | F            | Toggle fullscreen
+| S            | Skip intro/outro (if auto-skip is off)
+| Alt-F12      | Open script configuration (ESC to close)
 |=======
+
+* Configuration for:
+** Auto-skip intro and outro/to next episode (default: true)
 
 ==== Spotify
 
