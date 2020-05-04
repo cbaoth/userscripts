@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        IMDB Tweaks
-// @version     0.1.17
+// @version     0.1.18
 // @description Some tweaks for IMDB
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/imdb-tweaks.user.js
 //
@@ -19,9 +19,9 @@
 // @require     https://openuserjs.org/src/libs/sizzle/GM_config.min.js
 // ==/UserScript==
 
+// TODO update average rating and star style when my ratings change
 // TODO add glow to 10 star rating
 // TODO consider changing star style inside rating widget
-// TODO cleanup, especially redundant code
 
 $ = jQuery = jQuery.noConflict(true);
 
@@ -79,12 +79,16 @@ $ = jQuery = jQuery.noConflict(true);
         $(svg).children("path").attr("filter", `url(#${id})`);
     }
 
-    function starSetStyle(star, rating, { isAverage=false, dim=false } = {}) {
+    function starSetStyle(star, rating, { isAverage=false, light=false } = {}) {
         var svg = $(star);
 
         function _fill(color) {
             svg.attr("fill", color);
             svg.css("fill", color);
+        }
+
+        if (light) {
+            svg.css('opacity', '0.5');
         }
 
         switch (Math.floor(rating)) {
@@ -93,22 +97,21 @@ $ = jQuery = jQuery.noConflict(true);
             case 2:
             case 3:
             case 4: // light gray
-                _fill(dim ? "#bcbcbc" : "#d1d1d1");
-                //svg.css('opacity', '0.5');
+                _fill("#d1d1d1");
                 break;
             case 5:
             case 6: // gray
-                _fill(dim ? "#959595" : "#a6a6a6");
+                _fill("#a6a6a6");
                 break;
             case 7: // blue
-                _fill(dim ? "#8da4f3" : "#4268f1");
+                _fill("#4268f1");
                 break;
             case 8:
             case 9: // gold
-                _fill(dim ? "#c39400" : "#ffa826");
+                _fill("#ffa826");
                 break;
             case 10: // gold and large
-                _fill(dim ? "#c39400" : "#ffa826");
+                _fill("#ffa826");
                 svg.css("width", isAverage ? "2em" : "1.75em");
                 svg.css("height", isAverage ? "2em" : "1.75em");
                 //svgGlowFilter(myStar); // TODO
@@ -133,7 +136,7 @@ $ = jQuery = jQuery.noConflict(true);
                 return;
             }
             var rating = parseInt(ratingDiv.textContent);
-            starSetStyle(svg, rating, { dim: true });
+            starSetStyle(svg, rating, { light: true });
         });
     }
 
@@ -163,7 +166,7 @@ $ = jQuery = jQuery.noConflict(true);
             return;
         }
         var rating = parseInt(ratingSpan.textContent);
-        starSetStyle(svg, rating, { isAverage: true, dim: true });
+        starSetStyle(svg, rating, { isAverage: true, light: true });
     }
 
     function addSeasonAvgRating() {
