@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        IMDB Tweaks
-// @version     0.1.16
+// @version     0.1.17
 // @description Some tweaks for IMDB
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/imdb-tweaks.user.js
 //
@@ -19,9 +19,9 @@
 // @require     https://openuserjs.org/src/libs/sizzle/GM_config.min.js
 // ==/UserScript==
 
-// TODO update average rating and star style when my ratings change
 // TODO add glow to 10 star rating
 // TODO consider changing star style inside rating widget
+// TODO cleanup, especially redundant code
 
 $ = jQuery = jQuery.noConflict(true);
 
@@ -79,38 +79,38 @@ $ = jQuery = jQuery.noConflict(true);
         $(svg).children("path").attr("filter", `url(#${id})`);
     }
 
-    function myStarSetStyle(myStar, myRating, isAverageStar=false) {
-        var svg = $(myStar);
+    function starSetStyle(star, rating, { isAverage=false, dim=false } = {}) {
+        var svg = $(star);
 
         function _fill(color) {
             svg.attr("fill", color);
             svg.css("fill", color);
         }
 
-        switch (Math.floor(myRating)) {
+        switch (Math.floor(rating)) {
             case 0:
             case 1:
             case 2:
             case 3:
             case 4: // light gray
-                _fill("#d1d1d1");
+                _fill(dim ? "#bcbcbc" : "#d1d1d1");
                 //svg.css('opacity', '0.5');
                 break;
             case 5:
             case 6: // gray
-                _fill("#a6a6a6");
+                _fill(dim ? "#959595" : "#a6a6a6");
                 break;
             case 7: // blue
-                _fill("#4268f1");
+                _fill(dim ? "#8da4f3" : "#4268f1");
                 break;
             case 8:
             case 9: // gold
-                _fill("#ffa826");
+                _fill(dim ? "#c39400" : "#ffa826");
                 break;
             case 10: // gold and large
-                _fill("#ffa826");
-                svg.css("width", isAverageStar ? "2em" : "1.75em");
-                svg.css("height", isAverageStar ? "2em" : "1.75em");
+                _fill(dim ? "#c39400" : "#ffa826");
+                svg.css("width", isAverage ? "2em" : "1.75em");
+                svg.css("height", isAverage ? "2em" : "1.75em");
                 //svgGlowFilter(myStar); // TODO
                 break;
             default:
@@ -125,6 +125,18 @@ $ = jQuery = jQuery.noConflict(true);
         });
     });
 
+    // update style of user rating stars
+    function updateUserStarStyle() {
+        $('div.ipl-rating-widget > div.ipl-rating-star  svg.ipl-star-icon').each(function(i, svg) {
+            var ratingDiv = $(svg).parent().siblings("span.ipl-rating-star__rating")[0];
+            if (ratingDiv === undefined) {
+                return;
+            }
+            var rating = parseInt(ratingDiv.textContent);
+            starSetStyle(svg, rating, { dim: true });
+        });
+    }
+
     // update style of own rating stars and add change listener (first time only)
     function updateMyStarStyle(firstTime = false) {
         $('label.ipl-rating-interactive__star-container svg.ipl-star-icon').each(function(i, svg) {
@@ -136,10 +148,23 @@ $ = jQuery = jQuery.noConflict(true);
                 return;
             }
             var rating = parseInt(ratingDiv.textContent);
-            myStarSetStyle(svg, rating);
+            starSetStyle(svg, rating);
         });
     }
 
+    function updateUserAvgRatingStarStyle() {
+        var ratingDivParent = $("div.avg-rating-star")[0];
+        if (ratingDivParent === undefined) {
+            return;
+        }
+        var svg = $(ratingDivParent).find("svg.ipl-icon")[0];
+        var ratingSpan = $(ratingDivParent).find("span.avg-rating")[0];
+        if (ratingSpan === undefined) {
+            return;
+        }
+        var rating = parseInt(ratingSpan.textContent);
+        starSetStyle(svg, rating, { isAverage: true, dim: true });
+    }
 
     function addSeasonAvgRating() {
         var episodeCount = $('div.eplist .list_item').length;
@@ -168,8 +193,8 @@ $ = jQuery = jQuery.noConflict(true);
         var ratingDiv = header.parent();
         header.wrap('<span style="display: table-cell;vertical-align:top;"></span>');
 
-        var tDiv = '<div style="display: table-cell; vertical-align:middle; padding-left: 1em; font-size: 1.2em;"><div style="display: table-row;"></div></div>';
-        var tSpan = '<span style="display:table-cell; vertical-align:middle;"></span>';
+        var tDiv = '<div class="avg-rating-star" style="display: table-cell; vertical-align:middle; padding-left: 1em; font-size: 1.2em;"><div style="display: table-row;"></div></div>';
+        var tSpan = '<span class="avg-rating" style="display:table-cell; vertical-align:middle;"></span>';
         var starSvg = $('svg.ipl-star-icon')[0];
         var starBorderSvg = $('svg.ipl-star-border-icon')[0];
 
@@ -205,7 +230,7 @@ $ = jQuery = jQuery.noConflict(true);
         var myStar;
         if (myAvgRating > 0) {
             myStar = $(starSvg).clone();
-            myStarSetStyle(myStar, myAvgRating, true);
+            starSetStyle(myStar, myAvgRating, { isAverage: true });
             myAvgRatingSpan.append(Number.parseFloat(myAvgRating).toPrecision(2));
             myAvgRatingDiv.children('div').append(myStar);
             myAvgRatingDiv.children('div').append(myAvgRatingSpan);
@@ -247,7 +272,9 @@ $ = jQuery = jQuery.noConflict(true);
             // add season average rating
             addSeasonAvgRating();
 
-            // update my rating star style
+            // update user and own rating star style
+            updateUserAvgRatingStarStyle();
+            updateUserStarStyle();
             updateMyStarStyle(true);
 
             // add episode number to title
