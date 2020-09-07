@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.18
+// @version     0.1.19
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -35,7 +35,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const KEY_SLASH = 191
     const KEY_BRACKET_LEFT = 219
     const KEY_BRACKET_RIGHT = 221
-    const KEY_EQUAL = 187
+    const KEY_EQUAL = 61
     const KEY_R = 82
     const KEY_S = 83
     const KEY_F = 70
@@ -243,9 +243,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         // keys: . -> next video, , -> previous video
         cb.bindKeyDown(KEY_PERIOD, () => ytplayer.nextVideo(), { skipEditable: true });
         cb.bindKeyDown(KEY_COMMA, () => ytplayer.previousVideo(), { skipEditable: true });
-        // keys: ]/[/= -> playback speed up / down / reset to default (1)
+        // keys: ]/[ -> playback speed up / down
         cb.bindKeyDown(KEY_BRACKET_RIGHT, () => ytRateChange(true), { skipEditable: true });
         cb.bindKeyDown(KEY_BRACKET_LEFT, () => ytRateChange(false), { skipEditable: true });
+        // keys: shift+]/[ -> playback speed up to max / down to min
+        cb.bindKeyDown(KEY_BRACKET_RIGHT, () => ytplayer.setPlaybackRate(2), { mods:{ shift: true }, skipEditable: true });
+        cb.bindKeyDown(KEY_BRACKET_LEFT, () => ytplayer.setPlaybackRate(0.25), { mods:{ shift: true }, skipEditable: true });
+        // keys: = -> playback speed back to default (1)
         cb.bindKeyDown(KEY_EQUAL, () => ytplayer.setPlaybackRate(1), { skipEditable: true });
         // TODO, don't seem to work / be supported atm.
         // keys: ' or / -> hide / show controls

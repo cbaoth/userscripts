@@ -202,9 +202,11 @@ Improvements to https://www.youtube.com:[YouTube]:
 | Ctrl-Left    | Rewind 10min
 | . _(period)_ | Next video
 | , _(comma)_  | Previous video _(playlist only)_
+| =            | Default playback rate (1x)
 | ]            | Increase playback rate (up to 2x)
 | [            | Decrease playback rate (down to 0.25x)
-| =            | Default playback rate (1x)
+| Shift-]      | Increase playback rate max (2x)
+| Shift-[      | Decrease playback rate min (0.25x)
 | Alt-F12      | Open script configuration (ESC to close)
 |=======
 
