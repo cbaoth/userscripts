@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.20
+// @version     0.1.21
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -205,7 +205,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
         // tooltip
         function showTT(msg) {
-            cb.createTT(msg, 1500, { offsetX: 50, offsetY: 100, offsetMouse: false, css:{ "font-size": "2em" }});
+            cb.createTT(msg, 500, { offsetX: 50, offsetY: 100, offsetMouse: false, fadeoutTime: 500, css:{ "font-size": "2em" }});
         }
 
         var ytplayer = document.getElementById('movie_player') || document.getElementsByTagName('embed')[0];
