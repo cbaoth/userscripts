@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.21
+// @version     0.1.22
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -36,6 +36,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const KEY_BRACKET_LEFT = 219
     const KEY_BRACKET_RIGHT = 221
     const KEY_EQUAL = 61
+    const KEY_EQUAL_SIGN = 187
     const KEY_R = 82
     const KEY_S = 83
     const KEY_F = 70
@@ -260,6 +261,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                        { mods:{ shift: true }, skipEditable: true });
         // keys: = -> playback speed back to default (1)
         cb.bindKeyDown(KEY_EQUAL, () => { showTT('Speed: '+1+"x"); ytplayer.setPlaybackRate(1); },
+                       { skipEditable: true });
+        cb.bindKeyDown(KEY_EQUAL_SIGN, () => { showTT('Speed: '+1+"x"); ytplayer.setPlaybackRate(1); },
                        { skipEditable: true });
         // TODO, don't seem to work / be supported atm.
         // keys: ' or / -> hide / show controls
