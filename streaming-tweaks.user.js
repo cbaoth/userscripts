@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.22
+// @version     0.1.23
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -40,6 +40,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const KEY_R = 82
     const KEY_S = 83
     const KEY_F = 70
+    const KEY_U = 85
+    const KEY_D = 68
     const KEY_BACKSPACE = 8
     const KEY_F12 = 123
 
@@ -205,8 +207,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         cb.bindKeyDown(KEY_ESC, () => { $('#' + GM_CONFIG_ID).length && GM_config.close() }, { skipEditable: true });
 
         // tooltip
-        function showTT(msg) {
-            cb.createTT(msg, 500, { offsetX: 50, offsetY: 100, offsetMouse: false, fadeoutTime: 500, css:{ "font-size": "2em" }});
+        function ytShowTT(msg, color="white") {
+            cb.createTT(msg, 500, { offsetX: 50, offsetY: 100, offsetMouse: false, fadeoutTime: 500, css:{ "font-size": "2em", "color": color }});
         }
 
         var ytplayer = document.getElementById('movie_player') || document.getElementsByTagName('embed')[0];
@@ -221,14 +223,29 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             if (up) {
                 if (idx < PLAYBACK_RATES.length-1) {
                     ytplayer.setPlaybackRate(PLAYBACK_RATES[idx+1]);
-                    showTT('Speed: '+PLAYBACK_RATES[idx+1]+"x");
+                    ytShowTT('Speed: '+PLAYBACK_RATES[idx+1]+"x");
+                } else {
+                    ytShowTT('Speed: '+PLAYBACK_RATES[idx]+"x <i><span style='font-size: 0.7em;'>(unchanged)</span></i>", "grey");
                 }
             } else {
                 if (idx > 0) {
                     ytplayer.setPlaybackRate(PLAYBACK_RATES[idx-1]);
-                    showTT('Speed: '+PLAYBACK_RATES[idx-1]+"x");
+                    ytShowTT('Speed: '+PLAYBACK_RATES[idx-1]+"x");
+                } else {
+                    ytShowTT('Speed: '+PLAYBACK_RATES[idx]+"x <i><span style='font-size: 0.7em;'>(unchanged)</span></i>", "grey");
                 }
             }
+        }
+
+        function ytToggleThumb(up)
+        {
+            var button = $('div#top-level-buttons.ytd-menu-renderer yt-icon.ytd-toggle-button-renderer').parent('button')[(up ? 0 : 1)];
+            if ($(button).parent('yt-icon-button').hasClass('style-default-active')) {
+                ytShowTT('Thumb '+(up ? 'Up' : 'Down')+" <i><span style='font-size: 0.7em;'>(unset)</span></i>", 'grey');
+            } else {
+                ytShowTT('Thumb '+(up ? 'Up' : 'Down'), (up ? 'lime' : 'red'));
+            }
+            button.click();
         }
 
         // set configured default playback rate
@@ -255,14 +272,19 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         cb.bindKeyDown(KEY_BRACKET_RIGHT, () => ytRateChange(true), { skipEditable: true });
         cb.bindKeyDown(KEY_BRACKET_LEFT, () => ytRateChange(false), { skipEditable: true });
         // keys: shift+]/[ -> playback speed up to max / down to min
-        cb.bindKeyDown(KEY_BRACKET_RIGHT, () => { showTT('Speed: '+2+"x"); ytplayer.setPlaybackRate(2); },
+        cb.bindKeyDown(KEY_BRACKET_RIGHT, () => { ytShowTT('Speed: '+2+'x'); ytplayer.setPlaybackRate(2); },
                        { mods:{ shift: true }, skipEditable: true });
-        cb.bindKeyDown(KEY_BRACKET_LEFT, () => { showTT('Speed: '+0.25+"x"); ytplayer.setPlaybackRate(0.25); },
+        cb.bindKeyDown(KEY_BRACKET_LEFT, () => { ytShowTT('Speed: '+0.25+'x'); ytplayer.setPlaybackRate(0.25); },
                        { mods:{ shift: true }, skipEditable: true });
         // keys: = -> playback speed back to default (1)
-        cb.bindKeyDown(KEY_EQUAL, () => { showTT('Speed: '+1+"x"); ytplayer.setPlaybackRate(1); },
+        cb.bindKeyDown(KEY_EQUAL, () => { ytShowTT('Speed: '+1+'x'); ytplayer.setPlaybackRate(1); },
                        { skipEditable: true });
-        cb.bindKeyDown(KEY_EQUAL_SIGN, () => { showTT('Speed: '+1+"x"); ytplayer.setPlaybackRate(1); },
+        cb.bindKeyDown(KEY_EQUAL_SIGN, () => { ytShowTT('Speed: '+1+'x'); ytplayer.setPlaybackRate(1); },
+                       { skipEditable: true });
+        // keys: u/d -> toggle thumbs up/down
+        cb.bindKeyDown(KEY_U, () => { ytToggleThumb(true) },
+                       { skipEditable: true });
+        cb.bindKeyDown(KEY_D, () => { ytToggleThumb(false) },
                        { skipEditable: true });
         // TODO, don't seem to work / be supported atm.
         // keys: ' or / -> hide / show controls

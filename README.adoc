@@ -207,6 +207,9 @@ Improvements to https://www.youtube.com:[YouTube]:
 | [            | Decrease playback rate (down to 0.25x)
 | Shift-]      | Increase playback rate max (2x)
 | Shift-[      | Decrease playback rate min (0.25x)
+| U            | Toggle thumb up
+| D            | Toggle thumb down
+| Shift-[      | Decrease playback rate min (0.25x)
 | Alt-F12      | Open script configuration (ESC to close)
 |=======
 
