@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.23
+// @version     0.1.24
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -219,32 +219,64 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
         function ytRateChange(up)
         {
-            var idx = PLAYBACK_RATES.indexOf(ytplayer.getPlaybackRate())
-            if (up) {
-                if (idx < PLAYBACK_RATES.length-1) {
-                    ytplayer.setPlaybackRate(PLAYBACK_RATES[idx+1]);
-                    ytShowTT('Speed: '+PLAYBACK_RATES[idx+1]+"x");
-                } else {
-                    ytShowTT('Speed: '+PLAYBACK_RATES[idx]+"x <i><span style='font-size: 0.7em;'>(unchanged)</span></i>", "grey");
-                }
-            } else {
-                if (idx > 0) {
-                    ytplayer.setPlaybackRate(PLAYBACK_RATES[idx-1]);
-                    ytShowTT('Speed: '+PLAYBACK_RATES[idx-1]+"x");
-                } else {
-                    ytShowTT('Speed: '+PLAYBACK_RATES[idx]+"x <i><span style='font-size: 0.7em;'>(unchanged)</span></i>", "grey");
-                }
+            if (ytplayer === undefined) {
+                ytShowTT('NOT READY YET', 'darkred');
+                return
+            }
+            var rateCurrent = ytplayer.getPlaybackRate();
+            var idx = PLAYBACK_RATES.indexOf(rateCurrent);
+            var rate, rateColor;
+            if ((up && idx < PLAYBACK_RATES.length-1) || (!up && idx > 0)) { // +/-
+                rate = PLAYBACK_RATES[idx+(up ? +1 : -1)];
+                rateColor = (rate == 1 ? 'white' : (rate > 1 ? '#99ff99' : '#ff9999'));
+                var diff = rate - rateCurrent;
+                var diffColor = (diff > 0 ? '#b3e6b3' : '#e6b3b3');
+                var diffSign = (diff > 0 ? '+' : '');
+                ytShowTT(`<div style="display:table;">Speed: <span style="color: ${rateColor}">${rate}x&nbsp;</span>
+                            <i><span style="font-size: 0.5em; color: ${diffColor}; display:table-cell; vertical-align: middle;">[${diffSign}${diff}]</span></i></div>`);
+            } else { // unchanged
+                rate = PLAYBACK_RATES[idx];
+                rateColor = (rate == 1 ? 'white' : (rate > 1 ? '#99ff99' : '#ff9999'));
+                ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x&nbsp;</span>`);
+            }
+            ytplayer.setPlaybackRate(rate);
+        }
+
+        function ytRateSet(rate=1)
+        {
+            if (ytplayer === undefined) {
+                ytShowTT('NOT READY YET', 'darkred');
+                return
+            }
+            var rateCurrent = ytplayer.getPlaybackRate();
+            var rateColor = (rate == 1 ? 'white' : (rate > 1 ? '#99ff99' : '#ff9999'));
+            if (rate == rateCurrent) { // unchanged
+                ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x&nbsp;</span>`);
+            } else { // set new (different) rate
+                var diff = rate - rateCurrent;
+                var diffColor = (diff > 0 ? '#b3e6b3' : '#e6b3b3');
+                var diffSign = (diff > 0 ? '+' : '');
+                ytShowTT(`<div style="display:table;">Speed: <span style="color: ${rateColor}">${rate}x&nbsp;</span>
+                            <i><span style="font-size: 0.5em; color: ${diffColor}; display:table-cell; vertical-align: middle;">[${diffSign}${diff}]</span></i></div>`);
+                ytplayer.setPlaybackRate(rate);
             }
         }
 
         function ytToggleThumb(up)
         {
             var button = $('div#top-level-buttons.ytd-menu-renderer yt-icon.ytd-toggle-button-renderer').parent('button')[(up ? 0 : 1)];
-            if ($(button).parent('yt-icon-button').hasClass('style-default-active')) {
-                ytShowTT('Thumb '+(up ? 'Up' : 'Down')+" <i><span style='font-size: 0.7em;'>(unset)</span></i>", 'grey');
-            } else {
-                ytShowTT('Thumb '+(up ? 'Up' : 'Down'), (up ? 'lime' : 'red'));
+            if (button === undefined) {
+                ytShowTT('NOT READY YET', 'darkred');
+                return;
             }
+            var thumbColor = (up ? 'lime' : 'red');
+            var thumbText = 'Thumb ' + (up ? 'Up' : 'Down');
+            if ($(button).parent('yt-icon-button').hasClass('style-default-active')) {
+                ytShowTT(thumbText + " <i><span style='font-size: 0.7em; color: darkgrey;'>[unset]</span></i>");
+            } else {
+                ytShowTT(thumbText, thumbColor);
+            }
+            debugger;
             button.click();
         }
 
@@ -272,14 +304,14 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         cb.bindKeyDown(KEY_BRACKET_RIGHT, () => ytRateChange(true), { skipEditable: true });
         cb.bindKeyDown(KEY_BRACKET_LEFT, () => ytRateChange(false), { skipEditable: true });
         // keys: shift+]/[ -> playback speed up to max / down to min
-        cb.bindKeyDown(KEY_BRACKET_RIGHT, () => { ytShowTT('Speed: '+2+'x'); ytplayer.setPlaybackRate(2); },
+        cb.bindKeyDown(KEY_BRACKET_RIGHT, () => { ytRateSet(2) },
                        { mods:{ shift: true }, skipEditable: true });
-        cb.bindKeyDown(KEY_BRACKET_LEFT, () => { ytShowTT('Speed: '+0.25+'x'); ytplayer.setPlaybackRate(0.25); },
+        cb.bindKeyDown(KEY_BRACKET_LEFT, () => { ytRateSet(0.25) },
                        { mods:{ shift: true }, skipEditable: true });
         // keys: = -> playback speed back to default (1)
-        cb.bindKeyDown(KEY_EQUAL, () => { ytShowTT('Speed: '+1+'x'); ytplayer.setPlaybackRate(1); },
+        cb.bindKeyDown(KEY_EQUAL, () => { ytRateSet() },
                        { skipEditable: true });
-        cb.bindKeyDown(KEY_EQUAL_SIGN, () => { ytShowTT('Speed: '+1+'x'); ytplayer.setPlaybackRate(1); },
+        cb.bindKeyDown(KEY_EQUAL_SIGN, () => { ytRateSet() },
                        { skipEditable: true });
         // keys: u/d -> toggle thumbs up/down
         cb.bindKeyDown(KEY_U, () => { ytToggleThumb(true) },
