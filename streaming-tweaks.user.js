@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.24
+// @version     0.1.26
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -207,8 +207,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         cb.bindKeyDown(KEY_ESC, () => { $('#' + GM_CONFIG_ID).length && GM_config.close() }, { skipEditable: true });
 
         // tooltip
-        function ytShowTT(msg, color="white") {
-            cb.createTT(msg, 500, { offsetX: 50, offsetY: 100, offsetMouse: false, fadeoutTime: 500, css:{ "font-size": "2em", "color": color }});
+        function ytShowTT(msg, color="white", size="2em") {
+            cb.createTT(msg, 500, { offsetX: 50, offsetY: 100, offsetMouse: false, fadeoutTime: 500, css:{ "font-size": size, "color": color }});
         }
 
         var ytplayer = document.getElementById('movie_player') || document.getElementsByTagName('embed')[0];
@@ -220,7 +220,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         function ytRateChange(up)
         {
             if (ytplayer === undefined) {
-                ytShowTT('NOT READY YET', 'darkred');
+                ytShowTT(`<i>NOT READY YET</i>`, 'darkred');
                 return
             }
             var rateCurrent = ytplayer.getPlaybackRate();
@@ -232,12 +232,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 var diff = rate - rateCurrent;
                 var diffColor = (diff > 0 ? '#b3e6b3' : '#e6b3b3');
                 var diffSign = (diff > 0 ? '+' : '');
-                ytShowTT(`<div style="display:table;">Speed: <span style="color: ${rateColor}">${rate}x&nbsp;</span>
-                            <i><span style="font-size: 0.5em; color: ${diffColor}; display:table-cell; vertical-align: middle;">[${diffSign}${diff}]</span></i></div>`);
+                ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span>`);
             } else { // unchanged
                 rate = PLAYBACK_RATES[idx];
                 rateColor = (rate == 1 ? 'white' : (rate > 1 ? '#99ff99' : '#ff9999'));
-                ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x&nbsp;</span>`);
+                ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span></span> already set</i>`, 'darkgrey', '1em');
             }
             ytplayer.setPlaybackRate(rate);
         }
@@ -245,39 +244,49 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         function ytRateSet(rate=1)
         {
             if (ytplayer === undefined) {
-                ytShowTT('NOT READY YET', 'darkred');
+                ytShowTT(`<i>NOT READY YET</i>`, 'darkred');
                 return
             }
             var rateCurrent = ytplayer.getPlaybackRate();
             var rateColor = (rate == 1 ? 'white' : (rate > 1 ? '#99ff99' : '#ff9999'));
             if (rate == rateCurrent) { // unchanged
-                ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x&nbsp;</span>`);
+                ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span></span> already set</i>`, 'darkgrey', '1em');
             } else { // set new (different) rate
                 var diff = rate - rateCurrent;
-                var diffColor = (diff > 0 ? '#b3e6b3' : '#e6b3b3');
-                var diffSign = (diff > 0 ? '+' : '');
-                ytShowTT(`<div style="display:table;">Speed: <span style="color: ${rateColor}">${rate}x&nbsp;</span>
-                            <i><span style="font-size: 0.5em; color: ${diffColor}; display:table-cell; vertical-align: middle;">[${diffSign}${diff}]</span></i></div>`);
+                //var diffColor = (diff > 0 ? '#b3e6b3' : '#e6b3b3');
+                //var diffSign = (diff > 0 ? '+' : '');
+                //ytShowTT(`<div style="display:table;">Speed: <span style="color: ${rateColor}">${rate}x</span>
+                //            <i><span style="font-size: 0.5em; color: ${diffColor}; display:table-cell; vertical-align: middle;">[${diffSign}${diff}]</span></i></div>`);
+                ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span>`);
                 ytplayer.setPlaybackRate(rate);
             }
         }
 
-        function ytToggleThumb(up)
+        function ytSetThumb(up, off)
         {
             var button = $('div#top-level-buttons.ytd-menu-renderer yt-icon.ytd-toggle-button-renderer').parent('button')[(up ? 0 : 1)];
             if (button === undefined) {
-                ytShowTT('NOT READY YET', 'darkred');
+                ytShowTT(`<i>NOT READY YET</i>`, 'darkred');
                 return;
             }
-            var thumbColor = (up ? 'lime' : 'red');
+            var thumbColor = (up ? '#99ff99' : 'red');
             var thumbText = 'Thumb ' + (up ? 'Up' : 'Down');
-            if ($(button).parent('yt-icon-button').hasClass('style-default-active')) {
-                ytShowTT(thumbText + " <i><span style='font-size: 0.7em; color: darkgrey;'>[unset]</span></i>");
-            } else {
-                ytShowTT(thumbText, thumbColor);
+            var thumbIsSet = $(button).parent('yt-icon-button').hasClass('style-default-active');
+            if (off) { // remove thumbs up/down flag?
+                if (thumbIsSet) { // flag is set? then remove it
+                    ytShowTT(`${thumbText} <i><span style="color: #e6b3b3">unset</span></i>`, 'darkgrey', '1em');
+                    button.click();
+                } else { // flag is not set? nothing to do
+                    ytShowTT(`${thumbText} <i>not set</i>`, 'darkgrey', '1em');
+                }
+            } else { // set thumbs up/down flag?
+                if (!thumbIsSet) { // flag is not set? then set it
+                    ytShowTT(thumbText, thumbColor);
+                    button.click();
+                } else { // flag is already set? nothing to do
+                    ytShowTT(`<i><span style="color: ${thumbColor}">${thumbText}</span> already set</i>`, 'darkgrey', '1em');
+                }
             }
-            debugger;
-            button.click();
         }
 
         // set configured default playback rate
@@ -313,11 +322,16 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                        { skipEditable: true });
         cb.bindKeyDown(KEY_EQUAL_SIGN, () => { ytRateSet() },
                        { skipEditable: true });
-        // keys: u/d -> toggle thumbs up/down
-        cb.bindKeyDown(KEY_U, () => { ytToggleThumb(true) },
+        // keys: u/d -> set thumbs up/down
+        cb.bindKeyDown(KEY_U, () => { ytSetThumb(true) },
                        { skipEditable: true });
-        cb.bindKeyDown(KEY_D, () => { ytToggleThumb(false) },
+        cb.bindKeyDown(KEY_D, () => { ytSetThumb(false) },
                        { skipEditable: true });
+        // keys: u/d -> un-set thumbs up/down
+        cb.bindKeyDown(KEY_U, () => { ytSetThumb(true, true) },
+                       { mods:{ shift: true }, skipEditable: true });
+        cb.bindKeyDown(KEY_D, () => { ytSetThumb(false, true) },
+                       { mods:{ shift: true }, skipEditable: true });
         // TODO, don't seem to work / be supported atm.
         // keys: ' or / -> hide / show controls
         //cb.bindKeyDown(KEY_QUOTE, () => ytplayer.hideControls(), { mods: { ctrl: true }, skipEditable: true});
