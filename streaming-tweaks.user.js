@@ -236,7 +236,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             } else { // unchanged
                 rate = PLAYBACK_RATES[idx];
                 rateColor = (rate == 1 ? 'white' : (rate > 1 ? '#99ff99' : '#ff9999'));
-                ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span></span> already set</i>`, 'darkgrey', '1em');
+                ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span></span> already set</i>`, 'darkgrey', '1.5em');
             }
             ytplayer.setPlaybackRate(rate);
         }
@@ -250,7 +250,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             var rateCurrent = ytplayer.getPlaybackRate();
             var rateColor = (rate == 1 ? 'white' : (rate > 1 ? '#99ff99' : '#ff9999'));
             if (rate == rateCurrent) { // unchanged
-                ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span></span> already set</i>`, 'darkgrey', '1em');
+                ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span></span> already set</i>`, 'darkgrey', '1.5em');
             } else { // set new (different) rate
                 var diff = rate - rateCurrent;
                 //var diffColor = (diff > 0 ? '#b3e6b3' : '#e6b3b3');
@@ -274,17 +274,17 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             var thumbIsSet = $(button).parent('yt-icon-button').hasClass('style-default-active');
             if (off) { // remove thumbs up/down flag?
                 if (thumbIsSet) { // flag is set? then remove it
-                    ytShowTT(`${thumbText} <i><span style="color: #e6b3b3">unset</span></i>`, 'darkgrey', '1em');
+                    ytShowTT(`${thumbText} <i><span style="color: #e6b3b3">unset</span></i>`, 'darkgrey', '1.5em');
                     button.click();
                 } else { // flag is not set? nothing to do
-                    ytShowTT(`${thumbText} <i>not set</i>`, 'darkgrey', '1em');
+                    ytShowTT(`${thumbText} <i>not set</i>`, 'darkgrey', '1.5em');
                 }
             } else { // set thumbs up/down flag?
                 if (!thumbIsSet) { // flag is not set? then set it
                     ytShowTT(thumbText, thumbColor);
                     button.click();
                 } else { // flag is already set? nothing to do
-                    ytShowTT(`<i><span style="color: ${thumbColor}">${thumbText}</span> already set</i>`, 'darkgrey', '1em');
+                    ytShowTT(`<i><span style="color: ${thumbColor}">${thumbText}</span> already set</i>`, 'darkgrey', '1.5em');
                 }
             }
         }
