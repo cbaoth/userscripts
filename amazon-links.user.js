@@ -4,7 +4,7 @@
 // @copyright   2015+, userscript@cbaoth.de
 //
 // @name        Amazon Tweaks
-// @version     0.13
+// @version     0.14
 // @description Some improvments to amazon shop pages
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/amazon-links.user.js
 //
@@ -104,13 +104,17 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     function smileRedirect() {
         // are we logged in? if not, don't redirect (won't work, infinite loop)
-        if ($('#nav-link-accountList[data-nav-role="signin"]').length) {
+        if (! $('#nav-link-accountList[data-nav-role="signin"] ~ a[href*="signout"]').length) {
             return;
         }
-        if (/^(www\.)?amazon.(\w+)/.test(window.location.hostname) && ! /^smile\./.test(window.location.hostname)) {
-            var smileURL = toSmileURL(window.location.href);
-            if (window.location.href != smileURL) {
-                window.location.replace(smileURL);
+        if (/^(www\.)?amazon.(\w+)/.test(location.hostname) && ! /^smile\./.test(location.hostname)) {
+            var orgURL = window.location.href || window.parent.location.href;
+            var smileURL = toSmileURL(orgURL);
+            if (orgURL != smileURL) {
+                // try replacing location in various ways
+                try { Location.replace(smileURL) } catch(e) {}
+                try { window.location.replace(smileURL) } catch(e) {}
+                try { window.parent.location.replace(smileURL) } catch(e) {}
             }
         }
     }
