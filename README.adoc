@@ -113,6 +113,10 @@ image:imdb-tweaks-seasons-rating1.png[,40%]
 |=======
 | Keys         | Action
 | d            | Toggle compact list mode
+| [0-9]        | Navigate to season 0 to 9 _(if available)_
+| Shift-[0-9]  | Navigate to season 10 to 19 _(if available)_
+| [            | Navigate to previous season _(if available)_
+| ]            | Navigate to next season _(if available)_
 |=======
 
 === Jenkins Tweaks

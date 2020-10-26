@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        IMDB Tweaks
-// @version     0.1.19
+// @version     0.1.20
 // @description Some tweaks for IMDB
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/imdb-tweaks.user.js
 //
@@ -264,13 +264,28 @@ $ = jQuery = jQuery.noConflict(true);
             var currentNr = url.searchParams.get("season");
             var anchors = $('select#bySeason > option').map((i, e) => {
                 var nr = $(e).val();
-                return nr == currentNr ? nr : '<a href="' + HREF_CLEAN + '?season=' + $(e).val() + '">' + nr + '</a>';
+                if (nr == currentNr) {
+                    return nr;
+                }
+                var href = `${HREF_CLEAN}?season=${$(e).val()}`;
+                if (nr >= 0 && nr <= 9) { // add numeric key binding 0-9 for season 0-9
+                    cb.bindKeyDown(48+parseInt(nr), () => $(`a#t_season_link_${nr}`)[0].click(), { skipEditable: true });
+                } else if (nr >= 10 && nr <= 19) { // add numeric key binding shift+0-9 for season 10-19
+                    cb.bindKeyDown(38+parseInt(nr), () => $(`a#t_season_link_${nr}`)[0].click(), { skipEditable: true, mods: { shift: true } });
+                }
+                if (parseInt(nr) == parseInt(currentNr)-1) { // add [ key binding (navigate to previous)
+                    cb.bindKeyDown(219, () => $(`a#t_season_link_${nr}`)[0].click(), { skipEditable: true });
+                }
+                if (parseInt(nr) == parseInt(currentNr)+1) { // add ] key binding (navigate to next)
+                    cb.bindKeyDown(221, () => $(`a#t_season_link_${nr}`)[0].click(), { skipEditable: true });
+                }
+                return `<a id="t_season_link_${nr}" href="${href}">${nr}</a>`;
             });
             // replace season selection combobox with direct links
             $('select#bySeason').replaceWith('<div style="float: left; padding-top: 3px;">' + Array.join(anchors, "&nbsp;") + '</div>');
             // add direct links on bottom too
             $('div.eplist').parent().append('<div style="float: left; padding: 20px 5px;">Season: &nbsp;'
-                + Array.join(anchors, "&nbsp;") + '</div>')
+                + Array.join(anchors, "&nbsp;").replaceAll('t_season_link_', 'b_season_link_') + '</div>')
         });
 
         cb.waitAndDebounce('div.eplist', (e) => {
