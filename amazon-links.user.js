@@ -4,13 +4,13 @@
 // @copyright   2015+, userscript@cbaoth.de
 //
 // @name        Amazon Tweaks
-// @version     0.14
+// @version     0.15
 // @description Some improvments to amazon shop pages
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/amazon-links.user.js
 //
 // @include     /^https?://(www\.|smile\.)?amazon\.\w+//
 //
-// @grant       none
+// @grant       GM_addStyle
 //
 // @require     http://code.jquery.com/jquery-latest.min.js
 // @require     https://gist.github.com/raw/2625891/waitForKeyElements.js
@@ -31,6 +31,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                                    li[data-asin] a.s-access-detail-page,
                                    li[data-asin] a.a-text-normal`
     const KEEPA_ICO = 'https://keepa.com/favicon.ico';
+
+    // static styles
+    GM_addStyle(`div.order > div.shipment-is-delivered { background: #90ee9050 !important; }`); // delivered order -> green
+    GM_addStyle(`div.order > div.shipment:not(.shipment-is-delivered) { background: #ff990030 !important; }`); //  open/shipped -> orange
 
     // clean-up product page link (strip all parameters and unnecessary texts)
     function cleanLink(a) {
@@ -127,7 +131,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         waitForKeyElements(PRICE_SELECTOR, (e) => addAmazonLinks(e, PAGE_PRODUCT));
         // auto selection of one-time buy option (instead of default: subscription)
         waitForKeyElements("#oneTimeBuyBox .a-accordion-radio", (e) => cb.clickElement(e));
-    } else if (/\/s([/?].+)?$/.test(window.location.pathname)) { // search result
+    } if (/\/s([/?].+)?$/.test(window.location.pathname)) { // search result
         // redirect to smile (if not already the case)
         smileRedirect();
         // change price links (normally product link too) to keepa links

@@ -38,7 +38,8 @@ image:amazon-links1.png[]
 * Search page
 ** Replaces search result prices with links to the product's https://keepa.com[keepa] price history page.
 ** Replaces search result product links with clean ones _(short URL, no tracking, affiliation, etc.)_.
-
+* Order overview
+** Adds light green background to delivered, and orange background to open / shipped orders.
 
 === Auto Show Forum Spoilers
 
