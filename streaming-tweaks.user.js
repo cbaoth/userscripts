@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.26
+// @version     0.1.27
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -42,6 +42,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const KEY_F = 70
     const KEY_U = 85
     const KEY_D = 68
+    //const KEY_SPACE = 32
     const KEY_BACKSPACE = 8
     const KEY_F12 = 123
 
@@ -342,6 +343,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // register disney+ tweaks
     function disneyPlusTweaksReg() {
         // auto skip intro/credits
+        //const DISNEY_PLAYPAUSE = `button.play-pause-icon`;
         const DISNEY_FS = `button.fullscreen-icon, button.exit-fullscreen-icon`;
         const DISNEY_RWD = `button.rwd-10sec-icon`;
         const DISNEY_FF = `button.ff-10sec-icon`;
@@ -392,6 +394,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                        { mods:{ ctrl: true }, skipEditable: true });
         cb.bindKeyDown(KEY_RIGHT, () => cb.clickElement($(DISNEY_FF)[0], 60),
                        { mods:{ ctrl: true }, skipEditable: true });
+        //// keys: SPACE -> play-pause
+        //cb.bindKeyDown(KEY_SPACE, () => cb.clickElement($(DISNEY_PLAYPAUSE)[0]), { skipEditable: true });
         // keys: BACKSPACE -> exit playback
         cb.bindKeyDown(KEY_BACKSPACE, () => cb.clickElement($(DISNEY_RETURN)[0]), { skipEditable: true });
         // keys: s-> skip (e.g. intro)
