@@ -4,12 +4,13 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Auto Show Forum Spoilers
-// @version     0.1.1
-// @description Automatically show all spoilers in forum posts
+// @version     0.2.0
+// @description Automatically show all spoilers in forum posts and expand partially shown articles
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/auto-show-forum-spoilers.user.js
 //
 // @include     *://*/showthread.php*
 // @include     *://*/forum/*
+// @include     /https?://([^/.]+\.)*patreon.com/
 //
 // @grant       none
 //
@@ -24,9 +25,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
 (function () {
     const CLASS = "autoShowForumSpoilers";
-    const SPOILER_SELECTORS = "input[type='button'][class~='folded'][value='Spoiler']:not(." + CLASS + "),"
-        + "input[type='button'][title='Show'][value='Show']:not(." + CLASS + "),"
-        + "div.pre-spoiler > input[type=button]:not(." + CLASS + ")";
+    const SPOILER_SELECTORS = `input[type='button'][class~='folded'][value='Spoiler']:not(.${CLASS}),
+        input[type='button'][title='Show'][value='Show']:not(.${CLASS}),
+        div.pre-spoiler > input[type=button]:not(.${CLASS})`;
+    const PATREON_UNCOLLAPSE_SELECTORS = `div[data-tag=post-content-collapse] > div > button`;
     const MAX_RETRIES = 5;
     const RETRY_AFTER_MS = 500;
 
@@ -48,6 +50,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         retry(() => cb.clickElement(button));
     }
 
-    // click spoiler buttons
-    waitForKeyElements(SPOILER_SELECTORS, (e) => click(e));
+    if (/([^/.]+\.)*patreon.com$/.test(window.location.host)) { // Patreon
+        waitForKeyElements(PATREON_UNCOLLAPSE_SELECTORS, (e) => click(e));
+    } else { // Common forums
+        waitForKeyElements(SPOILER_SELECTORS, (e) => click(e));
+    }
 }());

@@ -43,7 +43,7 @@ image:amazon-links1.png[]
 
 === Auto Show Forum Spoilers
 
-`link:auto-show-forum-spoilers.user.js[]` automatically toggles spoilers in forum posts.
+`link:auto-show-forum-spoilers.user.js[]` automatically expands spoilers in common forums and collapsed "continue reading .." texts on patreon.com.
 
 
 === Copy URL on Hover
