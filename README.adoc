@@ -68,6 +68,11 @@ image:copy-on-hover-media1.png[]
 ** Static method calls of Google Guava https://github.com/google/guava/wiki/PreconditionsExplained[Preconditions] (potential exits) +
 image:gerrit-tweaks-code1.png[]
 
+=== Buhl Finanzblick
+
+`link:finanzblick-tweaks.user.js[]` improves Buhl https://finanzblickx.buhl.de/[Finanzblick]:
+
+* Makes link out of all amazon order numbers in bookings, pointing to (searching) the amazon.de order history.
 
 === Image Search Tweaks
 
