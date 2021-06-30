@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.27
+// @version     0.1.28
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -265,14 +265,14 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
         function ytSetThumb(up, off)
         {
-            var button = $('div#top-level-buttons.ytd-menu-renderer yt-icon.ytd-toggle-button-renderer').parent('button')[(up ? 0 : 1)];
+            var button = $('div#menu-container ytd-toggle-button-renderer').children('a')[(up ? 0 : 1)];
             if (button === undefined) {
                 ytShowTT(`<i>NOT READY YET</i>`, 'darkred');
                 return;
             }
             var thumbColor = (up ? '#99ff99' : 'red');
             var thumbText = 'Thumb ' + (up ? 'Up' : 'Down');
-            var thumbIsSet = $(button).parent('yt-icon-button').hasClass('style-default-active');
+            var thumbIsSet = $(button).children('yt-icon-button').hasClass('style-default-active');
             if (off) { // remove thumbs up/down flag?
                 if (thumbIsSet) { // flag is set? then remove it
                     ytShowTT(`${thumbText} <i><span style="color: #e6b3b3">unset</span></i>`, 'darkgrey', '1.5em');
