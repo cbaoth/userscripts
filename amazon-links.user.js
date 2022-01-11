@@ -4,7 +4,7 @@
 // @copyright   2015+, userscript@cbaoth.de
 //
 // @name        Amazon Tweaks
-// @version     0.16
+// @version     0.17
 // @description Some improvments to amazon shop pages
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/amazon-links.user.js
 //
@@ -34,12 +34,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const KEEPA_ICO = 'https://keepa.com/favicon.ico'
     const PRICE_TWEAKS_ID = 'cb-price-tweaks'
     const AVG_RATING_TWEAKS_ID = 'cb-avg-rating-tweaks'
-    //const HOVER_FADE_CLASS = 'cb-opacity-50'
-    //const HOVER_FADE_STYLE = `.cb-opacity-50 img:hover { opacity: .5; }`
-    const HOVER_FADE_CLASS = 'cb-opacity-50-span'
-
-
-
+    const HOVER_FADE_CLASS = 'cb-hover-fade'
 
     // static styles
     GM_addStyle(`div.order > div.shipment-is-delivered { background: #90ee9050 !important; }`); // delivered order -> green
@@ -170,7 +165,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // tweak pages, currently only
     // smile rederict only on these pages (to be safe, pages might exist where this will not work)
-    if (/\/[dg]p\/(product\/)?\w{10}([/?].+)?$/.test(window.location.pathname)) { // product page
+    if (/\/[dg]p\/(product\/)?\w{10}([/?].*)?$/.test(window.location.pathname)) { // product page
         // redirect to smile (if not already the case)
         smileRedirect();
         waitForKeyElements(PRICE_SELECTOR, (e) => addAmazonLinks(e, PAGE_PRODUCT));
