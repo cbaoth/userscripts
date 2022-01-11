@@ -33,6 +33,7 @@ To run them install link:https://chrome.google.com/webstore/detail/tampermonkey/
 ** Adds a new _keepa_ icon next to the price, and makes icon and price a link _(open in new tab)_ the the product's https://keepa.com[keepa] price tracking page.
 *** Note that the keepa page will show the default amazon region and language _(top right selection)_ but the price information will match the correct region of the source amazon page.
 ** Adds a new _amazon_ icon next to the price with a direct link to the product's page _(short URL, no tracking, affiliation, etc.)_ e.g. for sharing.
+** Adds a new https://metareview.com[MetaReview] link next to the average rating stars.
  +
 image:amazon-links1.png[]
 * Search page
