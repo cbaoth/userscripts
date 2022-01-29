@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.28
+// @version     0.1.29
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -35,6 +35,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const KEY_SLASH = 191
     const KEY_BRACKET_LEFT = 219
     const KEY_BRACKET_RIGHT = 221
+    const KEY_BACKSLASH = 220
     const KEY_EQUAL = 61
     const KEY_EQUAL_SIGN = 187
     const KEY_R = 82
@@ -42,6 +43,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const KEY_F = 70
     const KEY_U = 85
     const KEY_D = 68
+    const KEY_Q = 81
+    const KEY_A = 65
     //const KEY_SPACE = 32
     const KEY_BACKSPACE = 8
     const KEY_F12 = 123
@@ -214,6 +217,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
         var ytplayer = document.getElementById('movie_player') || document.getElementsByTagName('embed')[0];
         const PLAYBACK_RATES = ytplayer.getAvailablePlaybackRates();
+        const QUALITY_LEVELS = ytplayer.getAvailableQualityLevels();
         // https://developers.google.com/youtube/iframe_api_reference
         // https://developers.google.com/youtube/player_parameters
         if (ytplayer === undefined) return; // player not found/available
@@ -230,9 +234,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             if ((up && idx < PLAYBACK_RATES.length-1) || (!up && idx > 0)) { // +/-
                 rate = PLAYBACK_RATES[idx+(up ? +1 : -1)];
                 rateColor = (rate == 1 ? 'white' : (rate > 1 ? '#99ff99' : '#ff9999'));
-                var diff = rate - rateCurrent;
-                var diffColor = (diff > 0 ? '#b3e6b3' : '#e6b3b3');
-                var diffSign = (diff > 0 ? '+' : '');
+                //var diff = rate - rateCurrent;
+                //var diffColor = (diff > 0 ? '#b3e6b3' : '#e6b3b3');
+                //var diffSign = (diff > 0 ? '+' : '');
                 ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span>`);
             } else { // unchanged
                 rate = PLAYBACK_RATES[idx];
@@ -253,13 +257,59 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             if (rate == rateCurrent) { // unchanged
                 ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span></span> already set</i>`, 'darkgrey', '1.5em');
             } else { // set new (different) rate
-                var diff = rate - rateCurrent;
+                //var diff = rate - rateCurrent;
                 //var diffColor = (diff > 0 ? '#b3e6b3' : '#e6b3b3');
                 //var diffSign = (diff > 0 ? '+' : '');
                 //ytShowTT(`<div style="display:table;">Speed: <span style="color: ${rateColor}">${rate}x</span>
                 //            <i><span style="font-size: 0.5em; color: ${diffColor}; display:table-cell; vertical-align: middle;">[${diffSign}${diff}]</span></i></div>`);
                 ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span>`);
                 ytplayer.setPlaybackRate(rate);
+            }
+        }
+
+        function ytQualityChange(up)
+        {
+            if (ytplayer === undefined) {
+                ytShowTT(`<i>NOT READY YET</i>`, 'darkred');
+                return
+            }
+            var currentLevel = ytplayer.getPlaybackQuality();
+            var idx = QUALITY_LEVELS.indexOf(currentLevel);
+            var level, diffColor;
+            if ((up && idx < QUALITY_LEVELS.length-1) || (!up && idx > 0)) { // +/-
+                var newIdx = idx+(up ? +1 : -1);
+                var newLevel = QUALITY_LEVELS[newIdx];
+                var levelAuto = newIdx == QUALITY_LEVELS.length-1;
+                diffColor = (levelAuto || newIdx == idx ? 'white' : (newIdx > idx ? '#99ff99' : '#ff9999'));
+                ytShowTT(`Quality: <span style="color: ${diffColor}">${newLevel}</span>`);
+            } else { // unchanged
+                level = QUALITY_LEVELS[idx];
+                diffColor = '#ff9999';
+                ytShowTT(`Quality: <span style="color: ${diffColor}">${level}</span></span> already set</i>`, 'darkgrey', '1.5em');
+            }
+            ytplayer.setPlaybackQuality(level);
+        }
+
+        // TODO make "local max" configurable (e.g. 1080p)
+        function ytQualitySetIdx(idx=0)
+        {
+            if (ytplayer === undefined) {
+                ytShowTT(`<i>NOT READY YET</i>`, 'darkred');
+                return
+            }
+            var currentLevel = ytplayer.getPlaybackQuality();
+            var currentIdx = QUALITY_LEVELS.indexOf(currentLevel);
+            var newIdx = Math.min(Math.max(idx, 0), QUALITY_LEVELS.length-1);
+            var newLevel = QUALITY_LEVELS[newIdx];
+            var levelAuto = newIdx == QUALITY_LEVELS.length-1;
+            var levelChanged = newIdx != currentIdx;
+            debugger;
+            var diffColor = (levelAuto || levelChanged ? 'white' : (newIdx > currentIdx ? '#99ff99' : '#ff9999'));
+            if (!levelChanged) { // unchanged
+                ytShowTT(`Quality: <span style="color: ${diffColor}">${newLevel}</span></span> already set</i>`, 'darkgrey', '1.5em');
+            } else { // set new (different) level
+                ytShowTT(`Quality: <span style="color: ${diffColor}">${newLevel}</span>`);
+                ytplayer.setPlaybackQuality(newLevel);
             }
         }
 
@@ -323,6 +373,16 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                        { skipEditable: true });
         cb.bindKeyDown(KEY_EQUAL_SIGN, () => { ytRateSet() },
                        { skipEditable: true });
+        // keys: q/shift+q -> quality level up / down
+        cb.bindKeyDown(KEY_Q, () => ytQualityChange(true),
+                       { skipEditable: true });
+        cb.bindKeyDown(KEY_Q, () => ytQualityChange(false),
+                       { mods:{ shift: true }, skipEditable: true });
+        // keys: a/shift+a -> quality level to auto / max
+        cb.bindKeyDown(KEY_A, () => { ytQualitySetIdx(100) }, // auto is max in list
+                       { skipEditable: true });
+        cb.bindKeyDown(KEY_A, () => { ytQualitySetIdx(0) }, // max is first in list
+                       { mods:{ shift: true }, skipEditable: true });
         // keys: u/d -> set thumbs up/down
         cb.bindKeyDown(KEY_U, () => { ytSetThumb(true) },
                        { skipEditable: true });
@@ -337,6 +397,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         // keys: ' or / -> hide / show controls
         //cb.bindKeyDown(KEY_QUOTE, () => ytplayer.hideControls(), { mods: { ctrl: true }, skipEditable: true});
         //cb.bindKeyDown(KEY_SLASH, () => ytplayer.showControls(), { mods: { ctrl: true }, skipEditable: true});
+
+        // skip/close ads
+        cb.waitAndThrottle('button.ytp-ad-skip-button, button.ytp-ad-overlay-close-button',
+                           (e) => { $(e).click(); }, 2000, { tailing: false });
     }
 
 
