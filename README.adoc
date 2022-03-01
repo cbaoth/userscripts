@@ -270,6 +270,20 @@ Improvements to https://open.spotify.com:[Spotify]:
 | /            | Open search
 |=======
 
+==== ZDF Mediathek
+
+Improvements to https://www.zdf.de:[ZDF] Mediathek _(including https://www.3sat.de:[3sat])_:
+
+* Adds new key bindings:
+
+[cols="1,3",options="header"]
+|=======
+| Keys         | Action
+| =            | Default playback rate (1x)
+| ]            | Increase playback rate (up to 2x)
+| [            | Decrease playback rate (down to 0.25x)
+|=======
+
 
 === TradingView
 

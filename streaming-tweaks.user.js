@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.29
+// @version     0.1.30
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -13,6 +13,7 @@
 // @include     /^https?://www\.youtube\.com/watch/
 // @include     /^https?://www\.disneyplus\.com//
 // @include     https://open.spotify.com/*
+// @include     /^https?://(www).(zdf|3sat).de/
 //
 // @grant       none
 //
@@ -210,11 +211,6 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         cb.bindKeyDown(KEY_F12, () => GM_config.open(), { mods: { alt: true } });
         cb.bindKeyDown(KEY_ESC, () => { $('#' + GM_CONFIG_ID).length && GM_config.close() }, { skipEditable: true });
 
-        // tooltip
-        function ytShowTT(msg, color="white", size="2em") {
-            cb.createTT(msg, 500, { offsetX: 50, offsetY: 100, offsetMouse: false, fadeoutTime: 500, css:{ "font-size": size, "color": color }});
-        }
-
         var ytplayer = document.getElementById('movie_player') || document.getElementsByTagName('embed')[0];
         const PLAYBACK_RATES = ytplayer.getAvailablePlaybackRates();
         const QUALITY_LEVELS = ytplayer.getAvailableQualityLevels();
@@ -222,10 +218,15 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         // https://developers.google.com/youtube/player_parameters
         if (ytplayer === undefined) return; // player not found/available
 
+        // tooltip
+        function showTT(msg, color="white", size="2em") {
+            cb.createTT(msg, 500, { offsetX: 50, offsetY: 100, offsetMouse: false, fadeoutTime: 500, css:{ "font-size": size, "color": color }});
+        }
+
         function ytRateChange(up)
         {
             if (ytplayer === undefined) {
-                ytShowTT(`<i>NOT READY YET</i>`, 'darkred');
+                showTT(`<i>NOT READY YET</i>`, 'darkred');
                 return
             }
             var rateCurrent = ytplayer.getPlaybackRate();
@@ -237,11 +238,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 //var diff = rate - rateCurrent;
                 //var diffColor = (diff > 0 ? '#b3e6b3' : '#e6b3b3');
                 //var diffSign = (diff > 0 ? '+' : '');
-                ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span>`);
+                showTT(`Speed: <span style="color: ${rateColor}">${rate}x</span>`);
             } else { // unchanged
                 rate = PLAYBACK_RATES[idx];
                 rateColor = (rate == 1 ? 'white' : (rate > 1 ? '#99ff99' : '#ff9999'));
-                ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span></span> already set</i>`, 'darkgrey', '1.5em');
+                showTT(`Speed: <span style="color: ${rateColor}">${rate}x</span></span> already set</i>`, 'darkgrey', '1.5em');
             }
             ytplayer.setPlaybackRate(rate);
         }
@@ -249,20 +250,20 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         function ytRateSet(rate=1)
         {
             if (ytplayer === undefined) {
-                ytShowTT(`<i>NOT READY YET</i>`, 'darkred');
+                showTT(`<i>NOT READY YET</i>`, 'darkred');
                 return
             }
             var rateCurrent = ytplayer.getPlaybackRate();
             var rateColor = (rate == 1 ? 'white' : (rate > 1 ? '#99ff99' : '#ff9999'));
             if (rate == rateCurrent) { // unchanged
-                ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span></span> already set</i>`, 'darkgrey', '1.5em');
+                showTT(`Speed: <span style="color: ${rateColor}">${rate}x</span></span> already set</i>`, 'darkgrey', '1.5em');
             } else { // set new (different) rate
                 //var diff = rate - rateCurrent;
                 //var diffColor = (diff > 0 ? '#b3e6b3' : '#e6b3b3');
                 //var diffSign = (diff > 0 ? '+' : '');
-                //ytShowTT(`<div style="display:table;">Speed: <span style="color: ${rateColor}">${rate}x</span>
+                //showTT(`<div style="display:table;">Speed: <span style="color: ${rateColor}">${rate}x</span>
                 //            <i><span style="font-size: 0.5em; color: ${diffColor}; display:table-cell; vertical-align: middle;">[${diffSign}${diff}]</span></i></div>`);
-                ytShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span>`);
+                showTT(`Speed: <span style="color: ${rateColor}">${rate}x</span>`);
                 ytplayer.setPlaybackRate(rate);
             }
         }
@@ -270,7 +271,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         function ytQualityChange(up)
         {
             if (ytplayer === undefined) {
-                ytShowTT(`<i>NOT READY YET</i>`, 'darkred');
+                showTT(`<i>NOT READY YET</i>`, 'darkred');
                 return
             }
             var currentLevel = ytplayer.getPlaybackQuality();
@@ -281,11 +282,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 var newLevel = QUALITY_LEVELS[newIdx];
                 var levelAuto = newIdx == QUALITY_LEVELS.length-1;
                 diffColor = (levelAuto || newIdx == idx ? 'white' : (newIdx > idx ? '#99ff99' : '#ff9999'));
-                ytShowTT(`Quality: <span style="color: ${diffColor}">${newLevel}</span>`);
+                showTT(`Quality: <span style="color: ${diffColor}">${newLevel}</span>`);
             } else { // unchanged
                 level = QUALITY_LEVELS[idx];
                 diffColor = '#ff9999';
-                ytShowTT(`Quality: <span style="color: ${diffColor}">${level}</span></span> already set</i>`, 'darkgrey', '1.5em');
+                showTT(`Quality: <span style="color: ${diffColor}">${level}</span></span> already set</i>`, 'darkgrey', '1.5em');
             }
             ytplayer.setPlaybackQuality(level);
         }
@@ -294,7 +295,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         function ytQualitySetIdx(idx=0)
         {
             if (ytplayer === undefined) {
-                ytShowTT(`<i>NOT READY YET</i>`, 'darkred');
+                showTT(`<i>NOT READY YET</i>`, 'darkred');
                 return
             }
             var currentLevel = ytplayer.getPlaybackQuality();
@@ -306,9 +307,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             debugger;
             var diffColor = (levelAuto || levelChanged ? 'white' : (newIdx > currentIdx ? '#99ff99' : '#ff9999'));
             if (!levelChanged) { // unchanged
-                ytShowTT(`Quality: <span style="color: ${diffColor}">${newLevel}</span></span> already set</i>`, 'darkgrey', '1.5em');
+                showTT(`Quality: <span style="color: ${diffColor}">${newLevel}</span></span> already set</i>`, 'darkgrey', '1.5em');
             } else { // set new (different) level
-                ytShowTT(`Quality: <span style="color: ${diffColor}">${newLevel}</span>`);
+                showTT(`Quality: <span style="color: ${diffColor}">${newLevel}</span>`);
                 ytplayer.setPlaybackQuality(newLevel);
             }
         }
@@ -317,7 +318,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         {
             var button = $('div#menu-container ytd-toggle-button-renderer').children('a')[(up ? 0 : 1)];
             if (button === undefined) {
-                ytShowTT(`<i>NOT READY YET</i>`, 'darkred');
+                showTT(`<i>NOT READY YET</i>`, 'darkred');
                 return;
             }
             var thumbColor = (up ? '#99ff99' : 'red');
@@ -325,17 +326,17 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             var thumbIsSet = $(button).children('yt-icon-button').hasClass('style-default-active');
             if (off) { // remove thumbs up/down flag?
                 if (thumbIsSet) { // flag is set? then remove it
-                    ytShowTT(`${thumbText} <i><span style="color: #e6b3b3">unset</span></i>`, 'darkgrey', '1.5em');
+                    showTT(`${thumbText} <i><span style="color: #e6b3b3">unset</span></i>`, 'darkgrey', '1.5em');
                     button.click();
                 } else { // flag is not set? nothing to do
-                    ytShowTT(`${thumbText} <i>not set</i>`, 'darkgrey', '1.5em');
+                    showTT(`${thumbText} <i>not set</i>`, 'darkgrey', '1.5em');
                 }
             } else { // set thumbs up/down flag?
                 if (!thumbIsSet) { // flag is not set? then set it
-                    ytShowTT(thumbText, thumbColor);
+                    showTT(thumbText, thumbColor);
                     button.click();
                 } else { // flag is already set? nothing to do
-                    ytShowTT(`<i><span style="color: ${thumbColor}">${thumbText}</span> already set</i>`, 'darkgrey', '1.5em');
+                    showTT(`<i><span style="color: ${thumbColor}">${thumbText}</span> already set</i>`, 'darkgrey', '1.5em');
                 }
             }
         }
@@ -488,6 +489,69 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     }
 
 
+
+    // register ZDF Mediathek tweaks
+    function zdfTweaksReg() {
+        // TODO make default speed configurable
+
+        // tooltip
+        function showTT(msg, color="white", size="1em") {
+            cb.createTT(msg, 500, { offsetX: 50, offsetY: 100, offsetMouse: false, fadeoutTime: 500, css:{ "font-size": size, "color": color }});
+        }
+
+        // dial ZDF Mediathek playbak speed up/down
+        function zdfRateChange(up) {
+            var rateE = $('fieldset[id^=config_speed-zdf-player] input.zdfplayer-config_radiobutton:checked');
+            if (rateE.length != 1) {
+                showTT(`<i>NOT READY YET</i>`, 'darkred');
+                return
+            }
+            var rateCurrent = parseFloat(rateE[0].value);
+            var rate, rateColor;
+            if ((up && rateCurrent < 2) || (!up && rateCurrent > 0.25)) { // +/-
+                rate = rateCurrent + (up ? +0.25 : -0.25);
+                rateColor = (rate == 1 ? 'white' : (rate > 1 ? '#99ff99' : '#ff9999'));
+                showTT(`Speed: <span style="color: ${rateColor}">${rate}x</span>`);
+            } else { // unchanged
+                rate = rateCurrent;
+                rateColor = (rate == 1 ? 'white' : (rate > 1 ? '#99ff99' : '#ff9999'));
+                showTT(`Speed: <span style="color: ${rateColor}">${rate}x</span></span> already set</i>`, 'darkgrey', '0.75em');
+                return;
+            }
+            zdfRateSet(rate);
+        }
+
+        // set ZDF Mediathek playbak speed
+        function zdfRateSet(rate) {
+            var rateE = $('fieldset[id^=config_speed-zdf-player] input.zdfplayer-config_radiobutton:checked');
+            if (rateE.length != 1) {
+                showTT(`<i>NOT READY YET</i>`, 'darkred');
+                return
+            }
+            var rateCurrent = parseFloat(rateE[0].value);
+            var rateColor = (rate == 1 ? 'white' : (rate > 1 ? '#99ff99' : '#ff9999'));
+            if (rate == rateCurrent) { // unchanged
+                showTT(`Speed: <span style="color: ${rateColor}">${rate}x</span></span> already set</i>`, 'darkgrey', '0.75em');
+            } else { // set new (different) rate
+                showTT(`Speed: <span style="color: ${rateColor}">${rate}x</span>`);
+                $(`input[name=video_speed][id$="speed-${rate}"]`)[0].click()
+            }
+        }
+
+        // keys: ]/[ -> playback speed up / down
+        cb.bindKeyDown(KEY_BRACKET_RIGHT, () => { zdfRateChange(true) },
+                       { skipEditable: true });
+        cb.bindKeyDown(KEY_BRACKET_LEFT, () => { zdfRateChange() },
+                       { skipEditable: true });
+        // keys: shift+]/[ -> playback speed up to max / down to min
+        cb.bindKeyDown(KEY_BRACKET_RIGHT, () => { zdfRateSet(2) },
+                       { mods:{ shift: true }, skipEditable: true });
+        cb.bindKeyDown(KEY_BRACKET_LEFT, () => { zdfRateSet(0.25) },
+                       { mods:{ shift: true }, skipEditable: true });
+        // keys: = -> playback speed back to default (1)
+        cb.bindKeyDown(KEY_EQUAL, () => { zdfRateSet(1) });
+    }
+
     // register tweaks depending on page
     if (/amazon/.test(window.location.host)) { // Amazon prime video
         amazonTweaksReg();
@@ -499,6 +563,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         disneyPlusTweaksReg();
     } else if (/spotify/.test(window.location.host)) { // Spotify
         spotifyTweaksReg();
+    } else if (/zdf|3sat/.test(window.location.host)) { // ZDF Mediathek
+        zdfTweaksReg();
     }
 
 }());
