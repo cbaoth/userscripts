@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.30
+// @version     0.1.31
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -550,6 +550,17 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                        { mods:{ shift: true }, skipEditable: true });
         // keys: = -> playback speed back to default (1)
         cb.bindKeyDown(KEY_EQUAL, () => { zdfRateSet(1) });
+        // TODO keys: space -> toggle play/pause
+        //cb.bindKeyDown(KEY_SPACE, (e) => cb.clickElement($('button.zdfplayer-play')[0]));
+        // keys: shift+left/+right -> skip +/-1min
+        cb.bindKeyDown(KEY_LEFT, (e) => cb.clickElement($('button.zdfplayer-10-backward')[0]));
+        cb.bindKeyDown(KEY_RIGHT, (e) => cb.clickElement($('button.zdfplayer-10-forward')[0]));
+        // TODO keys: shift+left/+right -> skip +/-1min
+        //cb.bindKeyDown(KEY_LEFT, (e) => cb.clickElement($('button.zdfplayer-10-backward')[0], 6), { mods: { shift: true }});
+        //cb.bindKeyDown(KEY_RIGHT, (e) => cb.clickElement($('button.zdfplayer-10-forward')[0], 6), { mods: { shift: true }});
+        // TODO keys: ctrl+left/+right -> skip +/-10min
+        //cb.bindKeyDown(KEY_LEFT, (e) => cb.clickElement($('button.zdfplayer-10-backward')[0], 60), { mods: { ctrl: true }});
+        //cb.bindKeyDown(KEY_RIGHT, (e) => cb.clickElement($('button.zdfplayer-10-forward')[0], 60), { mods: { ctrl: true }});
     }
 
     // register tweaks depending on page

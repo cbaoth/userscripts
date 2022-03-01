@@ -279,6 +279,8 @@ Improvements to https://www.zdf.de:[ZDF] Mediathek _(including https://www.3sat.
 [cols="1,3",options="header"]
 |=======
 | Keys         | Action
+| Right        | Fast-forward 10sec
+| Left         | Rewind 10sec
 | =            | Default playback rate (1x)
 | ]            | Increase playback rate (up to 2x)
 | [            | Decrease playback rate (down to 0.25x)
