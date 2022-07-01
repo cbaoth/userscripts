@@ -130,6 +130,7 @@ image:imdb-tweaks-seasons-rating1.png[,40%]
 | ]            | Navigate to next season _(if available)_
 |=======
 
+
 === Jenkins Tweaks
 
 `link:jenkins-tweaks.user.js[]` improves https://jenkins.io/[Jenkins]:
@@ -150,8 +151,8 @@ image:jenkins-console1.png[]
 * Allows adding of additoinal custom styles _(substitute text fragments via generic regex search mechanism)_.
 
 
-=== Search Hotkey ====
-`links:search-hotkey.user.js[]` adds the `alt-f` hotkey to some pages for faster searching (focus search input field).
+=== Search Hotkey
+`link:search-hotkey.user.js[]` adds the `alt-f` hotkey to some pages for faster searching (focus search input field).
 
 Currently supported pages:
 
