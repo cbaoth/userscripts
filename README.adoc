@@ -78,6 +78,7 @@ image:gerrit-tweaks-code1.png[]
 
 image:finanzblick-tweaks-amazon1.png[]
 
+
 === Image Search Tweaks
 
 `link:image-search-tweaks.user.js[]` improves the https://images.google.com[google] and https://yandex.ru/images[yandex] image search.
@@ -147,6 +148,15 @@ image:jenkins-console1.png[]
 * Highlights issue priority, status, and type (tracker).
 * Highlights _[tags]_ and \*bold* in issue subjects.
 * Allows adding of additoinal custom styles _(substitute text fragments via generic regex search mechanism)_.
+
+
+=== Search Hotkey ====
+`links:search-hotkey.user.js[]` adds the `alt-f` hotkey to some pages for faster searching (focus search input field).
+
+Currently supported pages:
+
+* https://wikipedia.org[]
+* https://fandom.com[] - entertainment & gaming wikis
 
 
 === Streaming Tweaks
