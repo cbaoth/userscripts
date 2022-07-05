@@ -5,7 +5,7 @@
 //
 // @name        Copy URL on hover
 // @description Copy link / media urls on mouse-over while alt-c/-b is pressed
-// @version     0.1.10
+// @version     0.1.12
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/copy-url-on-hover.user.js
 //
 // @include     *
@@ -62,7 +62,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         if (isModKey(ev.keyCode)) {
             updateModState(event);
         } else {
-            currentKeys["keyCode"] = ev.keyCode;
+            currentKeys.keyCode = ev.keyCode;
         }
     });
 
@@ -75,8 +75,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         }
         // just update mods, no matter the key pressed (keyup unreliable for mods)
         updateModState(event);
-        if (!isModKey(ev.keyCode) && currentKeys["keyCode"] === ev.keyCode) {
-            delete currentKeys["keyCode"];
+        if (!isModKey(ev.keyCode) && currentKeys.keyCode === ev.keyCode) {
+            delete currentKeys.keyCode;
         }
     });
 
@@ -86,10 +86,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         if (ev === undefined) {
             return;
         }
-        currentKeys["shift"] = ev.shiftKey;
-        currentKeys["ctrl"] = ev.ctrlKey;
-        currentKeys["alt"] = ev.altKey;
-        currentKeys["meta"] = ev.metaKey;
+        currentKeys.shift = ev.shiftKey;
+        currentKeys.ctrl = ev.ctrlKey;
+        currentKeys.alt = ev.altKey;
+        currentKeys.meta = ev.metaKey;
     }
 
 
@@ -99,10 +99,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             return false;
         }
 
-        var shift = ev.shiftKey === (keys["shift"] || false);
-        var ctrl = ev.ctrlKey === (keys["ctrl"] || false);
-        var alt = ev.altKey === (keys["alt"] || false);
-        var meta = ev.metaKey === (keys["meta"] || false);
+        var shift = ev.shiftKey === (keys.shift || false);
+        var ctrl = ev.ctrlKey === (keys.ctrl || false);
+        var alt = ev.altKey === (keys.alt || false);
+        var meta = ev.metaKey === (keys.meta || false);
 
         return shift && ctrl && alt && meta;
     }
@@ -115,7 +115,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 return false;
             }
         }
-        return currentKeys["keyCode"] === keys["keyCode"];
+        return currentKeys.keyCode === keys.keyCode;
     }
 
 
@@ -196,11 +196,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                     var newValue = findSrc(e, selector, dict);
                     if (newValue !== undefined && newValue != "" && newValue != "none") {
                         var url;
-                        if (/^\/\//.test(newValue)) {
+                        if (/^\w+:/.test(newValue)) { // return everything value starting with an uri schema unchanged
+                            url = newValue;
+                        } else if (/^\/\//.test(newValue)) { // add missing protocol
                             url = document.location.protocol + newValue
-                        } else if (/^\.*\//.test(newValue) || ! /^(\w+:\/\/)/.test(newValue)) {
+                        } else if (/^\.*\//.test(newValue) || ! /^(\w+:\/\/)/.test(newValue)) { // convert relative to full path
                             url = document.location.origin + '/' + newValue.replace(/^[./]+/, '')
-                        } else {
+                        } else { // something else? return as is.
                             url = newValue;
                         }
                         GM_setClipboard(url);
