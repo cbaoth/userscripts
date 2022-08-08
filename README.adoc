@@ -20,9 +20,17 @@ endif::[]
 
 == User Scripts
 
-My browser user scripts.
+My personal browser user scripts.
 
-To run them install link:https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo[Tampermonkey] (link:https://www.google.com/chrome/[Chrome]), link:https://addons.mozilla.org/en-US/firefox/addon/greasemonkey/[Greasemonkey] (link:https://www.mozilla.org/en-US/firefox/developer/[Firefox]), or no extension at all (link:https://vivaldi.com/[Vivaldi]) and click on the linked `*.user.js` file, then click on "Raw" to install the script. Note that, except when using the integrated Vivaldi solution, the user scripts will be **updated automatically** _(default settings)_ as soon as I commit a new version.
+To run them first install a user script plugin in your browser:
+
+* Chrome: link:https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo[Tampermonkey] _(same for other Chromium based browsers)_
+* Firefox: link:https://addons.mozilla.org/en-US/firefox/addon/tampermonkey/[Tampermonkey] or link:https://addons.mozilla.org/en-US/firefox/addon/greasemonkey/[Greasemonkey]
+* Vivaldi: Integrated
+
+Then just click on the disered `*.user.js` file above and click on the `RAW` button on the top right of the code. The code should then be automatically caught by the plugin, asking you to install it or not. If auto-update is enabled in your plugin, you should always have the most recent script version (link to the repo provided in all scripts).
+
+Note that not all of them are regularly updated or heavy used _(some might be outdated)_, and that I kept things simple _(for myself)_ meaning most scripts import a few libs that I regularly use. The latter shouldn't be much traffic overhead due to Tampermonkey's internal lib cache, but it might not be ideal performance wise _(works for me, no plans to change this soon)_.
 
 === Amazon Tweaks
 
