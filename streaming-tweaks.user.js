@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.31
+// @version     0.1.32
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -56,8 +56,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         if (document.emitter !== undefined) document.emitter.setMaxListeners(0);
 
         // auto skip intro/credits/ads
-        const AMAZON_SEL_SKIP = `.skipElement, .countdown`;
-        const AMAZON_SEL_SKIP_ADS = `.adSkipButton`;
+        const AMAZON_SEL_SKIP = `button.atvwebplayersdk-skipelement-button`;
+        const AMAZON_SEL_SKIP_ADS = `.atvwebplayersdk-infobar-container > div > div:last-child > div:contains("Skip")`;
 
         // GM_config
         const GM_CONFIG_ID = 'StreamingTweaks_AmazonPrimeVideo_Config'
