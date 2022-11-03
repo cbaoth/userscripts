@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        OpenProject Tweaks
-// @version     0.1.6
+// @version     0.1.8
 // @description Some tweaks for OpenProject
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/openproject-tweaks.user.js
 //
@@ -106,40 +106,45 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const TEXT_SUBSTITUTION = [
         // highlight [tags] and *bold* in issue subjects
         ["span.subject"
-            + ", .form--fieldset > div > ul > li" // roadmap
-            + ", .timeline-element > .containerRight > .labelFarRight > .label-content" // gant diagram
-            + ", div.subject", // backlog
-        [[/(\[[^\]]+\])/g, "$1", { "color": "rgb(11, 73, 191)" }],
-        [/(\[Story\])/gi, "[STORY]", {}], // just upper case (style added with pattern above)
-        [/(\[concept\])/gi, "[Concept]", { "color": "rgb(32, 173, 147)" }],
-        [/(\[idea\])/gi, "[Idea]", { "color": "gray" }],
-        [/(\*[^ ][^*]+[^ ]\*)/g, "$1", { "color": "rgb(255, 102, 65)" }]]], // make *bold* text orange
+         + ", .form--fieldset > div > ul > li" // roadmap
+         + ", .timeline-element > .containerRight > .labelFarRight > .label-content" // gant diagram
+         + ", div.subject", // backlog
+         [[/(\[[^\]]+\])/g, "$1", { "color": "rgb(11, 73, 191)" }],
+          [/(\[story\])/gi, "[STORY]", {}], // just upper case (style added with pattern above)
+          [/(\[concept\])/gi, "[Concept]", { "color": "rgb(32, 173, 147)" }],
+          [/(\[idea\])/gi, "[Idea]", { "color": "gray" }],
+          [/(\[graylog\])/gi, "[Graylog]", { "color": "FireBrick" }],
+          [/(\[sonar(cube)?\])/gi, "[Sonar]", { "color": "FireBrick" }],
+          [/(\[(UI)?Tests?\])/gi, "[$2Test]", { "color": "BlueViolet" }],
+          [/\[(new)\]/gi, "[new]", { "color": "#44C94D" }],
+          [/(\*[^ ][^*]+[^ ]\*)/g, "$1", { "color": "rgb(255, 102, 65)" }]]], // make *bold* text orange
 
         // highlight / shorten tracker names (by type)
         ["span.wp-table--cell-span.type",
-            [[/(Bug)/gi, "$1", { "color": "#ff6641" }],
-            [/(Task|Feature)/gi, "$1", { "color": "black" }],
-            [/(Idea)/gi, "$1", { "color": "silver" }],
-            [/Application/gi, "APP", {}], // customer tracker only
-            [/Change Request/gi, "CR", {}]]], // customer tracker only
+         [[/(Bug)/gi, "$1", { "color": "#ff6641" }],
+          [/(Epic)/gi, "$1", { "color": "navi" }],
+          [/(Task|Feature)/gi, "$1", { "color": "black" }],
+          [/(Idea)/gi, "$1", { "color": "silver" }],
+          [/Application/gi, "APP", {}], // customer tracker only
+          [/Change Request/gi, "CR", {}]]], // customer tracker only
 
         // highlight issues priorities
         ["span.priority",
-            [[/(Immediate)/gi, "$1", { "color": "rgb(255, 102, 65)", "font-weight": "bold", "animation": "blinker .7s linear infinite" }],
-            [/(Urgent)/gi, "$1", { "color": "rgb(255, 102, 65)", "font-weight": "bold" }],
-            [/(High)/gi, "$1", { "color": "rgb(241, 196, 15)", "font-weight": "bold" }],
-            [/(Normal)/gi, "$1", { "color": "black" }],
-            [/(Low)/gi, "$1", { "color": "silver" }]]],
+         [[/(Immediate)/gi, "$1", { "color": "rgb(255, 102, 65)", "font-weight": "bold", "animation": "blinker .7s linear infinite" }],
+          [/(Urgent)/gi, "$1", { "color": "rgb(255, 102, 65)", "font-weight": "bold" }],
+          [/(High)/gi, "$1", { "color": "rgb(241, 196, 15)", "font-weight": "bold" }],
+          [/(Normal)/gi, "$1", { "color": "black" }],
+          [/(Low)/gi, "$1", { "color": "silver" }]]],
 
         // highlight issues statuses
         ["span.status"
-            + ", div.status_id", // backlog
-        [[/(New)/gi, "$1", { "color": "black" }],
-        [/(Feedback)/gi, "$1", { "color": "#8E44AD" }],
-        [/(In Progress)/gi, "$1", { "color": "rgb(11, 73, 191)" }],
-        [/(Resolved)/gi, "$1", { "color": "#229954" }],
-        [/(Closed)/gi, "$1", { "color": "silver" }],
-        [/(Rejected)/gi, "$1", { "color": "silver" }]]],
+         + ", div.status_id", // backlog
+         [[/(New)/gi, "$1", { "color": "black" }],
+          [/(Feedback)/gi, "$1", { "color": "#8E44AD" }],
+          [/(In Progress)/gi, "$1", { "color": "rgb(11, 73, 191)" }],
+          [/(Resolved)/gi, "$1", { "color": "#229954" }],
+          [/(Closed)/gi, "$1", { "color": "silver" }],
+          [/(Rejected)/gi, "$1", { "color": "silver" }]]],
 
         // shorten long table headers (to reduce column widht)
         ["th.wp-table--table-header a#storyPoints", [[/Story Points/gi, "SP", {}]]],
@@ -200,7 +205,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     }
     /* {{{ -- DEBUG ----------------------------------------------------------- */
 
-    /* {{{ -- OPENPROJECTS CORE ----------------------------------------------- */
+    /* {{{ -- OPENPROJECT CORE ------------------------------------------------ */
     // apply screen specific custom CSS
     function opAddCustomCSSScreenSpecific() {
         switch (opCurrentScreen) {
@@ -279,8 +284,24 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             });
         }
     }
-    /* }}} -- OPENPROJECTS CORE ----------------------------------------------- */
+    /* }}} -- OPENPROJECT CORE ------------------------------------------------ */
 
+    /* {{{ -- SPECIAL TWEAKS -------------------------------------------------- */
+    function sortUserSelectOptionsByText() {
+        var select = $(`select[data-filter-name="user_id"].filter-value`),
+            options = $(`select[data-filter-name="user_id"].filter-value option`);
+        options.sort(function(o1, o2) {
+            var t1 = o1.text.toLowerCase(), t2 = o2.text.toLowerCase(); // sort case insensitive
+            return o1.text == 'me' ? -1 // special user 'me' should always come first
+            : o2.text == 'me' ? 1
+            : t1 > t2 ? 1
+            : t1 < t2 ? -1
+            : 0;
+        });
+        options.detach();
+        options.appendTo(select);
+    }
+    /* }}} -- SPECIAL TWEAKS -------------------------------------------------- */
 
     /* {{{ -- EXECUTION ------------------------------------------------------- */
     // add additional (global) CSS styles, one time only and for known screens only
@@ -320,6 +341,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         default: // unknown screen, currently not supported (no changes necessary)
             break;
     }
+
+    // special tweaks: sort (otherwise randomely listed) names in user-name filter (e.g. cost_reports site)
+    waitForKeyElements(`select[data-filter-name="user_id"].filter-value option`, _.debounce(sortUserSelectOptionsByText, 250));
     /* }}} -- EXECUTION ------------------------------------------------------- */
 
 }());
