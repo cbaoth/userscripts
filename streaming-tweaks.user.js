@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.32
+// @version     0.1.33
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -14,6 +14,7 @@
 // @include     /^https?://www\.disneyplus\.com//
 // @include     https://open.spotify.com/*
 // @include     /^https?://(www).(zdf|3sat).de/
+// @include     https://app.plex.tv/desktop/*
 //
 // @grant       none
 //
@@ -42,13 +43,124 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const KEY_R = 82
     const KEY_S = 83
     const KEY_F = 70
+    const KEY_M = 77
     const KEY_U = 85
     const KEY_D = 68
     const KEY_Q = 81
     const KEY_A = 65
-    //const KEY_SPACE = 32
+    const KEY_SPACE = 32
     const KEY_BACKSPACE = 8
     const KEY_F12 = 123
+
+
+    /**
+     * GENERIC VIDEO PLAYER FUNCTIONALITY AND KEY BINDINGS
+     */
+    // tooltip
+    function genericShowTT(msg, color="white", size="2em") {
+        cb.createTT(msg, 500, { offsetX: 50, offsetY: 100, offsetMouse: false, fadeoutTime: 500, css:{ "font-size": size, "color": color }});
+    }
+
+    // toggle generic video player play/pause
+    function genericPlayPause(player) {
+        (player.paused || player.ended) && player.play() || player.pause();
+    }
+
+    // register generic playback rate keys
+    function genericPlayPauseReg(player)
+    {
+        // keys: space -> play/pause
+        cb.bindKeyDown(KEY_SPACE, (e) => { genericPlayPause(player); });
+    }
+
+    // skip ahead / wind back using the given time offset
+    function genericTimeOffset(player, offset)
+    {
+        if (player === undefined) {
+            genericShowTT(`<i>NOT READY YET</i>`, 'darkred');
+            return
+        }
+        var newTime = player.currentTime + offset;
+        player.currentTime = Math.min(Math.max(0, newTime), player.duration);
+    }
+
+    // register generic video player fast forwad / rewind keys
+    function genericTimeOffsetReg(player)
+    {
+        // keys: shift+left/+right -> skip +/-1min
+        cb.bindKeyDown(KEY_LEFT, (e) => genericTimeOffset(player, -60),
+                       { mods: { shift: true, preventDefault: true }});
+        cb.bindKeyDown(KEY_RIGHT, (e) => genericTimeOffset(player, 60),
+                       { mods: { shift: true, preventDefault: true }});
+        // keys: ctrl+left/+right -> skip +/-10min
+        cb.bindKeyDown(KEY_LEFT, (e) => genericTimeOffset(player, -600),
+                       { mods: { ctrl: true, preventDefault: true }});
+        cb.bindKeyDown(KEY_RIGHT, (e) => genericTimeOffset(player, 600),
+                       { mods: { ctrl: true }, preventDefault: true });
+    }
+
+    // set generic video player playback rate up/down
+    function genericRateChange(player, up)
+    {
+        const RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+
+        if (player === undefined) {
+            genericShowTT(`<i>NOT READY YET</i>`, 'darkred');
+            return
+        }
+        var rateCurrent = player.playbackRate;
+        var idx = RATES.indexOf(rateCurrent);
+        var rate, rateColor;
+        if ((up && idx < RATES.length-1) || (!up && idx > 0)) { // +/-
+            rate = RATES[idx+(up ? +1 : -1)];
+            rateColor = (rate == 1 ? 'white' : (rate > 1 ? '#99ff99' : '#ff9999'));
+            genericShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span>`);
+        } else { // unchanged
+            rate = RATES[idx];
+            rateColor = (rate == 1 ? 'white' : (rate > 1 ? '#99ff99' : '#ff9999'));
+            genericShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span></span> already set</i>`, 'darkgrey', '1.5em');
+        }
+        player.playbackRate = rate;
+    }
+
+    // set generic video player playback rate to given rate
+    function genericRateSet(player, rate=1)
+    {
+        if (player === undefined) {
+            genericShowTT(`<i>NOT READY YET</i>`, 'darkred');
+            return
+        }
+        var rateCurrent = player.playbackRate;
+        var rateColor = (rate == 1 ? 'white' : (rate > 1 ? '#99ff99' : '#ff9999'));
+        if (rate == rateCurrent) { // unchanged
+            genericShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span></span> already set</i>`, 'darkgrey', '1.5em');
+        } else { // set new (different) rate
+            genericShowTT(`Speed: <span style="color: ${rateColor}">${rate}x</span>`);
+            player.playbackRate(rate);
+        }
+    }
+
+    // register generic playback rate keys
+    function genericPlaybackRateReg(player)
+    {
+        // keys: ]/[ -> playback speed up / down
+        cb.bindKeyDown(KEY_BRACKET_RIGHT, () => { genericRateChange(player, true) },
+                       { skipEditable: true, preventDefault: true });
+        cb.bindKeyDown(KEY_BRACKET_LEFT, () => { genericRateChange(player) },
+                       { skipEditable: true, preventDefault: true });
+        // keys: shift+]/[ -> playback speed up to max / down to min
+        cb.bindKeyDown(KEY_BRACKET_RIGHT, () => { genericRateSet(player, 2) },
+                       { mods:{ shift: true }, skipEditable: true, preventDefault: true });
+        cb.bindKeyDown(KEY_BRACKET_LEFT, () => { genericRateSet(player, 0.25) },
+                       { mods:{ shift: true }, skipEditable: true, preventDefault: true });
+        // key: = -> playback speed back to default (1)
+        cb.bindKeyDown(KEY_EQUAL, () => { genericRateSet(player, 1) });
+    }
+
+
+    /**
+     * AMAZON PRIME VIDEO
+     */
 
     // register amazon tweaks
     function amazonTweaksReg() {
@@ -113,10 +225,14 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     }
 
 
+    /**
+     * NETFLIX
+     */
+
     // register netflix tweaks
     function netflixTweaksReg() {
         // auto skip intro/credits
-        const NETFLIX_SEL_SKIP = `.skip-credits > a > span, .WatchNext-still-container, button[data-uia='next-episode-seamless-button']`;
+        const NETFLIX_SEL_SKIP = `button.watch-video--skip-content-button, button[data-uia='next-episode-seamless-button-draining']`;
 
         // GM_config
         const GM_CONFIG_ID = 'StreamingTweaks_Netflix_Config'
@@ -160,6 +276,12 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             // TODO hide controls (auto pop-up)
         };
 
+        var player = document.getElementsByTagName("video")[0];
+
+        // register generic player key bindings
+        //genericPlayPausReg(player);
+        genericPlaybackRateReg(player);
+
         // keys: . -> next episode
         cb.bindKeyDown(KEY_PERIOD, (e) => netflixCtrl($('button.button-nfplayerNextEpisode'), e));
         // keys: shift+left/+right -> skip +/-1min
@@ -173,6 +295,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         cb.waitAndThrottle(NETFLIX_SEL_SKIP, (e) => { GM_config.get('nf-auto-skip') && netflixCtrl(e); }, 5000, { tailing: false });
     }
 
+
+    /**
+     * YOUTUBE
+     */
 
     // register youtube tweaks
     function youtubeTweaksReg() {
@@ -405,6 +531,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     }
 
 
+    /**
+     * DISNEY+
+     */
+
     // register disney+ tweaks
     function disneyPlusTweaksReg() {
         // auto skip intro/credits
@@ -473,6 +603,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     }
 
 
+    /**
+     * SPOTIFY
+     */
+
     // register spotify tweaks
     function spotifyTweaksReg() {
         // keys: ./, -> next/previous track
@@ -489,6 +623,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     }
 
 
+    /**
+     * ZDF MEDIATHEK
+     */
 
     // register ZDF Mediathek tweaks
     function zdfTweaksReg() {
@@ -563,6 +700,29 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         //cb.bindKeyDown(KEY_RIGHT, (e) => cb.clickElement($('button.zdfplayer-10-forward')[0], 60), { mods: { ctrl: true }});
     }
 
+
+    /**
+     * PLEX.TV
+     */
+
+    // register PLEX TVk tweaks
+    function plexTweaksReg() {
+        var player = document.getElementsByTagName("video")[0];
+
+        // register generic player key bindings
+        //genericPlayPausReg(player);
+        genericPlaybackRateReg(player);
+        genericTimeOffsetReg(player);
+
+        // keys: M -> toggle mute
+        cb.bindKeyDown(KEY_M, (e) => cb.clickElement($(`button[class*='PlayerControls-volumeButton']`)[0]));
+    }
+
+
+    /**
+     * REGISTER DEPENDING ON HOST
+     */
+
     // register tweaks depending on page
     if (/amazon/.test(window.location.host)) { // Amazon prime video
         amazonTweaksReg();
@@ -576,6 +736,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         spotifyTweaksReg();
     } else if (/zdf|3sat/.test(window.location.host)) { // ZDF Mediathek
         zdfTweaksReg();
+    } else if (/plex/.test(window.location.host)) { // PLEX TV
+        waitForKeyElements("video", () => plexTweaksReg());
     }
 
 }());
