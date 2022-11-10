@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.33
+// @version     0.1.34
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -442,7 +442,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
         function ytSetThumb(up, off)
         {
-            var button = $('div#menu-container ytd-toggle-button-renderer').children('a')[(up ? 0 : 1)];
+            var button = up ? $('div#segmented-like-button ytd-toggle-button-renderer button')[0]
+                            : $(' div#segmented-dislike-button ytd-toggle-button-renderer button')[0];
             if (button === undefined) {
                 showTT(`<i>NOT READY YET</i>`, 'darkred');
                 return;
