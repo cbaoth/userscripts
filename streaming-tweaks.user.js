@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        Streaming Tweaks
-// @version     0.1.34
+// @version     0.1.35
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -450,7 +450,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             }
             var thumbColor = (up ? '#99ff99' : 'red');
             var thumbText = 'Thumb ' + (up ? 'Up' : 'Down');
-            var thumbIsSet = $(button).children('yt-icon-button').hasClass('style-default-active');
+            var thumbIsSet = $(button).attr('aria-pressed') == "true";
             if (off) { // remove thumbs up/down flag?
                 if (thumbIsSet) { // flag is set? then remove it
                     showTT(`${thumbText} <i><span style="color: #e6b3b3">unset</span></i>`, 'darkgrey', '1.5em');
