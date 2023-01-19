@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Invoke-AI tweaks
 // @description Some tweaks for the invoke-ai web tool
-// @version     0.4
+// @version     0.5
 //
 // @namespace   https://cbaoth.de
 // @author      Andreas Weyer
@@ -135,7 +135,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                     ttAndLog(`Batch Run: skipping empty prompt line ...`, 'orange');
                     setTimeout(batchRunIterate, TIMEOUT_INVOCATION_IT); // recursion
                 } else {
-                    reactSetInputValue($(SEL_PROMPT), doAppend ? originalPrompt + ", " + prompt : prompt);
+                    reactSetInputValue($(SEL_PROMPT), doAppend ? originalPrompt + ",\n\n" + prompt : prompt);
                 }
             }
             $(SEL_INVOKE_BUTTON).click(); // press invoke button

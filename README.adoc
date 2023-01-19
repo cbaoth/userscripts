@@ -148,7 +148,7 @@ _HACKY ALPHA VERSION_
 `link:invoke-ai-tweaks.user.js[]` adds some quick hacks to extend / improve https://invoke-ai.github.io/InvokeAI/
 
 * Adds rudimentary support for batch processing (invocation sequence with multiple samplers and/or prompt substitutions)
-  * Full prompts or partial prompts (appended to original prompt) are supported, original prompt is reset after run finishes / is cancelled.
+  * Full prompts or partial prompts (appended to original prompt) are supported, original prompt is reset after run finishes / is cancelled (via b-key).
   * To cancel a batch run just open the dialog (b), the current invocation will continue but the batch run will stop.
 * Adds new key bindings:
 
@@ -164,10 +164,10 @@ image:invoke-ai-tweaks-batchrun-dialog.png[]
 Status / progress tooltip:
 image:invoke-ai-tweaks-batchrun-statustooltip.png[]
 
-Append partial prompt snippets:
+Append partial prompt snippets (vs. replacing the whole prompt) is an option too:
 image:invoke-ai-tweaks-batchrun-appendoption.png[]
 
-Wich will result in appending the current snippet to the original prompt:
+It will appending the snippets to the original prompt one at a time:
 image:invoke-ai-tweaks-batchrun-appendprompt.png[]
 
 
