@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Invoke-AI tweaks
 // @description Some tweaks for the invoke-ai web tool
-// @version     0.3
+// @version     0.4
 //
 // @namespace   https://cbaoth.de
 // @author      Andreas Weyer
@@ -43,6 +43,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     //let batchRunIterationStartedAt = -1;
     let batchRunSequence;
     let batchRunTotal;
+    let originalPrompt;
 
 
     // tooltip
@@ -61,6 +62,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         // batchRunStartedAt = Date.now();
         // batchRunIterationStartedAt = -1;
 
+        originalPrompt = $(SEL_PROMPT).val();
         let samplers = SAMPLERS.filter(s => GM_config.get('iai-sampler-' + s));
         let prompts = GM_config.get('iai-prompt-use') && GM_config.get('iai-prompt-lines').trim().length > 0
             ? GM_config.get('iai-prompt-lines').split(/\r?\n/)
@@ -107,11 +109,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // TODO - support prompt variable and iteratiion over prompt text (lines in config)
     function batchRunIterate() {
         if (batchRunSequence.length <= 0) {
-            ttAndLog(`Batch Run: Finished!`, 'lime');
+            ttAndLog(`Batch Run: Finished (last invokation running)!`, 'lime');
+            reactSetInputValue($(SEL_PROMPT), originalPrompt); // reset original prompt
             return; // no further itreations
         }
         if (!batchRunActive) { // stopped?
             ttAndLog(`Batch Run: Stopped!`, 'red');
+            reactSetInputValue($(SEL_PROMPT), originalPrompt); // reset original prompt
             return;
         }
         // wait 100ms just in case the button is not yet disabled from a potential previous iteration
@@ -119,9 +123,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             //batchRunIterationStartedAt = Date.now();
             let tuple = batchRunSequence.pop();
             let idx = batchRunTotal-batchRunSequence.length;
+            let doAppend = GM_config.get('iai-prompt-append');
             let prompt = tuple[0].trim();
             let sampler = tuple[1];
-            showTT(`Batch Run:  Starting next invocation [${idx}/${batchRunTotal}]`, '#0A3CCF');
+            showTT(`Batch Run:  Starting next invocation [${idx}/${batchRunTotal}]`, '#87cefa');
             console.log(`Batch Run: Starting next invocation [${idx}/${batchRunTotal}, sampler: ${sampler}, prompt: ${prompt}]`);
             reactSetSelection($(SEL_SAMPLER_SELECT), sampler); // select sampler
             if (GM_config.get('iai-prompt-use')) { // prompt sequence enabled?
@@ -130,7 +135,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                     ttAndLog(`Batch Run: skipping empty prompt line ...`, 'orange');
                     setTimeout(batchRunIterate, TIMEOUT_INVOCATION_IT); // recursion
                 } else {
-                    reactSetInputValue($(SEL_PROMPT), prompt);
+                    reactSetInputValue($(SEL_PROMPT), doAppend ? originalPrompt + ", " + prompt : prompt);
                 }
             }
             $(SEL_INVOKE_BUTTON).click(); // press invoke button
@@ -205,7 +210,12 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                           'Prompts to be used, one line per invocation (and sampler)'], // Appears above the field
                 type: "checkbox",
                 default: false,
-                label: "Use prompt sequence"
+                label: "Use prompt sequence (else samplers only)"
+            },
+            'iai-prompt-append': {
+                type: "checkbox",
+                default: false,
+                label: "Append to existing prompt (else replace)"
             },
             'iai-prompt-lines': {
                 type: "textarea",
@@ -239,7 +249,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     waitForKeyElements(SEL_INVOKE_BUTTON, (e) => {
         registerTweaks();
         // add hotkeys
-        cb.bindKeyDown(KEY_B, () => GM_config.open()); //{ mods: { alt: true } });
+        cb.bindKeyDown(KEY_B, () => GM_config.open(), { skipEditable: true });  //mods: { alt: true } });
     });
 
 })();
