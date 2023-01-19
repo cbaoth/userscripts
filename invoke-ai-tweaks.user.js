@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Invoke-AI tweaks
 // @description Some tweaks for the invoke-ai web tool
-// @version     0.2
+// @version     0.3
 //
 // @namespace   https://cbaoth.de
 // @author      Andreas Weyer
@@ -46,13 +46,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
 
     // tooltip
-    function showTT(msg, color="orange", size="0.8em") {
+    function showTT(msg, color="white", size="0.8em") {
         // use invocation timeout, show tt constantly
         cb.createTT(msg, TIMEOUT_INVOCATION_IT, { offsetX: 250, offsetY: 25, offsetMouse: false, fadeoutTime: 150, css:{ "font-size": size, "color": color }});
     }
 
-    function ttAndLog(msg) {
-        showTT(msg);
+    function ttAndLog(msg, color="white") {
+        showTT(msg, color);
         console.log(msg);
     }
 
@@ -79,18 +79,27 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // https://stackoverflow.com/a/59599339
     // react textArea needs some magic to receive text updates
-    function reactSetInputValue(input, val) {
-        let lastValue = input.value;
-        input.value = val;
+    function reactSetInputValue($input, val) {
+        let lastValue = $input[0].value;
+        $input[0].value = val;
         let event = new Event('input', { bubbles: true });
         // hack React15
         event.simulated = true;
         // hack React16
-        let tracker = input._valueTracker;
+        let tracker = $input[0]._valueTracker;
         if (tracker) {
             tracker.setValue(lastValue);
         }
-        input.dispatchEvent(event);
+        $input[0].dispatchEvent(event);
+    }
+
+    // react combobox needs some magic to receive text updates
+    function reactSetSelection($select, val) {
+        $select[0].dispatchEvent(new Event("click"));
+        $select.val(val);
+        let option = Array.from($select[0].options).find(o => o.value === val);
+        option.selected = true;
+        $select[0].dispatchEvent(new Event("change", {bubbles: true}));
     }
 
     // FIXME - make sure that batch runs don't overlap (e.g. pass on an id, stop if id differs)
@@ -98,11 +107,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // TODO - support prompt variable and iteratiion over prompt text (lines in config)
     function batchRunIterate() {
         if (batchRunSequence.length <= 0) {
-            ttAndLog(`Batch Run: Finished!`);
+            ttAndLog(`Batch Run: Finished!`, 'lime');
             return; // no further itreations
         }
         if (!batchRunActive) { // stopped?
-            ttAndLog(`Batch Run: Stopped!`);
+            ttAndLog(`Batch Run: Stopped!`, 'red');
             return;
         }
         // wait 100ms just in case the button is not yet disabled from a potential previous iteration
@@ -112,16 +121,16 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             let idx = batchRunTotal-batchRunSequence.length;
             let prompt = tuple[0].trim();
             let sampler = tuple[1];
-            showTT(`Batch Run:  Starting next invocation [${idx}/${batchRunTotal}]`);
+            showTT(`Batch Run:  Starting next invocation [${idx}/${batchRunTotal}]`, '#0A3CCF');
             console.log(`Batch Run: Starting next invocation [${idx}/${batchRunTotal}, sampler: ${sampler}, prompt: ${prompt}]`);
-            $(SEL_SAMPLER_SELECT).val(sampler); // select sampler
+            reactSetSelection($(SEL_SAMPLER_SELECT), sampler); // select sampler
             if (GM_config.get('iai-prompt-use')) { // prompt sequence enabled?
                 if (prompt.length <= 0) { // no prompt given (in this line) -> skip
                     // todo: warning that empty line was skipped
-                    ttAndLog(`Batch Run - skipping empty line!`);
+                    ttAndLog(`Batch Run: skipping empty prompt line ...`, 'orange');
                     setTimeout(batchRunIterate, TIMEOUT_INVOCATION_IT); // recursion
                 } else {
-                    reactSetInputValue($(SEL_PROMPT)[0], prompt);
+                    reactSetInputValue($(SEL_PROMPT), prompt);
                 }
             }
             $(SEL_INVOKE_BUTTON).click(); // press invoke button

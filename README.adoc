@@ -158,6 +158,9 @@ _HACKY ALPHA VERSION_
 
 * To stop a batch run (hack): Open the b-dialog and wait for current invocation to finish, or just reload the page.
 
+image:invoke-ai-tweaks-batchrun-dialog.png[]
+image:invoke-ai-tweaks-batchrun-statustooltip.png[]
+
 
 === Jenkins Tweaks
 
