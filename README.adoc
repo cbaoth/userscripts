@@ -148,6 +148,15 @@ _HACKY ALPHA VERSION_
 `link:invoke-ai-tweaks.user.js[]` adds some quick hacks to extend / improve https://invoke-ai.github.io/InvokeAI/
 
 * Adds rudimentary support for batch processing (invocation sequence with mutiple samplers and/or prompt substitutions)
+* Adds new key bindings:
+
+[cols="1,3",options="header"]
+|=======
+| Keys         | Action
+| b            | Open batch invocation configuration dialog
+|=======
+
+* To stop a batch run (hack): Open the b-dialog and wait for current invocation to finish, or just reload the page.
 
 
 === Jenkins Tweaks
