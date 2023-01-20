@@ -164,11 +164,11 @@ image:invoke-ai-tweaks-batchrun-dialog.png[]
 Status / progress tooltip:
 image:invoke-ai-tweaks-batchrun-statustooltip.png[]
 
-Append partial prompt snippets (vs. replacing the whole prompt) is an option too:
-image:invoke-ai-tweaks-batchrun-appendoption.png[]
+Substitute prompt snippets (vs. replacing the whole prompt) is an option too:
+image:invoke-ai-tweaks-batchrun-substoption.png[]
 
-It will appending the snippets to the original prompt one at a time:
-image:invoke-ai-tweaks-batchrun-appendprompt.png[]
+It will substitute `${batch_prompt}` within the original prompt, with the snippets, one at a time:
+image:invoke-ai-tweaks-batchrun-substprompt.png[]
 
 
 === Jenkins Tweaks

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Invoke-AI tweaks
 // @description Some tweaks for the invoke-ai web tool
-// @version     0.5
+// @version     0.4
 //
 // @namespace   https://cbaoth.de
 // @author      Andreas Weyer
@@ -37,6 +37,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const SAMPLERS = ['ddim', 'plms', 'k_lms', 'k_dpm_2', 'k_dpm_2_a', 'k_dpmpp_2', 'k_dpmpp_2_a', 'k_euler', 'k_euler_a', 'k_heun'];
     //const TIMEOUT_INVOCATION = 20000; // 20sec
     const TIMEOUT_INVOCATION_IT = 500; // 500ms between batch iterations
+    const PROMPT_SUB_VAR = '${batch_prompt}'
 
     let batchRunActive;
     //let batchRunStartedAt = -1;
@@ -123,7 +124,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             //batchRunIterationStartedAt = Date.now();
             let tuple = batchRunSequence.pop();
             let idx = batchRunTotal-batchRunSequence.length;
-            let doAppend = GM_config.get('iai-prompt-append');
+            let doSubstitute = GM_config.get('iai-prompt-substitute');
             let prompt = tuple[0].trim();
             let sampler = tuple[1];
             showTT(`Batch Run:  Starting next invocation [${idx}/${batchRunTotal}]`, '#87cefa');
@@ -135,7 +136,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                     ttAndLog(`Batch Run: skipping empty prompt line ...`, 'orange');
                     setTimeout(batchRunIterate, TIMEOUT_INVOCATION_IT); // recursion
                 } else {
-                    reactSetInputValue($(SEL_PROMPT), doAppend ? originalPrompt + ",\n\n" + prompt : prompt);
+                    reactSetInputValue($(SEL_PROMPT), doSubstitute ? originalPrompt.replace(PROMPT_SUB_VAR, prompt) : prompt);
                 }
             }
             $(SEL_INVOKE_BUTTON).click(); // press invoke button
@@ -212,10 +213,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 default: false,
                 label: "Use prompt sequence (else samplers only)"
             },
-            'iai-prompt-append': {
+            'iai-prompt-substitute': {
                 type: "checkbox",
-                default: false,
-                label: "Append to existing prompt (else replace)"
+                default: true,
+                label: "Substitute " + PROMPT_SUB_VAR + " in existing prompt withe one below (else use as full prompt)"
             },
             'iai-prompt-lines': {
                 type: "textarea",
