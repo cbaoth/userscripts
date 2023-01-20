@@ -147,8 +147,9 @@ _HACKY ALPHA VERSION_
 
 `link:invoke-ai-tweaks.user.js[]` adds some quick hacks to extend / improve https://invoke-ai.github.io/InvokeAI/
 
-* Adds rudimentary support for batch processing (invocation sequence with multiple samplers and/or prompt substitutions)
-  * Full prompts or partial prompts (appended to original prompt) are supported, original prompt is reset after run finishes / is cancelled (via b-key).
+* Adds rudimentary support for batch processing (invocation sequence with multiple samplers and/or prompt substitutions).
+  * Full prompts, or injecting fragments into the original prompt, are supported.
+  * The original prompt is reset after the un finishes or is cancelled.
   * To cancel a batch run just open the dialog (b), the current invocation will continue but the batch run will stop.
 * Adds new key bindings:
 
@@ -169,6 +170,9 @@ image:invoke-ai-tweaks-batchrun-substoption.png[]
 
 It will substitute `${batch_prompt}` within the original prompt, with the snippets, one at a time:
 image:invoke-ai-tweaks-batchrun-substprompt.png[]
+
+==== Ideas
+* Add support for random prompt substitutions, like 5 generic textareas listing e.g. artists, colors, styles, city names, etc. which are then randomly injected (one or more at a time) into the prompt via `${random1}` to `${random5}` to make things more fun.
 
 
 === Jenkins Tweaks
