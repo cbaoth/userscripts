@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Invoke-AI tweaks
 // @description Some tweaks for the invoke-ai web tool
-// @version     0.7
+// @version     0.8
 //
 // @namespace   https://cbaoth.de
 // @author      Andreas Weyer
@@ -192,7 +192,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         if (val.length <= 0) { // no random lines provided?
             if (prompt.includes(PROMPT_SUB_RND_VARS[n-1])) {
                 console.log(`Batch Run: $(PROMPT_SUB_RND_VARS[n-1]) found but no lines provided, skipping substitution!`);
-                prompt.replace(PROMPT_SUB_RND_VARS[n-1], ""); // remove unused variable
+                return prompt.replace(PROMPT_SUB_RND_VARS[n-1], ""); // remove unused variable
             }
             return prompt;
         }
