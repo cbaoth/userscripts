@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Invoke-AI tweaks
 // @description Some tweaks for the invoke-ai web tool
-// @version     0.6
+// @version     0.7
 //
 // @namespace   https://cbaoth.de
 // @author      Andreas Weyer
@@ -43,7 +43,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const PROMPT_SUB_RND3_VAR = '${random3}';
     const PROMPT_SUB_RND4_VAR = '${random4}';
     const PROMPT_SUB_RND5_VAR = '${random5}';
-    const PROMPT_SUB_RND_VARS = [PROMPT_SUB_RND1_VAR, PROMPT_SUB_RND2_VAR, PROMPT_SUB_RND3_VAR, PROMPT_SUB_RND4_VAR, PROMPT_SUB_RND5_VAR];
+    const PROMPT_SUB_RND6_VAR = '${random6}';
+    const PROMPT_SUB_RND_VARS = [PROMPT_SUB_RND1_VAR, PROMPT_SUB_RND2_VAR, PROMPT_SUB_RND3_VAR, PROMPT_SUB_RND4_VAR, PROMPT_SUB_RND5_VAR, PROMPT_SUB_RND6_VAR];
 
     let batchRunActive;
     //let batchRunStartedAt = -1;
@@ -179,7 +180,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     function substituteRandomLines(prompt) {
         let result = prompt;
-        for (let i=1; i<= 5; i++) {
+        for (let i=1; i<= PROMPT_SUB_RND_VARS.length; i++) {
             result = substituteRandom(result, i);
         }
         return result;
@@ -191,6 +192,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         if (val.length <= 0) { // no random lines provided?
             if (prompt.includes(PROMPT_SUB_RND_VARS[n-1])) {
                 console.log(`Batch Run: $(PROMPT_SUB_RND_VARS[n-1]) found but no lines provided, skipping substitution!`);
+                prompt.replace(PROMPT_SUB_RND_VARS[n-1], ""); // remove unused variable
             }
             return prompt;
         }
@@ -298,6 +300,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             'iai-prompt-rnd5-lines': {
                 label: `Random snippets 5, sibsituting <code>${PROMPT_SUB_RND5_VAR}</code> in existing prompt with a random line from this text field`,
                 type: "textarea"
+            },
+            'iai-prompt-rnd6-lines': {
+                label: `Random snippets 6, sibsituting <code>${PROMPT_SUB_RND6_VAR}</code> in existing prompt with a random line from this text field`,
+                type: "textarea"
             }
         }
         GM_config.init({
@@ -312,7 +318,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                     doc.getElementById(config.id + '_saveBtn').textContent = 'Batch Invoke';
                     doc.getElementById(config.id + '_field_iai-prompt-lines').cols = 125;
                     doc.getElementById(config.id + '_field_iai-prompt-lines').rows = 10;
-                    for (let i = 1; i <= 5; i++) {
+                    for (let i = 1; i <= PROMPT_SUB_RND_VARS.length; i++) {
                         doc.getElementById(config.id + `_field_iai-prompt-rnd${i}-lines`).rows = 4;
                         doc.getElementById(config.id + `_field_iai-prompt-rnd${i}-lines`).cols = 125;
                     }
