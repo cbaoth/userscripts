@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Invoke-AI tweaks
 // @description Some tweaks for the invoke-ai web tool
-// @version     0.8
+// @version     0.9
 //
 // @namespace   https://cbaoth.de
 // @author      Andreas Weyer
@@ -56,13 +56,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     let randomIterationMultiplier;
 
     // tooltip
-    function showTT(msg, color="white", size="0.8em") {
+    function showTT(msg, color="white", size="0.8em", timeout=500) {
         // use invocation timeout, show tt constantly
-        cb.createTT(msg, TIMEOUT_INVOCATION_IT, { offsetX: 250, offsetY: 25, offsetMouse: false, fadeoutTime: 150, css:{ "font-size": size, "color": color }});
+        cb.createTT(msg, timeout, { offsetX: 250, offsetY: 25, offsetMouse: false, fadeoutTime: 150, css:{ "font-size": size, "color": color }});
     }
 
-    function ttAndLog(msg, color="white") {
-        showTT(msg, color);
+    function ttAndLog(msg, color="white", size="0.8em", timeout=500) {
+        showTT(msg, color, size, timeout);
         console.log(msg);
     }
 
@@ -79,7 +79,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
         // check pre-conditions
         if (samplers.length <= 0) {
-            ttAndLog("ERROR: No sampler(s) selected!", "red");
+            ttAndLog("ERROR: No sampler(s) selected!", "red", "1em", 4000);
             return;
         }
 
@@ -89,7 +89,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             if (originalPrompt.includes(PROMPT_SUB_VAR)) { // prompt variable there?
                 prompts = (doSubstitute ? customPrompts.map(p => originalPrompt.replace(PROMPT_SUB_VAR, p)) : customPrompts); // substitute if necessary
             } else { // missing?
-                ttAndLog(`ERROR: Custom prompts provided but <code>${PROMPT_SUB_VAR}</code> missing in original prompt!`, "red");
+                ttAndLog(`ERROR: Custom prompts provided but <code>${PROMPT_SUB_VAR}</code> missing in original prompt!`, "red", "1em", 4000);
                 return;
             }
         } else {
@@ -276,7 +276,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 label: "Multiply invocations by the given factor, 1 meaning no additional promts, x>1 meaning x randomized versions per sampler & prompt (regular iterations).",
                 type: 'int',
                 min: 1,
-                max: 100,
+                max: 9999,
                 default: 1
             },
             'iai-prompt-rnd1-lines': {
