@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Invoke-AI tweaks
 // @description Some tweaks for the invoke-ai web tool
-// @version     0.5
+// @version     0.6
 //
 // @namespace   https://cbaoth.de
 // @author      Andreas Weyer
@@ -52,6 +52,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     let batchRunTotal;
     let originalPrompt;
     let batchPrompt;
+    let randomIterationMultiplier;
 
     // tooltip
     function showTT(msg, color="white", size="0.8em") {
@@ -70,15 +71,45 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         // batchRunIterationStartedAt = -1;
 
         originalPrompt = $(SEL_PROMPT).val();
+        let doSubstitute = GM_config.get('iai-prompt-substitute');
         let samplers = SAMPLERS.filter(s => GM_config.get('iai-sampler-' + s));
-        let prompts = GM_config.get('iai-prompt-lines').trim().length > 0
-            ? GM_config.get('iai-prompt-lines').split(/\r?\n/)
-            : ['']; // empty string, quick solution to iterate at least once in case no prompts are provided
+        // collect custom promts, remove empty lines
+        let customPrompts = GM_config.get('iai-prompt-lines').split(/\r?\n/).map(p => p.trim()).filter(p => p.length > 0);
 
-        prompts.slice().reverse().forEach((p, i) => { // not so efficient but shouldn't matter here
-            samplers.slice().reverse().forEach((s, j) => {
-                batchRunSequence.push([p, s]);
-            });
+        // check pre-conditions
+        if (samplers.length <= 0) {
+            ttAndLog("ERROR: No sampler(s) selected!", "red");
+            return;
+        }
+
+        // collect custom prompts (with optional substitutions) or just use the original prompt if none given
+        let prompts;
+        if (customPrompts.length > 0) { // any custom prompts?
+            if (originalPrompt.includes(PROMPT_SUB_VAR)) { // prompt variable there?
+                prompts = (doSubstitute ? customPrompts.map(p => originalPrompt.replace(PROMPT_SUB_VAR, p)) : customPrompts); // substitute if necessary
+            } else { // missing?
+                ttAndLog(`ERROR: Custom prompts provided but <code>${PROMPT_SUB_VAR}</code> missing in original prompt!`, "red");
+                return;
+            }
+        } else {
+            prompts = [originalPrompt]; // no custom prompts, use original one only
+        }
+
+        let randomIterationMultiplier = GM_config.get('iai-random-iteration-multiplier');
+        // generate all prompt/sampler combinations
+        prompts.slice().reverse().forEach((p, i) => {
+            // repeat random prompt generation multiplier-times
+            for (let rmi = 0; rmi < randomIterationMultiplier; rmi++) {
+                // get prompt with random values (same one used for all samplers below)
+                let prompt = substituteRandomLines(p);
+                if (prompt.trim().lenght <= 0) { // empty prompt?
+                    continue; // skip empty prompt
+                }
+                // one entry per sampler for the given prompt
+                samplers.slice().reverse().forEach((s, j) => {
+                    batchRunSequence.push([prompt, s]);
+                });
+            }
         });
         batchRunTotal = batchRunSequence.length;
         // start iteration
@@ -114,13 +145,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // FIXME - make sure that batch runs don't overlap (e.g. pass on an id, stop if id differs)
     // FIXME - add an iteration timeout so we don't end up looping (recursing) forever
     // TODO - support prompt variable and iteratiion over prompt text (lines in config)
-    function batchRunIterate() {
-        if (batchRunSequence.length <= 0) {
+    function batchRunIterate(rndIdx=1) {
+        if (batchRunSequence.length <= 0) { // batch run ended?
             ttAndLog(`Batch Run: Finished (last invokation running)!`, 'lime');
             reactSetInputValue($(SEL_PROMPT), originalPrompt); // reset original prompt
             return; // no further itreations
         }
-        if (!batchRunActive) { // stopped?
+        if (!batchRunActive) { // batch no longer active (interrupted)?
             ttAndLog(`Batch Run: Stopped!`, 'red');
             reactSetInputValue($(SEL_PROMPT), originalPrompt); // reset original prompt
             return;
@@ -130,31 +161,20 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             //batchRunIterationStartedAt = Date.now();
             let tuple = batchRunSequence.pop();
             let idx = batchRunTotal-batchRunSequence.length;
-            let doSubstitute = GM_config.get('iai-prompt-substitute');
-            let isPromptSequenceProvided = GM_config.get('iai-prompt-lines').trim().length > 0;
             let prompt = tuple[0].trim();
             let sampler = tuple[1];
             showTT(`Batch Run: Starting next invocation [${idx}/${batchRunTotal}]`, '#87cefa');
             console.log(`Batch Run: Starting next invocation [${idx}/${batchRunTotal}, sampler: ${sampler}, prompt: ${prompt}]`);
             reactSetSelection($(SEL_SAMPLER_SELECT), sampler); // select sampler
-            if (isPromptSequenceProvided) { // any custom prompts given?
-                if (prompt.length <= 0) { // no prompt given (in this line) -> skip
-                    ttAndLog(`Batch Run: skipping empty prompt line ...`, 'orange');
-                    batchRunIterate(); // next iteration, no timeout necessary (nothing done)
-                } else {
-                    reactSetInputValue($(SEL_PROMPT), substituteRandomLines(doSubstitute ? originalPrompt.replace(PROMPT_SUB_VAR, prompt) : prompt));
-                }
-            } else { // no custom prompts, just substitute random variable (if any)
-                reactSetInputValue($(SEL_PROMPT), substituteRandomLines(originalPrompt));
-            }
+            reactSetInputValue($(SEL_PROMPT), prompt); // set prompt
             $(SEL_INVOKE_BUTTON).click(); // press invoke button
             // todo: random/re-use seed
-        } else { // no button or disabled -> wait and retry
+        } else { // no button or disabled -> wait a bit and retry
             let idx = batchRunTotal-batchRunSequence.length;
             ttAndLog(`Batch Run: Invocation [${idx}/${batchRunTotal}] running ...`);
             // todo: timeouts - if (batchRunIterationStartedAt
         }
-        setTimeout(batchRunIterate, TIMEOUT_INVOCATION_IT); // recursion
+        setTimeout(batchRunIterate, TIMEOUT_INVOCATION_IT); // next itration / retry (recursion)
     }
 
     function substituteRandomLines(prompt) {
@@ -246,30 +266,37 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             'iai-prompt-substitute': {
                 type: "checkbox",
                 default: true,
-                label: "Substitute " + PROMPT_SUB_VAR + " in existing prompt with one below (else use as full prompt)"
+                label: `Substitute <code>${PROMPT_SUB_VAR}</code> in existing prompt with one below (else use as full prompt)`
             },
-            'iai-prompt-rnd1-lines': {
+            'iai-random-iteration-multiplier': {
                 section: ['Random Snippets',
                           'Random prompt snippets to be used, one random line per invocation'], // Appears above the field
-                label: "Random snippets 1, sibsituting " + PROMPT_SUB_RND1_VAR + " in existing prompt with a random line from this text field",
+                label: "Multiply invocations by the given factor, 1 meaning no additional promts, x>1 meaning x randomized versions per sampler & prompt (regular iterations).",
+                type: 'int',
+                min: 1,
+                max: 100,
+                default: 1
+            },
+            'iai-prompt-rnd1-lines': {
+                label: `Random snippets 1, sibsituting <code>${PROMPT_SUB_RND1_VAR}</code> in existing prompt with a random line from this text field`,
                 type: "textarea",
                 default: "Bergen Norway\nMarrakesh Morocco\nLausanne Switzerland\nPorto Portugal\nPlovdiv Bulgaria\nReykjavik Iceland\nChiang Mai Thailand\nVictoria Canada\Aalborg Denmark\Trieste Italy\nHaarlem Netherlands\nSalzburg Austria\nBanska Bystrica Slovakia\nHoi An Vietnam"
             },
             'iai-prompt-rnd2-lines': {
-                label: "Random snippets 2, sibsituting " + PROMPT_SUB_RND2_VAR + " in existing prompt with a random line from this text field",
+                label: `Random snippets 2, sibsituting <code>${PROMPT_SUB_RND2_VAR}</code> in existing prompt with a random line from this text field`,
                 type: "textarea",
                 default: "spring\nsummer\nfall\nwinter"
             },
             'iai-prompt-rnd3-lines': {
-                label: "Random snippets 3, sibsituting " + PROMPT_SUB_RND3_VAR + " in existing prompt with a random line from this text field",
+                label: `Random snippets 3, sibsituting <code>${PROMPT_SUB_RND3_VAR}</code> in existing prompt with a random line from this text field`,
                 type: "textarea"
             },
             'iai-prompt-rnd4-lines': {
-                label: "Random snippets 4, sibsituting " + PROMPT_SUB_RND4_VAR + " in existing prompt with a random line from this text field",
+                label: `Random snippets 4, sibsituting <code>${PROMPT_SUB_RND4_VAR}</code> in existing prompt with a random line from this text field`,
                 type: "textarea"
             },
             'iai-prompt-rnd5-lines': {
-                label: "Random snippets 5, sibsituting " + PROMPT_SUB_RND5_VAR + " in existing prompt with a random line from this text field",
+                label: `Random snippets 5, sibsituting <code>${PROMPT_SUB_RND5_VAR}</code> in existing prompt with a random line from this text field`,
                 type: "textarea"
             }
         }
@@ -287,7 +314,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                     doc.getElementById(config.id + '_field_iai-prompt-lines').rows = 10;
                     for (let i = 1; i <= 5; i++) {
                         doc.getElementById(config.id + `_field_iai-prompt-rnd${i}-lines`).rows = 4;
-                        doc.getElementById(config.id + `_field_iai-prompt-rnd${i}-lines`).cols = 50;
+                        doc.getElementById(config.id + `_field_iai-prompt-rnd${i}-lines`).cols = 125;
                     }
                 },
                 'save': function(values) {

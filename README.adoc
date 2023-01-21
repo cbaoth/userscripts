@@ -156,19 +156,22 @@ image:imdb-tweaks-seasons-rating1.png[,40%]
 
 ==== Batch Run
 1. Open the dialog via the new hotkeys.
+
 2. Select one or more samplers within the dialog:
 image:invoke-ai-tweaks-batchrun-sampleroption.png[align="left"]
 
 3. Optionally enter multiple prompt lines and/or up to five random value sets:
 image:invoke-ai-tweaks-batchrun-substoption.png[align="left"]
 
-4. Start the batch run by pressing the `Batch Invoke` button which will set the samplers plus replace / substitute the prompt, with the optional prompt lines and random sets, one at a time (all combinations) and press the `Invoke` button afterwards:
+4. With the optional random iteration multiplier for each combination of prompt and sampler additional random variations (invocations) can be generated, x for every base combination.
+
+5. Start the batch run by pressing the `Batch Invoke` button which will set the samplers plus replace / substitute the prompt, with the optional prompt lines and random sets, one at a time (all combinations) and press the `Invoke` button afterwards:
 image:invoke-ai-tweaks-batchrun-substprompt.gif[align="left"]
 
-5. A tooltip will show updates while the batch run is in progress:
+6. A tooltip will show updates while the batch run is in progress:
 image:invoke-ai-tweaks-batchrun-statustooltip.png[align="left"]
 
-6. When the run is finished, or the dialog is opened again (stopping the batch run), the original prompt will be restored:
+7. When the run is finished, or the dialog is opened again (stopping the batch run), the original prompt will be restored:
 image:invoke-ai-tweaks-batchrun-finished.png[align="left"]
 
 === Jenkins Tweaks
