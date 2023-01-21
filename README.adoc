@@ -143,14 +143,9 @@ image:imdb-tweaks-seasons-rating1.png[,40%]
 
 === Invoke-AI Tweaks
 
-_HACKY ALPHA VERSION_
+`link:invoke-ai-tweaks.user.js[]` adds some tweaks to https://invoke-ai.github.io/InvokeAI/
 
-`link:invoke-ai-tweaks.user.js[]` adds some quick hacks to extend / improve https://invoke-ai.github.io/InvokeAI/
-
-* Adds rudimentary support for batch processing (invocation sequence with multiple samplers and/or prompt substitutions).
-  * Full prompts, or injecting fragments into the original prompt, are supported.
-  * The original prompt is reset after the un finishes or is cancelled.
-  * To cancel a batch run just open the dialog (b), the current invocation will continue but the batch run will stop.
+* Batch run mode with sampler selection, custom prompts, and prompt snippets.
 * Adds new key bindings:
 
 [cols="1,3",options="header"]
@@ -159,20 +154,21 @@ _HACKY ALPHA VERSION_
 | b            | Open batch invocation configuration dialog
 |=======
 
-Bath run dialog:
-image:invoke-ai-tweaks-batchrun-dialog.png[]
+==== Batch Run
+1. Open the dialog via the new hotkeys.
+2. Select one or more samplers within the dialog:
+image:invoke-ai-tweaks-batchrun-sampleroption[]
 
-Status / progress tooltip:
-image:invoke-ai-tweaks-batchrun-statustooltip.png[]
-
-Substitute prompt snippets (vs. replacing the whole prompt) is an option too:
+3. Optionally enter multiple prompt lines and/or up to five random value sets:
 image:invoke-ai-tweaks-batchrun-substoption.png[]
 
-It will substitute `${batch_prompt}` within the original prompt, with the snippets, one at a time:
-image:invoke-ai-tweaks-batchrun-substprompt.png[]
+4. Start the batch run by pressing the `Batch Invoke` button which will set the samplers plus replace / substitute the prompt, with the optional prompt lines and random sets, one at a time (all combinations) and press the `Invoke` button afterwards.
+image:invoke-ai-tweaks-batchrun-substprompt.gif[]
 
-==== Ideas
-* Add support for random prompt substitutions, like 5 generic textareas listing e.g. artists, colors, styles, city names, etc. which are then randomly injected (one or more at a time) into the prompt via `${random1}` to `${random5}` to make things more fun.
+5. A tooltip will show updates while the batch run is in progress:
+image:invoke-ai-tweaks-batchrun-statustooltip.png[]
+
+6. When the run is finished, or the dialog is opened again (stopping the batch run), the original prompt will be restored.
 
 
 === Jenkins Tweaks
