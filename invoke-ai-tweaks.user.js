@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Invoke-AI tweaks
 // @description Some tweaks for the invoke-ai web tool
-// @version     0.10
+// @version     0.11
 //
 // @namespace   https://cbaoth.de
 // @author      Andreas Weyer
@@ -32,9 +32,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const SEL_INVOKE_BUTTON = `button.invoke-btn[type=submit]`;
     //const SEL_INVOKE_BUTTON_DISABLED = SEL_INVOKE_BUTTON + `[disabled]`;
     const SEL_INVOKE_BUTTON_ENABLED = SEL_INVOKE_BUTTON + `:not([disabled])`;
-    const SEL_SAMPLER_SELECT = `div.main-options div:nth-child(3) select`;
+    const SEL_WIDTH_SELECT = `div.main-options-list > div.main-options-row:nth-child(2) > div:nth-child(1) select`;
+    const SEL_HEIGHT_SELECT = `div.main-options-list > div.main-options-row:nth-child(2) > div:nth-child(2) select`;
+    const SEL_SAMPLER_SELECT = `div.main-options-list > div.main-options-row:nth-child(2) > div:nth-child(3) select`;
     const SEL_PROMPT = `textarea#prompt`;
     const SAMPLERS = ['ddim', 'plms', 'k_lms', 'k_dpm_2', 'k_dpm_2_a', 'k_dpmpp_2', 'k_dpmpp_2_a', 'k_euler', 'k_euler_a', 'k_heun'];
+    const RESOLUTIONS = { '[unchanged]': [], '512x768': ['512', '768'], '768x512': ['768', '512'], '512x512': ['512', '512'], '768x768': ['768', '768'],
+                          '[random: 512x768/768x512]': [['512', '768'], ['768', '512']] };
     //const TIMEOUT_INVOCATION = 20000; // 20sec
     const TIMEOUT_INVOCATION_IT = 500; // 500ms between batch iterations
     const PROMPT_SUB_VAR = '${prompt}';
@@ -54,6 +58,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     let originalPrompt;
     let batchPrompt;
     let randomIterationMultiplier;
+    let batchResolution;
 
     // tooltip
     function showTT(msg, color="white", size="0.8em", timeout=500) {
@@ -116,6 +121,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         if (GM_config.get('iai-prompt-random-iteration-shuffle')) {
             batchRunSequence = shuffle(batchRunSequence);
         }
+        batchResolution = RESOLUTIONS[GM_config.get('iai-resolution')];
+        // in case of a fixed wheight / width config, set it before starting
+        // TODO consider resetting res and sampler when finished
+        if (batchResolution.length == 2 && !isMultiDimensional(batchResolution)) {
+            reactSetSelection($(SEL_WIDTH_SELECT), batchResolution[0]); // select width
+            reactSetSelection($(SEL_HEIGHT_SELECT), batchResolution[1]); // select heigth
+        }
         batchRunTotal = batchRunSequence.length;
         // start iteration
         batchRunActive = true;
@@ -129,6 +141,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             [array[i], array[j]] = [array[j], array[i]];
         })
         return array;
+    }
+
+    function isMultiDimensional(array) {
+        return JSON.stringify(array).startsWith("[[");
     }
 
 
@@ -178,6 +194,12 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             let idx = batchRunTotal-batchRunSequence.length;
             let prompt = tuple[0].trim();
             let sampler = tuple[1];
+            // in case of random wheight / width config, set it now
+            if (batchResolution.length > 1 && isMultiDimensional(batchResolution)) {
+                let res = batchResolution[Math.floor(Math.random()*batchResolution.length)];
+                reactSetSelection($(SEL_WIDTH_SELECT), res[0]); // select width
+                reactSetSelection($(SEL_HEIGHT_SELECT), res[1]); // select heigth
+            }
             showTT(`Batch Run: Starting next invocation [${idx}/${batchRunTotal}]`, '#87cefa');
             console.log(`Batch Run: Starting next invocation [${idx}/${batchRunTotal}, sampler: ${sampler}, prompt: ${prompt}]`);
             reactSetSelection($(SEL_SAMPLER_SELECT), sampler); // select sampler
@@ -271,6 +293,14 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 type: "checkbox",
                 default: false,
                 label: "k_heun"
+            },
+            'iai-resolution': {
+                section: ['Resolution',
+                          'Optionally override or randomize the resolution'], // Appears above the field
+                type: "select",
+                options: ["[unchanged]", "512x768", "768x512", "512x512", "768x768", "[random: 512x768/768x512]"],
+                default: "[unchanged]",
+                label: "Resolution"
             },
             'iai-prompt-lines': {
                 section: ['Prompts',
