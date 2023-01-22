@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Invoke-AI tweaks
 // @description Some tweaks for the invoke-ai web tool
-// @version     0.11
+// @version     0.12
 //
 // @namespace   https://cbaoth.de
 // @author      Andreas Weyer
@@ -92,7 +92,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         let prompts;
         if (customPrompts.length > 0) { // any custom prompts?
             if (originalPrompt.includes(PROMPT_SUB_VAR)) { // prompt variable there?
-                prompts = (doSubstitute ? customPrompts.map(p => originalPrompt.replace(PROMPT_SUB_VAR, p)) : customPrompts); // substitute if necessary
+                prompts = (doSubstitute ? customPrompts.map(p => originalPrompt.replaceAll(PROMPT_SUB_VAR, p)) : customPrompts); // substitute if necessary
             } else { // missing?
                 ttAndLog(`ERROR: Custom prompts provided but <code>${PROMPT_SUB_VAR}</code> missing in original prompt!`, "red", "1em", 4000);
                 return;
@@ -223,18 +223,18 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     }
 
 
-    function substituteRandom(prompt, n) {
-        let val = GM_config.get(`iai-prompt-rnd${n}-lines`).trim();
+    function substituteRandom(prompt, idx) {
+        let val = GM_config.get(`iai-prompt-rnd${idx}-lines`).trim();
         if (val.length <= 0) { // no random lines provided?
-            if (prompt.includes(PROMPT_SUB_RND_VARS[n-1])) {
-                console.log(`Batch Run: $(PROMPT_SUB_RND_VARS[n-1]) found but no lines provided, skipping substitution!`);
-                return prompt.replace(PROMPT_SUB_RND_VARS[n-1], ""); // remove unused variable
+            if (prompt.includes(PROMPT_SUB_RND_VARS[idx-1])) {
+                console.log(`Batch Run: ${PROMPT_SUB_RND_VARS[idx-1]} found but no lines provided, skipping substitution!`);
+                return prompt.replaceAll(PROMPT_SUB_RND_VARS[idx-1], ""); // remove unused variable
             }
             return prompt;
         }
         let lines = val.split(/\r?\n/);
         let text = lines[Math.floor(Math.random()*lines.length)];
-        return prompt.replace(PROMPT_SUB_RND_VARS[n-1], text);
+        return prompt.replaceAll(PROMPT_SUB_RND_VARS[idx-1], text);
     }
 
 
