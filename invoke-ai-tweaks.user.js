@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Invoke-AI tweaks
 // @description Some tweaks for the invoke-ai web tool
-// @version     0.9
+// @version     0.10
 //
 // @namespace   https://cbaoth.de
 // @author      Andreas Weyer
@@ -112,11 +112,25 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 });
             }
         });
+        // shuffle batch run sequence (if configured)
+        if (GM_config.get('iai-prompt-random-iteration-shuffle')) {
+            batchRunSequence = shuffle(batchRunSequence);
+        }
         batchRunTotal = batchRunSequence.length;
         // start iteration
         batchRunActive = true;
         batchRunIterate();
     }
+
+
+    function shuffle(array) {
+        array.forEach((item, i) => {
+            let j = Math.floor(Math.random() * array.length);
+            [array[i], array[j]] = [array[j], array[i]];
+        })
+        return array;
+    }
+
 
     // https://stackoverflow.com/a/59599339
     // react textArea needs some magic to receive text updates
@@ -278,6 +292,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 min: 1,
                 max: 9999,
                 default: 1
+            },
+            'iai-prompt-random-iteration-shuffle': {
+                type: "checkbox",
+                default: true, // default
+                label: "Shuffle all iterations so that prompts & sampler combinations are executed in a random order instead of running e.g. all ranedom multiplications with prompt a and sampler b first."
             },
             'iai-prompt-rnd1-lines': {
                 label: `Random snippets 1, sibsituting <code>${PROMPT_SUB_RND1_VAR}</code> in existing prompt with a random line from this text field`,
