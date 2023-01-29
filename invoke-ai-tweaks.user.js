@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Invoke-AI tweaks
 // @description Some tweaks for the invoke-ai web tool
-// @version     0.12
+// @version     0.13
 //
 // @namespace   https://cbaoth.de
 // @author      Andreas Weyer
@@ -10,10 +10,8 @@
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/invoke-ai-tweaks.user.js
 // @updateURL   https://github.com/cbaoth/userscripts/raw/master/invoke-ai-tweaks.user.js
 //
-// @match       https://localhost
-// @match       http://localhost
-// @exclude     http://localhost/*
-// @exclude     https://localhost/*
+// @match       http*://localhost
+// @match       http*://*.ngrok.io
 //
 // @grant       none
 //
