@@ -141,11 +141,13 @@ image:imdb-tweaks-seasons-rating1.png[,40%]
 |=======
 
 
-=== Invoke-AI Tweaks
+=== Image-AI Tweaks
 
-`link:invoke-ai-tweaks.user.js[]` adds some tweaks to https://invoke-ai.github.io/InvokeAI/
+`link:invoke-ai-tweaks.user.js[]` adds some tweaks to https://invoke-ai.github.io/InvokeAI/[Invoke-AI] and https://github.com/AUTOMATIC1111/stable-diffusion-webui[Automatic1111] Stable Diffusion WebUI.
 
-* Batch run mode with sampler selection, custom prompts, and prompt snippets.
+* Batch run mode with sampler selection, custom prompts, random substitutions, etc.
+* Very basic conversion between Invoke-AI to A1111 notation and vice versa
+** E.g. `(foo)++++` to `(foo):1.4` but a) only when using parentheses and b) only for ranges [1.1,1.9] (+) and [0.1,0.9] (-)
 * Adds new key bindings:
 
 [cols="1,3",options="header"]
@@ -173,6 +175,7 @@ image:invoke-ai-tweaks-batchrun-statustooltip.png[align="left"]
 
 7. When the run is finished, or the dialog is opened again (stopping the batch run), the original prompt will be restored:
 image:invoke-ai-tweaks-batchrun-finished.png[align="left"]
+
 
 === Jenkins Tweaks
 
