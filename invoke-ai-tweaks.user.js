@@ -31,7 +31,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
 (function() {
 
-    const KEY_B = 66;
+    const KEY_ESC = 27
+    const KEY_F12 = 123
 
     const ENGINE_IAI = 'IAI'
     const ENGINE_A1111 = 'A1111'
@@ -46,6 +47,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                                 A1111: `#txt2img_sampling select, #img2img_sampling select`};
     const SEL_PROMPT = {IAI: `textarea#prompt`,
                         A1111: `div#txt2img_prompt textarea, div#img2img_prompt textarea`};
+    const SEL_PROMPT_NEG = {IAI: `textarea#prompt`, // FIXME
+                            A1111: `div#txt2img_neg_prompt textarea, div#img2img_neg_prompt textarea`};
 
     const SAMPLERS = {IAI: ['ddim', 'plms', 'k_lms', 'k_dpm_2', 'k_dpm_2_a', 'k_dpmpp_2', 'k_dpmpp_2_a', 'k_euler', 'k_euler_a', 'k_heun'],
                       A1111: ['Euler a', 'Euler', 'LMS', 'Heun', 'DPM2', 'DPM2 a', 'DPM++ 2S a', 'DPM++ 2M', 'DPM++ SDE', 'DPM fast', 'DPM adaptive',
@@ -72,6 +75,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     let batchRunSequence;
     let batchRunTotal;
     let originalPrompt;
+    let originalPromptNeg;
     let batchPrompt;
     let randomIterationMultiplier;
     let batchResolution;
@@ -137,9 +141,12 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
         originalPrompt = $$(SEL_PROMPT[engine]).val();
         if (originalPrompt === undefined) {
-            ttAndLog("ERROR: Unable to find original prompt, batch run stopped!", "red", "1em", 4000)
+            ttAndLog("ERROR: Unable to find original prompt field, batch run stopped!", "red", "1em", 4000)
             return;
         }
+        originalPromptNeg = $$(SEL_PROMPT_NEG[engine]).val();
+        let mainPrompt = GM_config.get('ai-prompt').trim();
+        let mainPromptNeg = GM_config.get('ai-prompt-negative').trim();
         let doSubstitute = GM_config.get('ai-prompt-substitute');
         let samplers = SAMPLERS[engine].filter(s => GM_config.get('ai-sampler-' + s));
         // collect custom promts, remove empty lines
@@ -151,20 +158,37 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             return;
         }
 
-        // collect custom prompts (with optional substitutions) or just use the original prompt if none given
+        // collect custom prompts (with optional substitutions) or just use the configured main prompt if none is given
         let prompts;
+        // FIXME to many confusing checks, unclear to user
         if (customPrompts.length > 0) { // any custom prompts?
-            if (originalPrompt.trim().length <= 0) { // original prompt empty?
-                prompts = customPrompts; // just use the custom prompts (no matter the doSubstitue setting)
+            if (mainPrompt.includes(PROMPT_SUB_VAR)) { // original prompt contains variable?
+                prompts = (doSubstitute ? customPrompts.map(p => mainPrompt.replaceAll(PROMPT_SUB_VAR, p)) : customPrompts); // substitute if necessary
             } else if (originalPrompt.includes(PROMPT_SUB_VAR)) { // original prompt contains variable?
                 prompts = (doSubstitute ? customPrompts.map(p => originalPrompt.replaceAll(PROMPT_SUB_VAR, p)) : customPrompts); // substitute if necessary
-            } else { // missing?
-                ttAndLog(`ERROR: Custom prompts provided but <code>${PROMPT_SUB_VAR}</code> missing in original prompt!`, "red", "1em", 4000);
-                return;
+            } else if (mainPrompt.length <= 0 && originalPrompt.trim().length <= 0) { // original and configured main prompt empty?
+                prompts = customPromts; // just take custom prompts, no dummy with variable required
+            } else if (mainPrompt.length >= 1) { // configured main prompt not empty?
+                ttAndLog(`WARNING: Custom prompt variable missing but main prompt configured, using main prompt only!`, "orange", "1em", 4000); // FIXME mode a bit lower
+                prompts = [mainPrompt]; // then just us it and ignore custom promts (due to missing variables)
+            } else if (originalPrompt.length >= 1) { // original prompt not empty?
+                ttAndLog(`WARNING: Custom prompt variable missing but main prompt configured, using main prompt only!`, "orange", "1em", 4000);
+                prompts = [originalPrompt.trim()]; // then just us it and ignore custom promts (due to missing variables)
             }
-        } else {
-            prompts = [originalPrompt]; // no custom prompts, use original one only
+        } else { // no custom prompt?
+            if (mainPrompt.length <= 0) { // configured main prompt not empty?
+                prompts = [mainPrompt]; // no custom prompts, so use configured main prompt only
+            } else if (originalPrompt.trim().length <= 0) { // original prompt not empty?
+                prompts = [originalPrompt.trim()]; // no custom prompts, use original one only
+            } else {
+                ttAndLog(`ERROR: No custom prompts, no configured main, and no original prompt provided, stopping ...!`, "red", "1em", 4000);
+            }
         }
+
+        // FIXME in case of IAI append negative prompt in brackets to main prompt
+        if (mainPromptNeg.length > 0) { // configured main negative prompt not empty?
+            setInputValue($$(SEL_PROMPT_NEG[engine]), mainPromptNeg); // no custom negative prompts, so use configured main prompt only
+        } // else: keep the original negative prompt (unchanged, no matter if empty or not)
 
         let randomIterationMultiplier = GM_config.get('ai-random-iteration-multiplier');
         // generate all prompt/sampler combinations
@@ -259,6 +283,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     function reset() {
         setInputValue($$(SEL_PROMPT[engine]), originalPrompt); // reset original prompt
+        setInputValue($$(SEL_PROMPT_NEG[engine]), originalPromptNeg); // reset original negative prompt
     }
 
     // FIXME - make sure that batch runs don't overlap (e.g. pass on an id, stop if id differs)
@@ -337,6 +362,18 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         const GM_CONFIG_BATCHRUN_ID = engine + 'Tweaks_BatchRun_Config'
         const GM_CONFIG_BATCHRUN_FIELDS = engine == ENGINE_IAI ?
               { // IAI samplers
+                  'ai-prompt': {
+                      section: ['Core Settings',
+                                'Overwrite base values'], // Appears above the field
+                      type: "textarea",
+                      default: "${prompt}, highest quality, 4k, 8k",
+                      label: `Overwrite positive prompt within batch run`
+                  },
+                  'ai-prompt-negative': {
+                      type: "textarea",
+                      default: "ugly, bad art, low-res",
+                      label: "Overwrite negative prompt within batch run"
+                  },
                   'ai-sampler-ddim': {
                       section: ['Samplers',
                                 'One invocation per sampler'], // Appears above the field
@@ -450,6 +487,18 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                       type: "textarea"
                   }
               } : { // A1111 samplers
+                  'ai-prompt': {
+                      section: ['Core Settings',
+                                'Overwrite base values'], // Appears above the field
+                      type: "textarea",
+                      default: "${prompt}, highest quality, 4k, 8k",
+                      label: `Overwrite positive prompt within batch run`
+                  },
+                  'ai-prompt-negative': {
+                      type: "textarea",
+                      default: "ugly, bad art, low-res",
+                      label: "Overwrite negative prompt within batch run"
+                  },
                   'ai-sampler-Euler a': {
                       section: ['Samplers',
                                 'One invocation per sampler'], // Appears above the field
@@ -606,8 +655,14 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 'open': function(doc) {
                     batchRunActive = false;
                     let config = this;
+                    //document.querySelector(`iframe#${config.id}`).style.width = '60em';
+                    doc.getElementById(config.id).style.max_width = '150px';
                     doc.getElementById(config.id + '_closeBtn').textContent = 'Cancel';
                     doc.getElementById(config.id + '_saveBtn').textContent = 'Batch Invoke';
+                    doc.getElementById(config.id + '_field_ai-prompt').cols = 125;
+                    doc.getElementById(config.id + '_field_ai-prompt').rows = 10;
+                    doc.getElementById(config.id + '_field_ai-prompt-negative').cols = 125;
+                    doc.getElementById(config.id + '_field_ai-prompt-negative').rows = 10;
                     doc.getElementById(config.id + '_field_ai-prompt-lines').cols = 125;
                     doc.getElementById(config.id + '_field_ai-prompt-lines').rows = 10;
                     for (let i = 1; i <= PROMPT_SUB_RND_VARS.length; i++) {
@@ -627,15 +682,17 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // Invoke-AI
     waitForKeyElements(SEL_INVOKE_BUTTON[ENGINE_IAI], (e) => {
         registerTweaks(ENGINE_IAI);
-        // add hotkeys
-        cb.bindKeyDown(KEY_B, () => GM_config.open(), { skipEditable: true });  //mods: { alt: true } });
+        // hot-key alt-F12 / ESC -> Open / close config dialog
+        cb.bindKeyDown(KEY_F12, () => GM_config.open(), { mods: { alt: true } });
+        cb.bindKeyDown(KEY_ESC, () => GM_config.close(), { skipEditable: true });//mo
     });
 
     // Automatic1111
     waitForKeyElements(`gradio-app`, (e) => { // FIXME selector to generic
         registerTweaks(ENGINE_A1111);
-        // add hotkeys
-        cb.bindKeyDown(KEY_B, () => GM_config.open(), { skipEditable: true });  //mods: { alt: true } });
+        // hot-key alt-F12 / ESC -> Open / close config dialog
+        cb.bindKeyDown(KEY_F12, () => GM_config.open(), { mods: { alt: true } });
+        cb.bindKeyDown(KEY_ESC, () => GM_config.close(), { skipEditable: true });//mods: { alt: true } });
     });
 
 })();

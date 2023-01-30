@@ -153,7 +153,8 @@ image:imdb-tweaks-seasons-rating1.png[,40%]
 [cols="1,3",options="header"]
 |=======
 | Keys         | Action
-| b            | Open batch invocation configuration dialog
+| alt-F12      | Open batch invocation configuration dialog
+| ESC          | Close dialog
 |=======
 
 ==== Batch Run
