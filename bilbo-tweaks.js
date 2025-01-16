@@ -4,7 +4,7 @@
 // @copyright   2021-2024, userscript@cbaoth.de
 //
 // @name        Bilbo Tweaks
-// @version     0.4
+// @version     0.5
 // @description Some improvments to bilbo time tracking
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/bilbo-tweaks.user.js
 //
@@ -57,7 +57,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // get required weekly work time in minutes (int)
     function getRequiredMinutes(upUntilNow = false) {
         let result = 0;
-        
+
         let index = upUntilNow ? getColumnNumberToday() : -1;
         let n = index < 1 || index > 5 ? 4 : index - 1;
         for (let i = 0; i <= n; i++) { // mo-today or mo-fr if today not within current week mo-fr
@@ -101,27 +101,27 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // calculate required working time and delta (to actual total time) and add it to the overview table
     function showTimes() {
         let actualMinutes = timeToMinutes($(TOTAL_WEEK_TIME_SELECTOR).text());
-    
+
         let requiredMinutes = getRequiredMinutes();
         let requiredTime = minutesToTime(requiredMinutes);
         let requiredMinutesUpUntilNow = getRequiredMinutes(true);
         let requiredTimeUpUntilNow = minutesToTime(requiredMinutesUpUntilNow);
-    
+
         let timeTotalCell = $(`table.activityTable tbody tr:nth-child(2) td:nth-child(9)`);
-        let timeUpUntilNowCell = $(`table.activityTable tbody tr:nth-child(3) td:nth-child(9)`);
-    
+        let timeUpUntilNowCell = $(`table.activityTable tbody tr:nth-child(7) td:nth-child(9)`);
+
         let minutesDelta = actualMinutes - requiredMinutes;
         let minutesDeltaUpUntilNow = actualMinutes - requiredMinutesUpUntilNow;
-    
+
         // Display total work time required this week
-        timeTotalCell.html(requiredTime + ' (' + colorizeTimeDelta(minutesDelta) + ')');
+        timeTotalCell.html(colorizeTimeDelta(minutesDelta) + ' (' + requiredTime + ')');
         timeTotalCell.css('text-align', 'center');
-        timeTotalCell.attr('title', 'Total required time this week (delta)');
-    
+        timeTotalCell.attr('title', 'Delta actual vs. required time for the whole week (required time this week in total)');
+
         // Display work time required up until current day
-        timeUpUntilNowCell.html(requiredTimeUpUntilNow + ' (' +colorizeTimeDelta (minutesDeltaUpUntilNow) + ')');
+        timeUpUntilNowCell.html(colorizeTimeDelta (minutesDeltaUpUntilNow) + ' (' + requiredTimeUpUntilNow + ')');
         timeUpUntilNowCell.css('text-align', 'center');
-        timeUpUntilNowCell.attr('title', 'Remaining required time up until today (delta)');
+        timeUpUntilNowCell.attr('title', ' Delta actual vs. required time up until today (required time up until today)');
     }
 
 
