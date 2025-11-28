@@ -4,7 +4,7 @@
 // @copyright   2021-2024, userscript@cbaoth.de
 //
 // @name        Bilbo Tweaks
-// @version     0.9
+// @version     0.10
 // @description Some improvments to bilbo time tracking
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/bilbo-tweaks.user.js
 //
@@ -1442,6 +1442,36 @@
             console.error('Project select dropdown not found');
         }
     }
+
+    // Add settings button to header (on all pages)
+    function addSettingsButton() {
+        // Find the BILBO title link in the header
+        waitForElements('a.applicationTitle', (bilboLink) => {
+            // Check if button already exists
+            if (document.getElementById('bilboSettingsBtn')) return;
+
+            // Create settings button
+            const settingsBtn = document.createElement('a');
+            settingsBtn.id = 'bilboSettingsBtn';
+            settingsBtn.href = '#';
+            settingsBtn.className = 'applicationTitle';
+            settingsBtn.textContent = '⚙️';
+            settingsBtn.title = 'Configure Bilbo Tweaks';
+            settingsBtn.style.marginRight = '15px';
+            settingsBtn.style.fontSize = '20px';
+            settingsBtn.style.textDecoration = 'none';
+            settingsBtn.onclick = (e) => {
+                e.preventDefault();
+                GM_config.open();
+            };
+
+            // Insert before BILBO link
+            bilboLink.parentElement.insertBefore(settingsBtn, bilboLink);
+        }, { once: true });
+    }
+
+    // Add settings button on all pages
+    addSettingsButton();
 
 
     // apply page specific tweaks
