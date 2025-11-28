@@ -4,7 +4,7 @@
 // @copyright   2021-2024, userscript@cbaoth.de
 //
 // @name        Bilbo Tweaks
-// @version     0.5
+// @version     0.6
 // @description Some improvments to bilbo time tracking
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/bilbo-tweaks.user.js
 //
@@ -22,6 +22,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
 (function () {
 
+    // Add custom styles
+    GM_addStyle(`
+        table#activityTable {
+            width: 350px !important;
+        }
+    `);
+
     // https://www.w3schools.com/howto/howto_js_scroll_to_top.asp
     //function scrollToTop() {
     //    document.body.scrollTop = 0; // For Safari
@@ -34,6 +41,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     //const WEEK_DAY_HOURS = [8,8,8,8,8]; // full-time, 40h per week
     //const WEEK_DAY_HOURS = [8,8,4,8,8]; // 90% part-time, 36h per week (Wed 4h)
     const WEEK_DAY_HOURS = [8,8,4,4,8]; // 80% part-time, 36h per week (Wed & Thu 4h)
+
+    // default work time settings per day (Mo-Fr)
+    const DEFAULT_FROM = 9; // always 09:00
+    const DEFAULT_TO = [18, 18, 14, 14, 18]; // Mo-Fr, Wed & Thu end at 14:00
+    const DEFAULT_BREAK = [1, 1, 0, 0, 1]; // Mo-Fr, no break on Wed & Thu (4h work days)
 
     // get required daily working time based on day-activity type
     function getRequiredMinutesByType(type, hours, isSub) {
@@ -192,6 +204,265 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         console.log(`Updated hours: ${currentTimeStr} + ${remainingTimeStr} = ${newTimeStr}`);
     }
 
+    // adjust time value in input field by offset (in minutes), respecting min/max bounds
+    function adjustTimeValue(inputField, offsetMinutes) {
+        const currentTimeStr = $(inputField).val().trim();
+        let currentMinutes = parseTimeToMinutes(currentTimeStr);
+
+        // Apply incremental rounding for ±5min adjustments
+        if (Math.abs(offsetMinutes) === 5) {
+            if (offsetMinutes > 0) {
+                // Round up to next 5-minute increment (e.g., 13 -> 15)
+                const remainder = currentMinutes % 5;
+                if (remainder === 0) {
+                    currentMinutes += 5; // Already on increment, add 5
+                } else {
+                    currentMinutes += (5 - remainder); // Round up to next
+                }
+            } else {
+                // Round down to previous 5-minute increment (e.g., 13 -> 10, 10 -> 5)
+                const remainder = currentMinutes % 5;
+                if (remainder === 0) {
+                    currentMinutes -= 5; // Already on increment, subtract 5
+                } else {
+                    currentMinutes = Math.floor(currentMinutes / 5) * 5; // Round down to previous
+                }
+            }
+        } else {
+            // For ±1h, just add the offset
+            currentMinutes = currentMinutes + offsetMinutes;
+        }
+
+        // Bound between 00:00 and 23:59
+        let newMinutes = Math.max(0, Math.min(currentMinutes, 23 * 60 + 59));
+
+        const newTimeStr = minutesToTime(newMinutes);
+        $(inputField).val(newTimeStr);
+        $(inputField).trigger('change');
+    }
+
+    // create increment/decrement links for time input fields
+    function createAdjustmentLinks() {
+        return $('<span style="margin-left: 5px; white-space: nowrap;">' +
+                 '<a href="/#" class="time-adjust" data-offset="-60" title="Subtract 1 hour">-1h</a> ' +
+                 '<a href="/#" class="time-adjust" data-offset="-5" title="Subtract 5 minutes">-5m</a> ' +
+                 '<a href="/#" class="time-adjust" data-offset="5" title="Add 5 minutes">+5m</a> ' +
+                 '<a href="/#" class="time-adjust" data-offset="60" title="Add 1 hour">+1h</a>' +
+                 '</span>');
+    }
+
+    // add increment/decrement links to time input fields
+    function addTimeAdjustmentLinks() {
+        // Add to from/to/break fields (using actual field names)
+        const fromToBreakFields = $('input[name="startTimeStr"], input[name="endTimeStr"], input[name="breaksStr"]');
+        console.log(`Found ${fromToBreakFields.length} from/to/break fields`);
+
+        fromToBreakFields.each(function() {
+            const inputField = $(this);
+
+            if (inputField.data('adjustment-links-added')) {
+                return;
+            }
+
+            inputField.data('adjustment-links-added', true);
+
+            const links = createAdjustmentLinks();
+            links.find('a.time-adjust').on('click', function(e) {
+                e.preventDefault();
+                const offset = parseInt($(this).data('offset'), 10);
+                adjustTimeValue(inputField, offset);
+                return false;
+            });
+
+            // For from/to/break fields, insert after the "&nbsp;h" unit text
+            // Look for text nodes containing "h" after the input field
+            const parentTd = inputField.parent();
+            const allNodes = parentTd.contents();
+            let insertAfterNode = inputField;
+
+            // Find the text node containing "&nbsp;h" or " h" after the input field
+            let foundInputField = false;
+            allNodes.each(function() {
+                if (this === inputField[0]) {
+                    foundInputField = true;
+                } else if (foundInputField && this.nodeType === Node.TEXT_NODE) {
+                    const textContent = $(this).text();
+                    if (textContent.includes('h')) {
+                        insertAfterNode = $(this);
+                        return false; // Break out of loop
+                    }
+                }
+            });
+
+            insertAfterNode.after(links);
+            console.log(`Added adjustment links to ${inputField.attr('name')} field`);
+        });
+
+        // Add to hours fields (with extra spacing)
+        $('input[name="hour"]').each(function() {
+            const inputField = $(this);
+
+            if (inputField.data('adjustment-links-added')) {
+                return;
+            }
+
+            inputField.data('adjustment-links-added', true);
+
+            const links = createAdjustmentLinks();
+            links.css('margin-left', '5px');
+            links.find('a.time-adjust').on('click', function(e) {
+                e.preventDefault();
+                const offset = parseInt($(this).data('offset'), 10);
+                adjustTimeValue(inputField, offset);
+                return false;
+            });
+
+            inputField.after(links);
+        });
+    }
+
+    // get day of week (0=Sunday, 1=Monday, ..., 6=Saturday) from targetDateStr
+    function getDayOfWeekFromTargetDate() {
+        const targetDateStr = $('input[name="targetDateStr"]').val();
+        if (!targetDateStr) {
+            console.log('targetDateStr field not found or empty');
+            return -1;
+        }
+
+        // Parse date string (format: dd/mm/yyyy or dd.MM.yyyy)
+        const parts = targetDateStr.split(/[./]/); // Split by either . or /
+        if (parts.length !== 3) {
+            console.log(`Invalid date format: ${targetDateStr}`);
+            return -1;
+        }
+
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1; // JavaScript months are 0-indexed
+        const year = parseInt(parts[2], 10);
+
+        if (isNaN(day) || isNaN(month) || isNaN(year)) {
+            console.log(`Failed to parse date: ${targetDateStr}`);
+            return -1;
+        }
+
+        const date = new Date(year, month, day);
+        const dayOfWeek = date.getDay();
+        console.log(`Parsed date ${targetDateStr} as day of week: ${dayOfWeek} (0=Sun, 1=Mon, ..., 6=Sat)`);
+        return dayOfWeek;
+    }
+
+    // get Monday-Friday index (0-4) from day of week (0-6, where 0=Sunday)
+    function getWeekdayIndex(dayOfWeek) {
+        if (dayOfWeek === 0) return -1; // Sunday
+        if (dayOfWeek === 6) return -1; // Saturday
+        return dayOfWeek - 1; // Monday=0, Tuesday=1, ..., Friday=4
+    }
+
+    // set default value for from/to/break fields
+    function setDefaultTimeValue(fieldName) {
+        const dayOfWeek = getDayOfWeekFromTargetDate();
+        const weekdayIndex = getWeekdayIndex(dayOfWeek);
+
+        if (weekdayIndex < 0) {
+            console.log('Not a weekday, cannot set default value');
+            return;
+        }
+
+        let value;
+        let actualFieldName;
+
+        if (fieldName === 'from' || fieldName === 'startTimeStr') {
+            actualFieldName = 'startTimeStr';
+            value = minutesToTime(DEFAULT_FROM * 60);
+        } else if (fieldName === 'to' || fieldName === 'endTimeStr') {
+            actualFieldName = 'endTimeStr';
+            const fromField = $('input[name="startTimeStr"]');
+            const fromMinutes = parseTimeToMinutes(fromField.val().trim());
+
+            if (fromMinutes > 0) {
+                // Calculate to = from + work hours + break
+                value = minutesToTime(fromMinutes + WEEK_DAY_HOURS[weekdayIndex] * 60 + DEFAULT_BREAK[weekdayIndex] * 60);
+            } else {
+                // Use default to time
+                value = minutesToTime(DEFAULT_TO[weekdayIndex] * 60);
+            }
+        } else if (fieldName === 'break' || fieldName === 'breaksStr') {
+            actualFieldName = 'breaksStr';
+            value = minutesToTime(DEFAULT_BREAK[weekdayIndex] * 60);
+        }
+
+        const inputField = $(`input[name="${actualFieldName}"]`);
+        inputField.val(value);
+        inputField.trigger('change');
+        console.log(`Set default value for ${actualFieldName}: ${value}`);
+    }
+
+    // make from/to/break labels clickable to set default values
+    function makeLabelsClickable() {
+        // Find the input fields and then find their corresponding labels
+        // Using English captions: "From:", "To:", "Breaks:"
+        const fieldMappings = [
+            { fieldName: 'startTimeStr', labelText: 'From:' },
+            { fieldName: 'endTimeStr', labelText: 'To:' },
+            { fieldName: 'breaksStr', labelText: 'Breaks:' }
+        ];
+
+        fieldMappings.forEach(function(mapping) {
+            const inputField = $(`input[name="${mapping.fieldName}"]`);
+            if (inputField.length === 0) {
+                console.log(`Field not found: ${mapping.fieldName}`);
+                return;
+            }
+
+            // Find the label <td> in the same row that contains the exact caption text
+            const label = inputField.closest('tr').find('td').filter(function() {
+                const text = $(this).text().trim();
+                // Match the exact caption, case-insensitive, with optional whitespace
+                return text.toLowerCase().replace(/\s+/g, '') === mapping.labelText.toLowerCase().replace(/\s+/g, '');
+            }).first();
+
+            if (label.length === 0) {
+                console.log(`Label not found for: ${mapping.fieldName} (looking for "${mapping.labelText}")`);
+                return;
+            }
+
+            if (label.data('clickable-added')) {
+                return;
+            }
+
+            label.data('clickable-added', true);
+
+            // Trim the label text to remove trailing whitespace/nbsp
+            const originalHtml = label.html();
+            const trimmedHtml = originalHtml.replace(/(&nbsp;|\s)+$/g, '');
+            label.html(trimmedHtml);
+
+            // Make label look like a link
+            label.css({
+                'color': '#000080',
+                'text-decoration': 'none',
+                'cursor': 'pointer'
+            });
+
+            // Add hover effect for underline
+            label.on('mouseenter', function() {
+                $(this).css('text-decoration', 'underline');
+            });
+
+            label.on('mouseleave', function() {
+                $(this).css('text-decoration', 'none');
+            });
+
+            label.attr('title', 'Click to set default value');
+
+            label.on('click', function() {
+                setDefaultTimeValue(mapping.fieldName);
+            });
+
+            console.log(`Made label clickable for: ${mapping.fieldName}`);
+        });
+    }
+
     // add "Add remaining time" link next to hours input fields
     function addRemainingTimeLinks() {
         $('input[name="hour"]').each(function() {
@@ -205,16 +476,16 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             // Mark as processed
             hoursInput.data('remaining-time-link-added', true);
 
-            // Create the link
-            const link = $('<a href="/#" style="margin-left: 10px;">Add remaining time</a>');
+            // Create the link with extra spacing
+            const link = $('<a href="/#" style="margin-left: 20px;">Add remaining time</a>');
             link.on('click', function(e) {
                 e.preventDefault();
                 addRemainingTime(hoursInput);
                 return false;
             });
 
-            // Insert the link after the hours input field
-            hoursInput.after(link);
+            // Insert the link after the hours input field (and after adjustment links if they exist)
+            hoursInput.parent().append(link);
         });
     }
 
@@ -293,8 +564,19 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             addGeneralOpenProject();
         });
 
-        // continuously monitor for hours input fields and add "Add remaining time" links
+        // make from/to/break labels clickable
+        waitForKeyElements('input[name="startTimeStr"]', () => {
+            makeLabelsClickable();
+        });
+
+        // add increment/decrement links to time fields
+        waitForKeyElements('input[name="startTimeStr"], input[name="endTimeStr"], input[name="breaksStr"]', () => {
+            addTimeAdjustmentLinks();
+        });
+
+        // continuously monitor for hours input fields and add adjustment links + "Add remaining time" links
         waitForKeyElements('input[name="hour"]', (element) => {
+            addTimeAdjustmentLinks();
             addRemainingTimeLinks();
         });
     }
