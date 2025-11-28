@@ -83,7 +83,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // minutes (int) to time (string "hours:minutes")
     function minutesToTime(minutes) {
-        return Math.trunc(minutes / 60) + ':' + String(Math.abs(minutes) % 60).padStart(2, '0');
+        const hours = Math.trunc(minutes / 60);
+        const mins = Math.abs(minutes) % 60;
+        return String(hours).padStart(2, '0') + ':' + String(mins).padStart(2, '0');
     }
 
     // colorize timeDelta, green for positive, red for negative, unchanged for 0
@@ -130,6 +132,90 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         e[0].dispatchEvent(new Event("click"));
         e.val(value);
         e[0].dispatchEvent(new Event("change"));
+    }
+
+    // parse time string (hh:mm or -hh:mm) to minutes, returns 0 if invalid
+    function parseTimeToMinutes(timeStr) {
+        if (!timeStr || typeof timeStr !== 'string') {
+            return 0;
+        }
+
+        timeStr = timeStr.trim();
+        const isNegative = timeStr.startsWith('-');
+        if (isNegative) {
+            timeStr = timeStr.substring(1);
+        }
+
+        if (!timeStr.includes(':')) {
+            return 0;
+        }
+
+        const parts = timeStr.split(':');
+        if (parts.length !== 2) {
+            return 0;
+        }
+
+        const hours = parseInt(parts[0], 10);
+        const minutes = parseInt(parts[1], 10);
+
+        if (isNaN(hours) || isNaN(minutes)) {
+            return 0;
+        }
+
+        const totalMinutes = hours * 60 + minutes;
+        return isNegative ? -totalMinutes : totalMinutes;
+    }
+
+    // add remaining time from "Time left to assign" to the hours input field
+    function addRemainingTime(hoursInput) {
+        const timeCounterSpan = $('#timeCounter');
+        if (timeCounterSpan.length === 0) {
+            console.error('Time counter not found');
+            return;
+        }
+
+        const remainingTimeStr = timeCounterSpan.text().trim();
+        const remainingMinutes = parseTimeToMinutes(remainingTimeStr);
+
+        const currentTimeStr = $(hoursInput).val().trim();
+        const currentMinutes = parseTimeToMinutes(currentTimeStr);
+
+        const newMinutes = currentMinutes + remainingMinutes;
+        const newTimeStr = minutesToTime(Math.abs(newMinutes));
+
+        // Update the input field
+        $(hoursInput).val(newTimeStr);
+
+        // Trigger change event to update the time counter (calls the page's onchange handler)
+        $(hoursInput).trigger('change');
+
+        console.log(`Updated hours: ${currentTimeStr} + ${remainingTimeStr} = ${newTimeStr}`);
+    }
+
+    // add "Add remaining time" link next to hours input fields
+    function addRemainingTimeLinks() {
+        $('input[name="hour"]').each(function() {
+            const hoursInput = $(this);
+
+            // Check if link already exists
+            if (hoursInput.data('remaining-time-link-added')) {
+                return;
+            }
+
+            // Mark as processed
+            hoursInput.data('remaining-time-link-added', true);
+
+            // Create the link
+            const link = $('<a href="/#" style="margin-left: 10px;">Add remaining time</a>');
+            link.on('click', function(e) {
+                e.preventDefault();
+                addRemainingTime(hoursInput);
+                return false;
+            });
+
+            // Insert the link after the hours input field
+            hoursInput.after(link);
+        });
     }
 
     // add "General:OpenProject" to the records table if not already present
@@ -205,6 +291,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         // automatically add "General:OpenProject" to the records table
         waitForKeyElements("table#recordsTable", () => {
             addGeneralOpenProject();
+        });
+
+        // continuously monitor for hours input fields and add "Add remaining time" links
+        waitForKeyElements('input[name="hour"]', (element) => {
+            addRemainingTimeLinks();
         });
     }
 })();
