@@ -132,6 +132,61 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         e[0].dispatchEvent(new Event("change"));
     }
 
+    // add "General:OpenProject" to the records table if not already present
+    function addGeneralOpenProject() {
+        const projectName = "General:OpenProject";
+
+        // Check if project is already added in the table (look for the project in expanded form)
+        const existingProject = $(`table#recordsTable td b:contains('${projectName}')`).filter(function() {
+            return $(this).text().trim().includes(projectName);
+        });
+
+        // If project already exists with at least one sub-record (input fields for hours), we're done
+        if (existingProject.length > 0) {
+            const projectRow = existingProject.closest('tr');
+            const subTable = projectRow.find('table[id^="table"]');
+            const hasSubRecords = subTable.find('input[name="hour"]').length > 0;
+
+            if (hasSubRecords) {
+                console.log(`${projectName} already has at least one sub-record, nothing to do.`);
+                return;
+            }
+        }
+
+        // Check if project is suggested below the dropdown (as a collapsed entry)
+        const suggestedLink = $(`table#recordsTable td b:contains('${projectName}')`).parent().find('a[href="/#"]:contains("Add")');
+        if (suggestedLink.length > 0) {
+            console.log(`${projectName} found as suggestion, clicking Add link...`);
+            suggestedLink[0].click();
+            return;
+        }
+
+        // Project not suggested, need to select from dropdown and add
+        const projectSelect = $('select#projectsSelectId');
+        if (projectSelect.length > 0) {
+            const projectOption = projectSelect.find(`option:contains('${projectName}')`).filter(function() {
+                return $(this).text().trim() === projectName;
+            });
+
+            if (projectOption.length > 0) {
+                console.log(`${projectName} found in dropdown, selecting and adding...`);
+                projectSelect.val(projectOption.val());
+
+                // Find and click the Add link next to the dropdown
+                const addLink = projectSelect.closest('td').find('a[href="/#"]:contains("Add")');
+                if (addLink.length > 0) {
+                    addLink[0].click();
+                } else {
+                    console.error('Add link not found next to dropdown');
+                }
+            } else {
+                console.error(`${projectName} not found in dropdown`);
+            }
+        } else {
+            console.error('Project select dropdown not found');
+        }
+    }
+
 
     // apply page specific tweaks
     if (/bilbo\/showMyProjects.do(\?.*)?$/.test(window.location.pathname)) { // project list
@@ -146,5 +201,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     } else if (/bilbo\/reportActivity.do(\?.*)?$/.test(window.location.pathname)) { // report activity
         // change default type from "Work" to "Work From Home"
         waitForKeyElements("table#activityTable select[name='type']:has(option[value='W'])", (e) => selectOptionAsync(e, 'WHO'));
+
+        // automatically add "General:OpenProject" to the records table
+        waitForKeyElements("table#recordsTable", () => {
+            addGeneralOpenProject();
+        });
     }
 })();
