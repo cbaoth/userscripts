@@ -4,17 +4,252 @@
 // @copyright   2021-2024, userscript@cbaoth.de
 //
 // @name        Bilbo Tweaks
-// @version     0.7
+// @version     0.9
 // @description Some improvments to bilbo time tracking
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/bilbo-tweaks.user.js
 //
 // @include     /^https?://bilbo.[begrsu]{9}.de/
 //
 // @grant       GM_addStyle
+// @grant       GM_registerMenuCommand
+// @require     https://openuserjs.org/src/libs/sizzle/GM_config.min.js
 // ==/UserScript==
 
 (function () {
     'use strict';
+
+    // GM_config initialization
+    const GM_CONFIG_ID = 'BilboTweaksConfig';
+    const GM_CONFIG_FIELDS = {
+        'weekDayHoursMon': {
+            section: ['Working Hours per Day', 'Configure required working hours for each weekday (Monday to Friday). Use decimal values for partial hours (e.g., 7.5 for 7:30, 4.25 for 4:15).'],
+            label: 'Monday',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 24,
+            default: 8
+        },
+        'weekDayHoursTue': {
+            label: 'Tuesday',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 24,
+            default: 8
+        },
+        'weekDayHoursWed': {
+            label: 'Wednesday',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 24,
+            default: 4
+        },
+        'weekDayHoursThu': {
+            label: 'Thursday',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 24,
+            default: 4
+        },
+        'weekDayHoursFri': {
+            label: 'Friday',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 24,
+            default: 8
+        },
+        'defaultFromMon': {
+            section: ['Default Start Times', 'Default start times for each weekday when clicking the From label. Use decimal values (e.g., 9 for 09:00, 9.5 for 09:30, 8.75 for 08:45).'],
+            label: 'Monday From',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 23.99,
+            default: 9
+        },
+        'defaultFromTue': {
+            label: 'Tuesday From',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 23.99,
+            default: 9
+        },
+        'defaultFromWed': {
+            label: 'Wednesday From',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 23.99,
+            default: 9
+        },
+        'defaultFromThu': {
+            label: 'Thursday From',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 23.99,
+            default: 9
+        },
+        'defaultFromFri': {
+            label: 'Friday From',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 23.99,
+            default: 9
+        },
+        'defaultToMon': {
+            section: ['Default End Times', 'Default end times for each weekday when clicking the To label. Use decimal values (e.g., 18 for 18:00, 18.5 for 18:30, 14.25 for 14:15).'],
+            label: 'Monday To',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 23.99,
+            default: 18
+        },
+        'defaultToTue': {
+            label: 'Tuesday To',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 23.99,
+            default: 18
+        },
+        'defaultToWed': {
+            label: 'Wednesday To',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 23.99,
+            default: 14
+        },
+        'defaultToThu': {
+            label: 'Thursday To',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 23.99,
+            default: 14
+        },
+        'defaultToFri': {
+            label: 'Friday To',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 23.99,
+            default: 18
+        },
+        'defaultBreakMon': {
+            section: ['Default Break Times', 'Default break duration for each weekday when clicking the Breaks label. Use decimal values (e.g., 1 for 1:00, 0.5 for 0:30, 0.75 for 0:45).'],
+            label: 'Monday Break',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 23.99,
+            default: 1
+        },
+        'defaultBreakTue': {
+            label: 'Tuesday Break',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 23.99,
+            default: 1
+        },
+        'defaultBreakWed': {
+            label: 'Wednesday Break',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 23.99,
+            default: 0
+        },
+        'defaultBreakThu': {
+            label: 'Thursday Break',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 23.99,
+            default: 0
+        },
+        'defaultBreakFri': {
+            label: 'Friday Break',
+            labelPos: 'left',
+            type: 'float',
+            min: 0,
+            max: 23.99,
+            default: 1
+        }
+    };
+
+    GM_config.init({
+        'id': GM_CONFIG_ID,
+        'title': 'Bilbo Tweaks Configuration',
+        'fields': GM_CONFIG_FIELDS,
+        'css': '#BilboTweaksConfig { background: #f4f4f4; padding: 20px; }',
+        'events': {
+            'open': function(doc) {
+                const config = this;
+                doc.getElementById(config.id + '_closeBtn').textContent = 'Cancel';
+            },
+            'save': function(values) {
+                const config = this;
+                alert('Settings saved! Please reload the page for changes to take effect.');
+                config.close();
+            }
+        }
+    });
+
+    // Register menu command to open config
+    GM_registerMenuCommand('Configure Bilbo Tweaks', () => {
+        GM_config.open();
+    });
+
+    // Helper function to get config arrays
+    function getWeekDayHours() {
+        return [
+            GM_config.get('weekDayHoursMon'),
+            GM_config.get('weekDayHoursTue'),
+            GM_config.get('weekDayHoursWed'),
+            GM_config.get('weekDayHoursThu'),
+            GM_config.get('weekDayHoursFri')
+        ];
+    }
+
+    function getDefaultTo() {
+        return [
+            GM_config.get('defaultToMon'),
+            GM_config.get('defaultToTue'),
+            GM_config.get('defaultToWed'),
+            GM_config.get('defaultToThu'),
+            GM_config.get('defaultToFri')
+        ];
+    }
+
+    function getDefaultBreak() {
+        return [
+            GM_config.get('defaultBreakMon'),
+            GM_config.get('defaultBreakTue'),
+            GM_config.get('defaultBreakWed'),
+            GM_config.get('defaultBreakThu'),
+            GM_config.get('defaultBreakFri')
+        ];
+    }
+
+    function getDefaultFrom() {
+        return [
+            GM_config.get('defaultFromMon'),
+            GM_config.get('defaultFromTue'),
+            GM_config.get('defaultFromWed'),
+            GM_config.get('defaultFromThu'),
+            GM_config.get('defaultFromFri')
+        ];
+    }
 
     // Add custom styles
     GM_addStyle(`
@@ -85,16 +320,6 @@
 
     const TOTAL_WEEK_TIME_SELECTOR = `table.activityTable tbody tr:nth-child(6) td:nth-child(9)`;
 
-    // daily (required) working hours per day (Mo-Fr)
-    //const WEEK_DAY_HOURS = [8,8,8,8,8]; // full-time, 40h per week
-    //const WEEK_DAY_HOURS = [8,8,4,8,8]; // 90% part-time, 36h per week (Wed 4h)
-    const WEEK_DAY_HOURS = [8,8,4,4,8]; // 80% part-time, 36h per week (Wed & Thu 4h)
-
-    // default work time settings per day (Mo-Fr)
-    const DEFAULT_FROM = 9; // always 09:00
-    const DEFAULT_TO = [18, 18, 14, 14, 18]; // Mo-Fr, Wed & Thu end at 14:00
-    const DEFAULT_BREAK = [1, 1, 0, 0, 1]; // Mo-Fr, no break on Wed & Thu (4h work days)
-
     // get required daily working time based on day-activity type
     function getRequiredMinutesByType(type, hours, isSub) {
         switch (type) {
@@ -122,6 +347,7 @@
     // get required weekly work time in minutes (int)
     function getRequiredMinutes(upUntilNow = false) {
         let result = 0;
+        const weekDayHours = getWeekDayHours();
 
         let index = upUntilNow ? getColumnNumberToday() : -1;
         let n = index < 1 || index > 5 ? 4 : index - 1;
@@ -131,9 +357,9 @@
 
             let types = cell.textContent.split('/');
             let hasSubType = types.length > 1;
-            result += getRequiredMinutesByType(types[0], WEEK_DAY_HOURS[i], hasSubType);
+            result += getRequiredMinutesByType(types[0], weekDayHours[i], hasSubType);
             if (hasSubType) {
-                result += getRequiredMinutesByType(types[1], WEEK_DAY_HOURS[i], true);
+                result += getRequiredMinutesByType(types[1], weekDayHours[i], true);
             }
         }
         return result;
@@ -173,31 +399,50 @@
         const totalWeekCell = document.querySelector(TOTAL_WEEK_TIME_SELECTOR);
         if (!totalWeekCell) return;
 
-        let actualMinutes = timeToMinutes(totalWeekCell.textContent);
+        try {
+            let actualMinutes = timeToMinutes(totalWeekCell.textContent);
 
-        let requiredMinutes = getRequiredMinutes();
-        let requiredTime = minutesToTime(requiredMinutes);
-        let requiredMinutesUpUntilNow = getRequiredMinutes(true);
-        let requiredTimeUpUntilNow = minutesToTime(requiredMinutesUpUntilNow);
+            let requiredMinutes = getRequiredMinutes();
+            let requiredTime = minutesToTime(requiredMinutes);
+            let requiredMinutesUpUntilNow = getRequiredMinutes(true);
+            let requiredTimeUpUntilNow = minutesToTime(requiredMinutesUpUntilNow);
 
-        let timeTotalCell = document.querySelector(`table.activityTable tbody tr:nth-child(2) td:nth-child(9)`);
-        let timeUpUntilNowCell = document.querySelector(`table.activityTable tbody tr:nth-child(7) td:nth-child(9)`);
+            let timeUpUntilNowCell = document.querySelector(`table.activityTable tbody tr:nth-child(7) td:nth-child(9)`);
 
-        let minutesDelta = actualMinutes - requiredMinutes;
-        let minutesDeltaUpUntilNow = actualMinutes - requiredMinutesUpUntilNow;
+            let minutesDelta = actualMinutes - requiredMinutes;
+            let minutesDeltaUpUntilNow = actualMinutes - requiredMinutesUpUntilNow;
 
-        // Display total work time required this week
-        if (timeTotalCell) {
-            timeTotalCell.innerHTML = colorizeTimeDelta(minutesDelta) + ' (' + requiredTime + ')';
-            timeTotalCell.style.textAlign = 'center';
-            timeTotalCell.title = 'Delta actual vs. required time for the whole week (required time this week in total)';
-        }
+            // Display work time required up until current day (row 7, last cell)
+            if (timeUpUntilNowCell) {
+                timeUpUntilNowCell.innerHTML = colorizeTimeDelta(minutesDeltaUpUntilNow) + ' (' + requiredTimeUpUntilNow + ')';
+                timeUpUntilNowCell.style.textAlign = 'center';
+                timeUpUntilNowCell.title = 'Delta actual vs. required time up until today (required time up until today)';
+            }
 
-        // Display work time required up until current day
-        if (timeUpUntilNowCell) {
-            timeUpUntilNowCell.innerHTML = colorizeTimeDelta(minutesDeltaUpUntilNow) + ' (' + requiredTimeUpUntilNow + ')';
-            timeUpUntilNowCell.style.textAlign = 'center';
-            timeUpUntilNowCell.title = 'Delta actual vs. required time up until today (required time up until today)';
+            // Find the empty row (row 8) that currently has colspan="8"
+            // This row is between the Status row and the Projects header
+            const emptyRow = document.querySelector(`table.activityTable tbody tr:nth-child(8)`);
+            if (emptyRow) {
+                // Find the cell with colspan="8"
+                const colspanCell = emptyRow.querySelector('td[colspan="8"]');
+                if (colspanCell) {
+                    // Change colspan from 8 to 7
+                    colspanCell.setAttribute('colspan', '7');
+
+                    // Create new cell for weekly total delta
+                    const weeklyTotalCell = document.createElement('td');
+                    weeklyTotalCell.innerHTML = colorizeTimeDelta(minutesDelta) + ' (' + requiredTime + ')';
+                    weeklyTotalCell.style.textAlign = 'center';
+                    weeklyTotalCell.title = 'Delta actual vs. required time for the whole week (required time this week in total)';
+
+                    // Append the new cell to the row
+                    emptyRow.appendChild(weeklyTotalCell);
+                }
+            }
+        } catch (e) {
+            // Config not ready yet, try again later
+            console.log('Config not ready for showTimes(), will retry:', e.message);
+            setTimeout(() => showTimes(), 100);
         }
     }
 
@@ -241,11 +486,12 @@
         return isNegative ? -totalMinutes : totalMinutes;
     }
 
-    // add remaining time from "Time left to assign" to the hours input field
-    function addRemainingTime(hoursInput) {
+    // add Bilbo's "Time left to assign" value to the hours input field
+    // This reads the "Time left to assign: hh:mm" counter from Bilbo's UI and adds it to the project hours
+    function addTimeLeftToAssign(hoursInput) {
         const timeCounterSpan = document.getElementById('timeCounter');
         if (!timeCounterSpan) {
-            console.error('Time counter not found');
+            console.error('Bilbo time counter ("Time left to assign") not found');
             return;
         }
 
@@ -264,7 +510,7 @@
         // Trigger change event to update the time counter (calls the page's onchange handler)
         hoursInput.dispatchEvent(new Event('change', { bubbles: true }));
 
-        console.log(`Updated hours: ${currentTimeStr} + ${remainingTimeStr} = ${newTimeStr}`);
+        console.log(`Added time left to assign: ${currentTimeStr} + ${remainingTimeStr} = ${newTimeStr}`);
     }
 
     // adjust time value in input field by offset (in minutes), respecting min/max bounds
@@ -443,12 +689,17 @@
             return;
         }
 
+        const weekDayHours = getWeekDayHours();
+        const defaultTo = getDefaultTo();
+        const defaultBreak = getDefaultBreak();
+        const defaultFrom = getDefaultFrom();
+
         let value;
         let actualFieldName;
 
         if (fieldName === 'from' || fieldName === 'startTimeStr') {
             actualFieldName = 'startTimeStr';
-            value = minutesToTime(DEFAULT_FROM * 60);
+            value = minutesToTime(defaultFrom[weekdayIndex] * 60);
         } else if (fieldName === 'to' || fieldName === 'endTimeStr') {
             actualFieldName = 'endTimeStr';
             const fromField = document.querySelector('input[name="startTimeStr"]');
@@ -456,14 +707,14 @@
 
             if (fromMinutes > 0) {
                 // Calculate to = from + work hours + break
-                value = minutesToTime(fromMinutes + WEEK_DAY_HOURS[weekdayIndex] * 60 + DEFAULT_BREAK[weekdayIndex] * 60);
+                value = minutesToTime(fromMinutes + weekDayHours[weekdayIndex] * 60 + defaultBreak[weekdayIndex] * 60);
             } else {
                 // Use default to time
-                value = minutesToTime(DEFAULT_TO[weekdayIndex] * 60);
+                value = minutesToTime(defaultTo[weekdayIndex] * 60);
             }
         } else if (fieldName === 'break' || fieldName === 'breaksStr') {
             actualFieldName = 'breaksStr';
-            value = minutesToTime(DEFAULT_BREAK[weekdayIndex] * 60);
+            value = minutesToTime(defaultBreak[weekdayIndex] * 60);
         }
 
         const inputField = document.querySelector(`input[name="${actualFieldName}"]`);
@@ -535,7 +786,46 @@
                 this.style.textDecoration = 'none';
             });
 
-            label.title = 'Click to set default value';
+            // Generate descriptive tooltip based on field type and current day
+            // Use try-catch to handle case when GM_config isn't ready yet
+            let tooltipText = 'Click to set default value';
+
+            try {
+                const dayOfWeek = getDayOfWeekFromTargetDate();
+                const weekdayIndex = getWeekdayIndex(dayOfWeek);
+
+                if (weekdayIndex >= 0 && weekdayIndex <= 4) {
+                    // Get config values (only if config is ready)
+                    const weekDayHours = getWeekDayHours();
+                    const defaultTo = getDefaultTo();
+                    const defaultBreak = getDefaultBreak();
+                    const defaultFrom = getDefaultFrom();
+
+                    // Day names for tooltip
+                    const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+                    const dayName = dayNames[weekdayIndex];
+
+                    if (mapping.fieldName === 'startTimeStr') {
+                        // From: fixed value per day
+                        const fromHours = defaultFrom[weekdayIndex];
+                        tooltipText = `Click to set start time to ${minutesToTime(fromHours * 60)} (${dayName})`;
+                    } else if (mapping.fieldName === 'endTimeStr') {
+                        // To: calculated from From + work hours + break
+                        const workHours = weekDayHours[weekdayIndex];
+                        const breakHours = defaultBreak[weekdayIndex];
+                        tooltipText = `Click to set end time to From + ${workHours}h work + ${breakHours}h break (${dayName})`;
+                    } else if (mapping.fieldName === 'breaksStr') {
+                        // Break: fixed value per day
+                        const breakHours = defaultBreak[weekdayIndex];
+                        tooltipText = `Click to set break time to ${minutesToTime(breakHours * 60)} (${dayName})`;
+                    }
+                }
+            } catch (e) {
+                // Config not ready yet, use default tooltip
+                console.log('Config not ready for tooltip generation:', e.message);
+            }
+
+            label.title = tooltipText;
 
             label.addEventListener('click', function() {
                 setDefaultTimeValue(mapping.fieldName);
@@ -545,26 +835,29 @@
         });
     }
 
-    // add "Add remaining time" link next to hours input fields
-    function addRemainingTimeLinks() {
+    // add "Add time left to assign" link next to hours input fields
+    // This adds a link that allows adding Bilbo's "Time left to assign" value to the current project hours
+    function addTimeLeftToAssignLinks() {
         document.querySelectorAll('input[name="hour"]').forEach(hoursInput => {
             // Check if link already exists
-            if (hoursInput.dataset.remainingTimeLinkAdded) {
+            if (hoursInput.dataset.timeLeftToAssignLinkAdded) {
                 return;
             }
 
             // Mark as processed
-            hoursInput.dataset.remainingTimeLinkAdded = 'true';
+            hoursInput.dataset.timeLeftToAssignLinkAdded = 'true';
 
             // Create the link with extra spacing
             const link = document.createElement('a');
             link.href = '/#';
-            link.style.marginLeft = '20px';
-            link.textContent = 'Add remaining time';
+            link.style.marginLeft = '0.5em';
+            link.style.fontStyle = 'italic';
+            link.textContent = '+"Time left to assign"';
+            link.title = 'Add the "Time left to assign" value to this field, distributing all remaining work time to projects';
 
             link.addEventListener('click', function(e) {
                 e.preventDefault();
-                addRemainingTime(hoursInput);
+                addTimeLeftToAssign(hoursInput);
                 return false;
             });
 
@@ -701,10 +994,26 @@
             addTimeAdjustmentLinks();
         });
 
-        // continuously monitor for hours input fields and add adjustment links + "Add remaining time" links
+        // continuously monitor for hours input fields and add adjustment links + "Time left to assign" links
         waitForElements('input[name="hour"]', () => {
             addTimeAdjustmentLinks();
-            addRemainingTimeLinks();
+            addTimeLeftToAssignLinks();
         });
     }
+
+    // Global keyboard shortcuts
+    // Alt+F12 to open config dialog
+    document.addEventListener('keydown', (e) => {
+        if (e.altKey && e.keyCode === 123) { // Alt + F12
+            e.preventDefault();
+            GM_config.open();
+        }
+        // ESC to close config dialog
+        if (e.keyCode === 27) { // ESC
+            const configFrame = document.getElementById(GM_CONFIG_ID);
+            if (configFrame) {
+                GM_config.close();
+            }
+        }
+    });
 })();
