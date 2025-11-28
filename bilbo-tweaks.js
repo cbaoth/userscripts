@@ -12,6 +12,8 @@
 //
 // @grant       GM_addStyle
 // @grant       GM_registerMenuCommand
+// @grant       GM_getValue
+// @grant       GM_setValue
 // @require     https://openuserjs.org/src/libs/sizzle/GM_config.min.js
 // ==/UserScript==
 
@@ -251,10 +253,258 @@
         ];
     }
 
+    // ========== OVERTIME TRACKING ==========
+
+    const OVERTIME_STORAGE_KEY = 'weeklyOvertimeData';
+
+    // Parse TSV data to internal format
+    function parseOvertimeTSV(tsvText) {
+        if (!tsvText || typeof tsvText !== 'string') {
+            return { data: {}, errors: [] };
+        }
+
+        const lines = tsvText.trim().split('\n');
+        const data = {};
+        const errors = [];
+
+        lines.forEach((line, index) => {
+            line = line.trim();
+            if (!line) return; // Skip empty lines
+
+            // Support multiple delimiters: tab, space, semicolon, pipe, comma (one or more)
+            const parts = line.split(/[\t\s;|,]+/);
+
+            if (parts.length !== 2) {
+                errors.push(`Line ${index + 1}: Invalid format "${line}" (expected 2 columns)`);
+                return;
+            }
+
+            const [week, time] = parts;
+
+            // Validate week format (e.g., "48/2025")
+            if (!/^\d{1,2}\/\d{4}$/.test(week)) {
+                errors.push(`Line ${index + 1}: Invalid week format "${week}" (expected WW/YYYY)`);
+                return;
+            }
+
+            // Validate time format (e.g., "+05:10" or "-01:30")
+            if (!/^[+-]\d{2}:\d{2}$/.test(time)) {
+                errors.push(`Line ${index + 1}: Invalid time format "${time}" (expected +/-HH:MM)`);
+                return;
+            }
+
+            data[week] = time;
+        });
+
+        return { data, errors };
+    }
+
+    // Convert internal format to TSV (sorted by week/year)
+    function overtimeToTSV(data) {
+        if (!data || typeof data !== 'object') {
+            return '';
+        }
+
+        // Sort by year, then week
+        const entries = Object.entries(data).sort((a, b) => {
+            const [weekA, yearA] = a[0].split('/').map(Number);
+            const [weekB, yearB] = b[0].split('/').map(Number);
+            return (yearA - yearB) || (weekA - weekB);
+        });
+
+        return entries.map(([week, time]) => `${week}\t${time}`).join('\n');
+    }
+
+    // Convert time string (+/-HH:MM) to minutes
+    function overtimeStringToMinutes(timeStr) {
+        const match = timeStr.match(/^([+-])(\d{2}):(\d{2})$/);
+        if (!match) return 0;
+
+        const [, sign, hours, minutes] = match;
+        const totalMinutes = parseInt(hours, 10) * 60 + parseInt(minutes, 10);
+        return sign === '-' ? -totalMinutes : totalMinutes;
+    }
+
+    // Convert minutes to overtime string (+/-HH:MM)
+    function minutesToOvertimeString(minutes) {
+        const sign = minutes >= 0 ? '+' : '-';
+        const absMinutes = Math.abs(minutes);
+        const hours = Math.floor(absMinutes / 60);
+        const mins = absMinutes % 60;
+        return `${sign}${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+    }
+
+    // Load overtime data from storage
+    function loadOvertimeData() {
+        try {
+            const tsvData = GM_getValue(OVERTIME_STORAGE_KEY, '');
+            const { data, errors } = parseOvertimeTSV(tsvData);
+            if (errors.length > 0) {
+                console.warn('Overtime data parsing errors:', errors);
+            }
+            return data;
+        } catch (e) {
+            console.error('Failed to load overtime data:', e);
+            return {};
+        }
+    }
+
+    // Save overtime data to storage
+    function saveOvertimeData(data) {
+        try {
+            const tsvData = overtimeToTSV(data);
+            GM_setValue(OVERTIME_STORAGE_KEY, tsvData);
+            return true;
+        } catch (e) {
+            console.error('Failed to save overtime data:', e);
+            return false;
+        }
+    }
+
+    // Get current week number and year from page
+    function getCurrentWeekAndYear() {
+        // Look for "Week XX/YYYY" in the page header
+        const weekHeader = document.querySelector('table.activityTable tbody tr:nth-child(1) td:nth-child(1) b');
+        if (weekHeader) {
+            const match = weekHeader.textContent.match(/Week (\d{1,2})\/(\d{4})/);
+            if (match) {
+                return {
+                    week: parseInt(match[1], 10),
+                    year: parseInt(match[2], 10),
+                    weekString: `${match[1]}/${match[2]}`
+                };
+            }
+        }
+        return null;
+    }
+
+    // Get next week/year string
+    function getNextWeek(weekString) {
+        const [week, year] = weekString.split('/').map(Number);
+        if (week >= 52) {
+            return `1/${year + 1}`;
+        }
+        return `${week + 1}/${year}`;
+    }
+
+    // Calculate total overtime including current week
+    function calculateTotalOvertime() {
+        const currentWeek = getCurrentWeekAndYear();
+        if (!currentWeek) {
+            return null;
+        }
+
+        const storedData = loadOvertimeData();
+        let total = 0;
+        let foundGaps = [];
+        let lastWeek = null;
+        let weeksCounted = 0;
+
+        // Sort weeks chronologically
+        const sortedWeeks = Object.keys(storedData).sort((a, b) => {
+            const [wA, yA] = a.split('/').map(Number);
+            const [wB, yB] = b.split('/').map(Number);
+            return (yA - yB) || (wA - wB);
+        });
+
+        // Calculate up to (but not including) current week
+        for (const weekStr of sortedWeeks) {
+            const [week, year] = weekStr.split('/').map(Number);
+
+            // Stop if we've reached current week
+            if (year > currentWeek.year || (year === currentWeek.year && week >= currentWeek.week)) {
+                break;
+            }
+
+            // Check for gaps (optional warning)
+            if (lastWeek) {
+                const expectedNext = getNextWeek(lastWeek);
+                if (weekStr !== expectedNext) {
+                    foundGaps.push({ expected: expectedNext, actual: weekStr });
+                }
+            }
+
+            total += overtimeStringToMinutes(storedData[weekStr]);
+            lastWeek = weekStr;
+            weeksCounted++;
+        }
+
+        // Get current week's delta from page
+        let currentWeekDelta = 0;
+        try {
+            const totalWeekCell = document.querySelector(TOTAL_WEEK_TIME_SELECTOR);
+            if (totalWeekCell) {
+                const actualMinutes = timeToMinutes(totalWeekCell.textContent);
+                const requiredMinutes = getRequiredMinutes();
+                currentWeekDelta = actualMinutes - requiredMinutes;
+            }
+        } catch (e) {
+            console.warn('Could not calculate current week delta:', e);
+        }
+
+        total += currentWeekDelta;
+
+        return {
+            total,
+            totalBeforeThisWeek: total - currentWeekDelta,
+            currentWeekDelta,
+            weeksCounted,
+            foundGaps,
+            currentWeekString: currentWeek.weekString,
+            currentWeekSaved: storedData.hasOwnProperty(currentWeek.weekString)
+        };
+    }
+
     // Add custom styles
     GM_addStyle(`
         table#activityTable {
             width: 350px !important;
+        }
+        .overtime-summary {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f0f8ff;
+            border: 1px solid #4682b4;
+            border-radius: 4px;
+        }
+        .overtime-summary h3 {
+            margin: 0 0 8px 0;
+            color: #2c5282;
+        }
+        .overtime-total {
+            font-size: 18px;
+            font-weight: bold;
+            color: #2c5282;
+            margin: 5px 0;
+        }
+        .overtime-breakdown {
+            font-size: 14px;
+            color: #666;
+            margin: 3px 0;
+        }
+        .overtime-actions {
+            margin-top: 10px;
+        }
+        .overtime-button {
+            display: inline-block;
+            padding: 6px 12px;
+            margin-right: 8px;
+            background: #4682b4;
+            color: white !important;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none !important;
+            font-size: 13px;
+        }
+        .overtime-button:hover {
+            background: #3a6ea5;
+            text-decoration: none !important;
+        }
+        .overtime-warning {
+            color: #d97706;
+            font-size: 13px;
+            margin-top: 5px;
         }
     `);
 
@@ -443,6 +693,249 @@
             // Config not ready yet, try again later
             console.log('Config not ready for showTimes(), will retry:', e.message);
             setTimeout(() => showTimes(), 100);
+        }
+    }
+
+    // Display overtime summary on weekly overview page
+    function showOvertimeSummary() {
+        const overtime = calculateTotalOvertime();
+        if (!overtime) {
+            console.log('Could not calculate overtime - not on weekly overview page');
+            return;
+        }
+
+        // Find the table to insert summary after
+        const activityTable = document.querySelector('table.activityTable');
+        if (!activityTable) return;
+
+        // Check if summary already exists
+        let summaryDiv = document.querySelector('.overtime-summary');
+        if (!summaryDiv) {
+            summaryDiv = document.createElement('div');
+            summaryDiv.className = 'overtime-summary';
+            activityTable.parentElement.appendChild(summaryDiv);
+        }
+
+        // Build summary HTML
+        const totalStr = minutesToOvertimeString(overtime.total);
+        const currentWeekStr = minutesToOvertimeString(overtime.currentWeekDelta);
+        const carryoverStr = minutesToOvertimeString(overtime.totalBeforeThisWeek);
+
+        let html = `
+            <h3>📊 Total Overtime</h3>
+            <div class="overtime-total">${totalStr}</div>
+            <div class="overtime-breakdown">
+                This week: ${currentWeekStr} |
+                Previous ${overtime.weeksCounted} weeks: ${carryoverStr}
+            </div>
+        `;
+
+        // Show warning if current week already saved
+        if (overtime.currentWeekSaved) {
+            html += `<div class="overtime-warning">⚠️ Week ${overtime.currentWeekString} is already saved. Saving again will overwrite.</div>`;
+        }
+
+        // Show warning if gaps found
+        if (overtime.foundGaps.length > 0) {
+            html += `<div class="overtime-warning">⚠️ Warning: ${overtime.foundGaps.length} gap(s) in overtime history</div>`;
+        }
+
+        // Add action buttons
+        html += `
+            <div class="overtime-actions">
+                <a href="#" id="saveCurrentWeek" class="overtime-button">💾 Save This Week</a>
+                <a href="#" id="copyForExcel" class="overtime-button">📋 Copy for Excel</a>
+                <a href="#" id="manageHistory" class="overtime-button">⚙️ Manage History</a>
+            </div>
+        `;
+
+        summaryDiv.innerHTML = html;
+
+        // Attach event listeners
+        document.getElementById('saveCurrentWeek').addEventListener('click', (e) => {
+            e.preventDefault();
+            saveCurrentWeekOvertime();
+        });
+
+        document.getElementById('copyForExcel').addEventListener('click', (e) => {
+            e.preventDefault();
+            copyCurrentWeekForExcel();
+        });
+
+        document.getElementById('manageHistory').addEventListener('click', (e) => {
+            e.preventDefault();
+            openOvertimeManager();
+        });
+    }
+
+    // Save current week's overtime
+    function saveCurrentWeekOvertime() {
+        const currentWeek = getCurrentWeekAndYear();
+        if (!currentWeek) {
+            alert('Could not determine current week');
+            return;
+        }
+
+        const overtime = calculateTotalOvertime();
+        if (!overtime) {
+            alert('Could not calculate overtime');
+            return;
+        }
+
+        const overtimeStr = minutesToOvertimeString(overtime.currentWeekDelta);
+        const data = loadOvertimeData();
+
+        // Check if already exists
+        if (data.hasOwnProperty(currentWeek.weekString)) {
+            if (!confirm(`Week ${currentWeek.weekString} is already saved as ${data[currentWeek.weekString]}.\n\nOverwrite with ${overtimeStr}?`)) {
+                return;
+            }
+        }
+
+        // Save
+        data[currentWeek.weekString] = overtimeStr;
+        if (saveOvertimeData(data)) {
+            alert(`✅ Saved week ${currentWeek.weekString}: ${overtimeStr}`);
+            showOvertimeSummary(); // Refresh display
+        } else {
+            alert('❌ Failed to save overtime data');
+        }
+    }
+
+    // Copy current week data for Excel
+    function copyCurrentWeekForExcel() {
+        const currentWeek = getCurrentWeekAndYear();
+        if (!currentWeek) {
+            alert('Could not determine current week');
+            return;
+        }
+
+        const overtime = calculateTotalOvertime();
+        if (!overtime) {
+            alert('Could not calculate overtime');
+            return;
+        }
+
+        const overtimeStr = minutesToOvertimeString(overtime.currentWeekDelta);
+        const textToCopy = `${currentWeek.weekString}\t${overtimeStr}`;
+
+        // Copy to clipboard
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            alert(`✅ Copied to clipboard:\n${currentWeek.weekString}\t${overtimeStr}\n\nYou can now paste this into Excel.`);
+        }).catch(() => {
+            // Fallback for older browsers
+            const textarea = document.createElement('textarea');
+            textarea.value = textToCopy;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            alert(`✅ Copied to clipboard:\n${currentWeek.weekString}\t${overtimeStr}\n\nYou can now paste this into Excel.`);
+        });
+    }
+
+    // Open overtime history manager (simple prompt-based for now)
+    function openOvertimeManager() {
+        const data = loadOvertimeData();
+        const tsvData = overtimeToTSV(data);
+        const weekCount = Object.keys(data).length;
+
+        const action = prompt(
+            `📊 Overtime History Manager\n\n` +
+            `Current data (${weekCount} weeks):\n\n` +
+            `Choose an action:\n` +
+            `1 - View all data\n` +
+            `2 - Import from Excel (paste TSV)\n` +
+            `3 - Export to clipboard\n` +
+            `4 - Clear all data\n` +
+            `0 - Cancel`,
+            '1'
+        );
+
+        if (!action || action === '0') return;
+
+        switch (action) {
+            case '1':
+                // View data
+                if (weekCount === 0) {
+                    alert('No overtime data saved yet.');
+                } else {
+                    alert(`Overtime History (${weekCount} weeks):\n\n${tsvData}`);
+                }
+                break;
+
+            case '2':
+                // Import
+                importOvertimeData();
+                break;
+
+            case '3':
+                // Export
+                if (weekCount === 0) {
+                    alert('No overtime data to export.');
+                } else {
+                    navigator.clipboard.writeText(tsvData).then(() => {
+                        alert(`✅ Exported ${weekCount} weeks to clipboard.\n\nYou can now paste into Excel.`);
+                    }).catch(() => {
+                        prompt('Copy this data to clipboard:', tsvData);
+                    });
+                }
+                break;
+
+            case '4':
+                // Clear
+                if (confirm(`⚠️ Delete all ${weekCount} weeks of overtime data?\n\nThis cannot be undone!`)) {
+                    saveOvertimeData({});
+                    alert('✅ All overtime data cleared.');
+                    showOvertimeSummary(); // Refresh display
+                }
+                break;
+
+            default:
+                alert('Invalid option');
+        }
+    }
+
+    // Import overtime data from TSV
+    function importOvertimeData() {
+        const tsvInput = prompt(
+            `📥 Import Overtime Data\n\n` +
+            `Paste TSV data from Excel (format: WW/YYYY [tab] +/-HH:MM):\n\n` +
+            `Example:\n` +
+            `1/2025\t+00:00\n` +
+            `2/2025\t+00:15\n` +
+            `3/2025\t+02:30\n\n` +
+            `Leave empty to cancel.`,
+            ''
+        );
+
+        if (!tsvInput) return;
+
+        const { data, errors } = parseOvertimeTSV(tsvInput);
+
+        if (errors.length > 0) {
+            alert(`❌ Import failed with ${errors.length} error(s):\n\n${errors.join('\n')}`);
+            return;
+        }
+
+        const weekCount = Object.keys(data).length;
+        if (weekCount === 0) {
+            alert('No valid data found.');
+            return;
+        }
+
+        // Ask for confirmation
+        const preview = overtimeToTSV(data);
+        if (!confirm(`Import ${weekCount} weeks of data?\n\nPreview:\n${preview.substring(0, 200)}${preview.length > 200 ? '...' : ''}\n\nThis will overwrite existing data!`)) {
+            return;
+        }
+
+        // Save
+        if (saveOvertimeData(data)) {
+            alert(`✅ Imported ${weekCount} weeks successfully!`);
+            showOvertimeSummary(); // Refresh display
+        } else {
+            alert('❌ Failed to save imported data');
         }
     }
 
@@ -965,6 +1458,8 @@
                 waitForElements(TOTAL_WEEK_TIME_SELECTOR, (cell) => {
                     if (cell.textContent.trim() !== '') {
                         showTimes();
+                        // Show overtime summary after times are displayed
+                        setTimeout(() => showOvertimeSummary(), 100);
                     }
                 });
             }

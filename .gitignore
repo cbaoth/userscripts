@@ -1,2 +1,10 @@
+# temp files
+~*
+_*
+\#*
+
+# vscode
 .vscode/
+
+# shell
 .zcompdump
