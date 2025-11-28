@@ -4,23 +4,17 @@
 // @copyright   2021-2024, userscript@cbaoth.de
 //
 // @name        Bilbo Tweaks
-// @version     0.6
+// @version     0.7
 // @description Some improvments to bilbo time tracking
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/bilbo-tweaks.user.js
 //
 // @include     /^https?://bilbo.[begrsu]{9}.de/
 //
 // @grant       GM_addStyle
-//
-// @require     http://code.jquery.com/jquery-latest.min.js
-// @require     https://gist.github.com/raw/2625891/waitForKeyElements.js
-// @require     https://raw.githubusercontent.com/jashkenas/underscore/master/underscore.js
-// @require     https://github.com/cbaoth/userscripts/raw/master/lib/cblib.js
 // ==/UserScript==
 
-this.$ = this.jQuery = jQuery.noConflict(true);
-
 (function () {
+    'use strict';
 
     // Add custom styles
     GM_addStyle(`
@@ -28,6 +22,60 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             width: 350px !important;
         }
     `);
+
+    // Utility: Wait for elements to appear in the DOM using MutationObserver
+    function waitForElements(selector, callback, options = {}) {
+        const {
+            target = document.body,
+            once = false,
+            timeout = null
+        } = options;
+
+        const processedElements = new WeakSet();
+
+        const checkElements = () => {
+            const elements = document.querySelectorAll(selector);
+            elements.forEach(element => {
+                if (!processedElements.has(element)) {
+                    processedElements.add(element);
+                    callback(element);
+                }
+            });
+            return elements.length > 0;
+        };
+
+        // Check if elements already exist
+        if (checkElements() && once) {
+            return;
+        }
+
+        // Set up MutationObserver to watch for new elements
+        const observer = new MutationObserver(() => {
+            if (checkElements() && once) {
+                observer.disconnect();
+            }
+        });
+
+        observer.observe(target, {
+            childList: true,
+            subtree: true
+        });
+
+        // Optional timeout
+        if (timeout) {
+            setTimeout(() => observer.disconnect(), timeout);
+        }
+
+        return observer;
+    }
+
+    // Utility: Select option in a select element
+    function selectOption(selectElement, value) {
+        if (selectElement && selectElement.value !== value) {
+            selectElement.value = value;
+            selectElement.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }
 
     // https://www.w3schools.com/howto/howto_js_scroll_to_top.asp
     //function scrollToTop() {
@@ -63,7 +111,12 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // get column index of "today", if any (otherwise -1), note that first column are headers, so index for mo-fr are 1-5
     function getColumnNumberToday() {
-        return $(`table.activityTable tbody > tr:nth-child(1) > td`).index($(`table.activityTable tbody > tr:nth-child(1) > td span.Today`).parents(`td`));
+        const todaySpan = document.querySelector('table.activityTable tbody > tr:nth-child(1) > td span.Today');
+        if (!todaySpan) return -1;
+
+        const todayTd = todaySpan.closest('td');
+        const allTds = Array.from(document.querySelectorAll('table.activityTable tbody > tr:nth-child(1) > td'));
+        return allTds.indexOf(todayTd);
     }
 
     // get required weekly work time in minutes (int)
@@ -73,7 +126,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         let index = upUntilNow ? getColumnNumberToday() : -1;
         let n = index < 1 || index > 5 ? 4 : index - 1;
         for (let i = 0; i <= n; i++) { // mo-today or mo-fr if today not within current week mo-fr
-            let types = $(`table.activityTable tbody tr:nth-child(2) td:nth-child(` + (i + 2) + `)`).text().split('/');
+            const cell = document.querySelector(`table.activityTable tbody tr:nth-child(2) td:nth-child(${i + 2})`);
+            if (!cell) continue;
+
+            let types = cell.textContent.split('/');
             let hasSubType = types.length > 1;
             result += getRequiredMinutesByType(types[0], WEEK_DAY_HOURS[i], hasSubType);
             if (hasSubType) {
@@ -114,36 +170,43 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // calculate required working time and delta (to actual total time) and add it to the overview table
     function showTimes() {
-        let actualMinutes = timeToMinutes($(TOTAL_WEEK_TIME_SELECTOR).text());
+        const totalWeekCell = document.querySelector(TOTAL_WEEK_TIME_SELECTOR);
+        if (!totalWeekCell) return;
+
+        let actualMinutes = timeToMinutes(totalWeekCell.textContent);
 
         let requiredMinutes = getRequiredMinutes();
         let requiredTime = minutesToTime(requiredMinutes);
         let requiredMinutesUpUntilNow = getRequiredMinutes(true);
         let requiredTimeUpUntilNow = minutesToTime(requiredMinutesUpUntilNow);
 
-        let timeTotalCell = $(`table.activityTable tbody tr:nth-child(2) td:nth-child(9)`);
-        let timeUpUntilNowCell = $(`table.activityTable tbody tr:nth-child(7) td:nth-child(9)`);
+        let timeTotalCell = document.querySelector(`table.activityTable tbody tr:nth-child(2) td:nth-child(9)`);
+        let timeUpUntilNowCell = document.querySelector(`table.activityTable tbody tr:nth-child(7) td:nth-child(9)`);
 
         let minutesDelta = actualMinutes - requiredMinutes;
         let minutesDeltaUpUntilNow = actualMinutes - requiredMinutesUpUntilNow;
 
         // Display total work time required this week
-        timeTotalCell.html(colorizeTimeDelta(minutesDelta) + ' (' + requiredTime + ')');
-        timeTotalCell.css('text-align', 'center');
-        timeTotalCell.attr('title', 'Delta actual vs. required time for the whole week (required time this week in total)');
+        if (timeTotalCell) {
+            timeTotalCell.innerHTML = colorizeTimeDelta(minutesDelta) + ' (' + requiredTime + ')';
+            timeTotalCell.style.textAlign = 'center';
+            timeTotalCell.title = 'Delta actual vs. required time for the whole week (required time this week in total)';
+        }
 
         // Display work time required up until current day
-        timeUpUntilNowCell.html(colorizeTimeDelta (minutesDeltaUpUntilNow) + ' (' + requiredTimeUpUntilNow + ')');
-        timeUpUntilNowCell.css('text-align', 'center');
-        timeUpUntilNowCell.attr('title', ' Delta actual vs. required time up until today (required time up until today)');
+        if (timeUpUntilNowCell) {
+            timeUpUntilNowCell.innerHTML = colorizeTimeDelta(minutesDeltaUpUntilNow) + ' (' + requiredTimeUpUntilNow + ')';
+            timeUpUntilNowCell.style.textAlign = 'center';
+            timeUpUntilNowCell.title = 'Delta actual vs. required time up until today (required time up until today)';
+        }
     }
 
 
     // https://stackoverflow.com/a/41421759/7393995
-    function selectOptionAsync(e, value) {
-        e[0].dispatchEvent(new Event("click"));
-        e.val(value);
-        e[0].dispatchEvent(new Event("change"));
+    function selectOptionAsync(selectElement, value) {
+        selectElement.dispatchEvent(new Event("click"));
+        selectElement.value = value;
+        selectElement.dispatchEvent(new Event("change"));
     }
 
     // parse time string (hh:mm or -hh:mm) to minutes, returns 0 if invalid
@@ -180,33 +243,33 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // add remaining time from "Time left to assign" to the hours input field
     function addRemainingTime(hoursInput) {
-        const timeCounterSpan = $('#timeCounter');
-        if (timeCounterSpan.length === 0) {
+        const timeCounterSpan = document.getElementById('timeCounter');
+        if (!timeCounterSpan) {
             console.error('Time counter not found');
             return;
         }
 
-        const remainingTimeStr = timeCounterSpan.text().trim();
+        const remainingTimeStr = timeCounterSpan.textContent.trim();
         const remainingMinutes = parseTimeToMinutes(remainingTimeStr);
 
-        const currentTimeStr = $(hoursInput).val().trim();
+        const currentTimeStr = hoursInput.value.trim();
         const currentMinutes = parseTimeToMinutes(currentTimeStr);
 
         const newMinutes = currentMinutes + remainingMinutes;
         const newTimeStr = minutesToTime(Math.abs(newMinutes));
 
         // Update the input field
-        $(hoursInput).val(newTimeStr);
+        hoursInput.value = newTimeStr;
 
         // Trigger change event to update the time counter (calls the page's onchange handler)
-        $(hoursInput).trigger('change');
+        hoursInput.dispatchEvent(new Event('change', { bubbles: true }));
 
         console.log(`Updated hours: ${currentTimeStr} + ${remainingTimeStr} = ${newTimeStr}`);
     }
 
     // adjust time value in input field by offset (in minutes), respecting min/max bounds
     function adjustTimeValue(inputField, offsetMinutes) {
-        const currentTimeStr = $(inputField).val().trim();
+        const currentTimeStr = inputField.value.trim();
         let currentMinutes = parseTimeToMinutes(currentTimeStr);
 
         // Apply incremental rounding for ±5min adjustments
@@ -237,85 +300,95 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         let newMinutes = Math.max(0, Math.min(currentMinutes, 23 * 60 + 59));
 
         const newTimeStr = minutesToTime(newMinutes);
-        $(inputField).val(newTimeStr);
-        $(inputField).trigger('change');
+        inputField.value = newTimeStr;
+        inputField.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     // create increment/decrement links for time input fields
-    function createAdjustmentLinks() {
-        return $('<span style="margin-left: 5px; white-space: nowrap;">' +
-                 '<a href="/#" class="time-adjust" data-offset="-60" title="Subtract 1 hour">-1h</a> ' +
-                 '<a href="/#" class="time-adjust" data-offset="-5" title="Subtract 5 minutes">-5m</a> ' +
-                 '<a href="/#" class="time-adjust" data-offset="5" title="Add 5 minutes">+5m</a> ' +
-                 '<a href="/#" class="time-adjust" data-offset="60" title="Add 1 hour">+1h</a>' +
-                 '</span>');
+    function createAdjustmentLinks(inputField) {
+        const span = document.createElement('span');
+        span.style.marginLeft = '5px';
+        span.style.whiteSpace = 'nowrap';
+
+        const links = [
+            { offset: -60, text: '-1h', title: 'Subtract 1 hour' },
+            { offset: -5, text: '-5m', title: 'Subtract 5 minutes' },
+            { offset: 5, text: '+5m', title: 'Add 5 minutes' },
+            { offset: 60, text: '+1h', title: 'Add 1 hour' }
+        ];
+
+        links.forEach((linkData, index) => {
+            if (index > 0) {
+                span.appendChild(document.createTextNode(' '));
+            }
+
+            const link = document.createElement('a');
+            link.href = '/#';
+            link.className = 'time-adjust';
+            link.textContent = linkData.text;
+            link.title = linkData.title;
+            link.dataset.offset = linkData.offset;
+
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                adjustTimeValue(inputField, linkData.offset);
+                return false;
+            });
+
+            span.appendChild(link);
+        });
+
+        return span;
     }
 
     // add increment/decrement links to time input fields
     function addTimeAdjustmentLinks() {
         // Add to from/to/break fields (using actual field names)
-        const fromToBreakFields = $('input[name="startTimeStr"], input[name="endTimeStr"], input[name="breaksStr"]');
+        const fromToBreakFields = document.querySelectorAll('input[name="startTimeStr"], input[name="endTimeStr"], input[name="breaksStr"]');
         console.log(`Found ${fromToBreakFields.length} from/to/break fields`);
 
-        fromToBreakFields.each(function() {
-            const inputField = $(this);
-
-            if (inputField.data('adjustment-links-added')) {
+        fromToBreakFields.forEach(inputField => {
+            if (inputField.dataset.adjustmentLinksAdded) {
                 return;
             }
 
-            inputField.data('adjustment-links-added', true);
+            inputField.dataset.adjustmentLinksAdded = 'true';
 
-            const links = createAdjustmentLinks();
-            links.find('a.time-adjust').on('click', function(e) {
-                e.preventDefault();
-                const offset = parseInt($(this).data('offset'), 10);
-                adjustTimeValue(inputField, offset);
-                return false;
-            });
+            const links = createAdjustmentLinks(inputField);
 
             // For from/to/break fields, insert after the "&nbsp;h" unit text
             // Look for text nodes containing "h" after the input field
-            const parentTd = inputField.parent();
-            const allNodes = parentTd.contents();
+            const parentTd = inputField.parentElement;
+            const allNodes = Array.from(parentTd.childNodes);
             let insertAfterNode = inputField;
 
             // Find the text node containing "&nbsp;h" or " h" after the input field
             let foundInputField = false;
-            allNodes.each(function() {
-                if (this === inputField[0]) {
+            for (const node of allNodes) {
+                if (node === inputField) {
                     foundInputField = true;
-                } else if (foundInputField && this.nodeType === Node.TEXT_NODE) {
-                    const textContent = $(this).text();
-                    if (textContent.includes('h')) {
-                        insertAfterNode = $(this);
-                        return false; // Break out of loop
+                } else if (foundInputField && node.nodeType === Node.TEXT_NODE) {
+                    if (node.textContent.includes('h')) {
+                        insertAfterNode = node;
+                        break;
                     }
                 }
-            });
+            }
 
             insertAfterNode.after(links);
-            console.log(`Added adjustment links to ${inputField.attr('name')} field`);
+            console.log(`Added adjustment links to ${inputField.name} field`);
         });
 
         // Add to hours fields (with extra spacing)
-        $('input[name="hour"]').each(function() {
-            const inputField = $(this);
-
-            if (inputField.data('adjustment-links-added')) {
+        document.querySelectorAll('input[name="hour"]').forEach(inputField => {
+            if (inputField.dataset.adjustmentLinksAdded) {
                 return;
             }
 
-            inputField.data('adjustment-links-added', true);
+            inputField.dataset.adjustmentLinksAdded = 'true';
 
-            const links = createAdjustmentLinks();
-            links.css('margin-left', '5px');
-            links.find('a.time-adjust').on('click', function(e) {
-                e.preventDefault();
-                const offset = parseInt($(this).data('offset'), 10);
-                adjustTimeValue(inputField, offset);
-                return false;
-            });
+            const links = createAdjustmentLinks(inputField);
+            links.style.marginLeft = '5px';
 
             inputField.after(links);
         });
@@ -323,11 +396,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // get day of week (0=Sunday, 1=Monday, ..., 6=Saturday) from targetDateStr
     function getDayOfWeekFromTargetDate() {
-        const targetDateStr = $('input[name="targetDateStr"]').val();
-        if (!targetDateStr) {
+        const targetDateInput = document.querySelector('input[name="targetDateStr"]');
+        if (!targetDateInput || !targetDateInput.value) {
             console.log('targetDateStr field not found or empty');
             return -1;
         }
+
+        const targetDateStr = targetDateInput.value;
 
         // Parse date string (format: dd/mm/yyyy or dd.MM.yyyy)
         const parts = targetDateStr.split(/[./]/); // Split by either . or /
@@ -376,8 +451,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             value = minutesToTime(DEFAULT_FROM * 60);
         } else if (fieldName === 'to' || fieldName === 'endTimeStr') {
             actualFieldName = 'endTimeStr';
-            const fromField = $('input[name="startTimeStr"]');
-            const fromMinutes = parseTimeToMinutes(fromField.val().trim());
+            const fromField = document.querySelector('input[name="startTimeStr"]');
+            const fromMinutes = fromField ? parseTimeToMinutes(fromField.value.trim()) : 0;
 
             if (fromMinutes > 0) {
                 // Calculate to = from + work hours + break
@@ -391,10 +466,12 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             value = minutesToTime(DEFAULT_BREAK[weekdayIndex] * 60);
         }
 
-        const inputField = $(`input[name="${actualFieldName}"]`);
-        inputField.val(value);
-        inputField.trigger('change');
-        console.log(`Set default value for ${actualFieldName}: ${value}`);
+        const inputField = document.querySelector(`input[name="${actualFieldName}"]`);
+        if (inputField) {
+            inputField.value = value;
+            inputField.dispatchEvent(new Event('change', { bubbles: true }));
+            console.log(`Set default value for ${actualFieldName}: ${value}`);
+        }
     }
 
     // make from/to/break labels clickable to set default values
@@ -407,55 +484,60 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             { fieldName: 'breaksStr', labelText: 'Breaks:' }
         ];
 
-        fieldMappings.forEach(function(mapping) {
-            const inputField = $(`input[name="${mapping.fieldName}"]`);
-            if (inputField.length === 0) {
+        fieldMappings.forEach(mapping => {
+            const inputField = document.querySelector(`input[name="${mapping.fieldName}"]`);
+            if (!inputField) {
                 console.log(`Field not found: ${mapping.fieldName}`);
                 return;
             }
 
             // Find the label <td> in the same row that contains the exact caption text
-            const label = inputField.closest('tr').find('td').filter(function() {
-                const text = $(this).text().trim();
-                // Match the exact caption, case-insensitive, with optional whitespace
-                return text.toLowerCase().replace(/\s+/g, '') === mapping.labelText.toLowerCase().replace(/\s+/g, '');
-            }).first();
+            const row = inputField.closest('tr');
+            const tds = row.querySelectorAll('td');
+            let label = null;
 
-            if (label.length === 0) {
+            for (const td of tds) {
+                const text = td.textContent.trim();
+                // Match the exact caption, case-insensitive, with optional whitespace
+                if (text.toLowerCase().replace(/\s+/g, '') === mapping.labelText.toLowerCase().replace(/\s+/g, '')) {
+                    label = td;
+                    break;
+                }
+            }
+
+            if (!label) {
                 console.log(`Label not found for: ${mapping.fieldName} (looking for "${mapping.labelText}")`);
                 return;
             }
 
-            if (label.data('clickable-added')) {
+            if (label.dataset.clickableAdded) {
                 return;
             }
 
-            label.data('clickable-added', true);
+            label.dataset.clickableAdded = 'true';
 
             // Trim the label text to remove trailing whitespace/nbsp
-            const originalHtml = label.html();
+            const originalHtml = label.innerHTML;
             const trimmedHtml = originalHtml.replace(/(&nbsp;|\s)+$/g, '');
-            label.html(trimmedHtml);
+            label.innerHTML = trimmedHtml;
 
             // Make label look like a link
-            label.css({
-                'color': '#000080',
-                'text-decoration': 'none',
-                'cursor': 'pointer'
-            });
+            label.style.color = '#000080';
+            label.style.textDecoration = 'none';
+            label.style.cursor = 'pointer';
 
             // Add hover effect for underline
-            label.on('mouseenter', function() {
-                $(this).css('text-decoration', 'underline');
+            label.addEventListener('mouseenter', function() {
+                this.style.textDecoration = 'underline';
             });
 
-            label.on('mouseleave', function() {
-                $(this).css('text-decoration', 'none');
+            label.addEventListener('mouseleave', function() {
+                this.style.textDecoration = 'none';
             });
 
-            label.attr('title', 'Click to set default value');
+            label.title = 'Click to set default value';
 
-            label.on('click', function() {
+            label.addEventListener('click', function() {
                 setDefaultTimeValue(mapping.fieldName);
             });
 
@@ -465,27 +547,29 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // add "Add remaining time" link next to hours input fields
     function addRemainingTimeLinks() {
-        $('input[name="hour"]').each(function() {
-            const hoursInput = $(this);
-
+        document.querySelectorAll('input[name="hour"]').forEach(hoursInput => {
             // Check if link already exists
-            if (hoursInput.data('remaining-time-link-added')) {
+            if (hoursInput.dataset.remainingTimeLinkAdded) {
                 return;
             }
 
             // Mark as processed
-            hoursInput.data('remaining-time-link-added', true);
+            hoursInput.dataset.remainingTimeLinkAdded = 'true';
 
             // Create the link with extra spacing
-            const link = $('<a href="/#" style="margin-left: 20px;">Add remaining time</a>');
-            link.on('click', function(e) {
+            const link = document.createElement('a');
+            link.href = '/#';
+            link.style.marginLeft = '20px';
+            link.textContent = 'Add remaining time';
+
+            link.addEventListener('click', function(e) {
                 e.preventDefault();
                 addRemainingTime(hoursInput);
                 return false;
             });
 
             // Insert the link after the hours input field (and after adjustment links if they exist)
-            hoursInput.parent().append(link);
+            hoursInput.parentElement.appendChild(link);
         });
     }
 
@@ -494,15 +578,21 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         const projectName = "General:OpenProject";
 
         // Check if project is already added in the table (look for the project in expanded form)
-        const existingProject = $(`table#recordsTable td b:contains('${projectName}')`).filter(function() {
-            return $(this).text().trim().includes(projectName);
-        });
+        const boldElements = document.querySelectorAll('table#recordsTable td b');
+        let existingProjectElement = null;
+
+        for (const bold of boldElements) {
+            if (bold.textContent.trim().includes(projectName)) {
+                existingProjectElement = bold;
+                break;
+            }
+        }
 
         // If project already exists with at least one sub-record (input fields for hours), we're done
-        if (existingProject.length > 0) {
-            const projectRow = existingProject.closest('tr');
-            const subTable = projectRow.find('table[id^="table"]');
-            const hasSubRecords = subTable.find('input[name="hour"]').length > 0;
+        if (existingProjectElement) {
+            const projectRow = existingProjectElement.closest('tr');
+            const subTable = projectRow.querySelector('table[id^="table"]');
+            const hasSubRecords = subTable && subTable.querySelectorAll('input[name="hour"]').length > 0;
 
             if (hasSubRecords) {
                 console.log(`${projectName} already has at least one sub-record, nothing to do.`);
@@ -511,29 +601,52 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         }
 
         // Check if project is suggested below the dropdown (as a collapsed entry)
-        const suggestedLink = $(`table#recordsTable td b:contains('${projectName}')`).parent().find('a[href="/#"]:contains("Add")');
-        if (suggestedLink.length > 0) {
-            console.log(`${projectName} found as suggestion, clicking Add link...`);
-            suggestedLink[0].click();
-            return;
+        for (const bold of boldElements) {
+            if (bold.textContent.trim().includes(projectName)) {
+                const parent = bold.parentElement;
+                const addLinks = parent.querySelectorAll('a[href="/#"]');
+
+                for (const link of addLinks) {
+                    if (link.textContent.includes('Add')) {
+                        console.log(`${projectName} found as suggestion, clicking Add link...`);
+                        link.click();
+                        return;
+                    }
+                }
+            }
         }
 
         // Project not suggested, need to select from dropdown and add
-        const projectSelect = $('select#projectsSelectId');
-        if (projectSelect.length > 0) {
-            const projectOption = projectSelect.find(`option:contains('${projectName}')`).filter(function() {
-                return $(this).text().trim() === projectName;
-            });
+        const projectSelect = document.getElementById('projectsSelectId');
+        if (projectSelect) {
+            const options = projectSelect.querySelectorAll('option');
+            let projectOption = null;
 
-            if (projectOption.length > 0) {
+            for (const option of options) {
+                if (option.textContent.trim() === projectName) {
+                    projectOption = option;
+                    break;
+                }
+            }
+
+            if (projectOption) {
                 console.log(`${projectName} found in dropdown, selecting and adding...`);
-                projectSelect.val(projectOption.val());
+                projectSelect.value = projectOption.value;
 
                 // Find and click the Add link next to the dropdown
-                const addLink = projectSelect.closest('td').find('a[href="/#"]:contains("Add")');
-                if (addLink.length > 0) {
-                    addLink[0].click();
-                } else {
+                const parentTd = projectSelect.closest('td');
+                const addLinks = parentTd.querySelectorAll('a[href="/#"]');
+
+                let addLinkFound = false;
+                for (const link of addLinks) {
+                    if (link.textContent.includes('Add')) {
+                        link.click();
+                        addLinkFound = true;
+                        break;
+                    }
+                }
+
+                if (!addLinkFound) {
                     console.error('Add link not found next to dropdown');
                 }
             } else {
@@ -548,34 +661,48 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // apply page specific tweaks
     if (/bilbo\/showMyProjects.do(\?.*)?$/.test(window.location.pathname)) { // project list
         // change default "max items per page" value from 20 to 100
-        waitForKeyElements("div#controls select", (e) => selectOption(e, 100));
-        //sorter.size(100); // actually change the size
-        //scrollToTop(); // scroll to top (since size change scrolls down)
+        waitForElements("div#controls select", (selectElement) => {
+            selectOption(selectElement, '100');
+        });
     } else if (/bilbo\/(showActivityTable|saveActivity).do(\?.*)?$/.test(window.location.pathname)) { // week overview, might be saveAction.do after returning from day details
-        waitForKeyElements(`span:contains('Weekly Activity Table')`, () => { // make sure we see the table (saveActivity.do might be a different screen)
-            waitForKeyElements(TOTAL_WEEK_TIME_SELECTOR+':not(:empty)', (e) => showTimes()); // make sure total time is there
+        // Check for weekly activity table span with text
+        waitForElements('span', (span) => {
+            if (span.textContent.includes('Weekly Activity Table')) {
+                // Make sure total time cell is not empty before calling showTimes
+                waitForElements(TOTAL_WEEK_TIME_SELECTOR, (cell) => {
+                    if (cell.textContent.trim() !== '') {
+                        showTimes();
+                    }
+                });
+            }
         });
     } else if (/bilbo\/reportActivity.do(\?.*)?$/.test(window.location.pathname)) { // report activity
         // change default type from "Work" to "Work From Home"
-        waitForKeyElements("table#activityTable select[name='type']:has(option[value='W'])", (e) => selectOptionAsync(e, 'WHO'));
+        waitForElements("table#activityTable select[name='type']", (selectElement) => {
+            // Check if option with value 'W' exists
+            const hasWorkOption = selectElement.querySelector('option[value="W"]');
+            if (hasWorkOption) {
+                selectOptionAsync(selectElement, 'WHO');
+            }
+        }, { once: true });
 
         // automatically add "General:OpenProject" to the records table
-        waitForKeyElements("table#recordsTable", () => {
+        waitForElements("table#recordsTable", () => {
             addGeneralOpenProject();
-        });
+        }, { once: true });
 
         // make from/to/break labels clickable
-        waitForKeyElements('input[name="startTimeStr"]', () => {
+        waitForElements('input[name="startTimeStr"]', () => {
             makeLabelsClickable();
         });
 
         // add increment/decrement links to time fields
-        waitForKeyElements('input[name="startTimeStr"], input[name="endTimeStr"], input[name="breaksStr"]', () => {
+        waitForElements('input[name="startTimeStr"], input[name="endTimeStr"], input[name="breaksStr"]', () => {
             addTimeAdjustmentLinks();
         });
 
         // continuously monitor for hours input fields and add adjustment links + "Add remaining time" links
-        waitForKeyElements('input[name="hour"]', (element) => {
+        waitForElements('input[name="hour"]', () => {
             addTimeAdjustmentLinks();
             addRemainingTimeLinks();
         });
