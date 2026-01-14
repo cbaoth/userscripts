@@ -4,7 +4,7 @@
 // @copyright   2021-2024, userscript@cbaoth.de
 //
 // @name        Bilbo Tweaks
-// @version     0.10
+// @version     0.11
 // @description Some improvments to bilbo time tracking
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/bilbo-tweaks.user.js
 //
@@ -23,8 +23,9 @@
     // GM_config initialization
     const GM_CONFIG_ID = 'BilboTweaksConfig';
     const GM_CONFIG_FIELDS = {
+        // TODO / FIXME Review, e.g. differentiate between part time with full/fixed day/time off vs. flexible hours (total work time per week vs. per day)?
         'weekDayHoursMon': {
-            section: ['Working Hours per Day', 'Configure required working hours for each weekday (Monday to Friday). Use decimal values for partial hours (e.g., 7.5 for 7:30, 4.25 for 4:15).'],
+            section: ['Working Hours per Day', 'Configure required working hours for each weekday (Monday to Friday). Use decimal values for partial hours (e.g., 6.4 for 6:24, every day in case of 80% part time without fixed days).'],
             label: 'Monday',
             labelPos: 'left',
             type: 'float',
@@ -186,6 +187,28 @@
             min: 0,
             max: 23.99,
             default: 1
+        },
+        'allowWeeklyCorrections': {
+            section: ['Weekly Corrections', 'Allow manual corrections for special cases (e.g., working on a holiday, partial sick leave).'],
+            label: 'Enable weekly time corrections',
+            labelPos: 'left',
+            type: 'checkbox',
+            default: false
+        },
+        'showDailyRequiredTime': {
+            section: ['Daily Time Display', 'Show required working time and delta for each day in the weekly overview table.'],
+            label: 'Show daily required time and delta',
+            labelPos: 'left',
+            type: 'checkbox',
+            default: false
+        },
+        'autoSaveWeeklyOvertime': {
+            section: ['Auto-Save', 'Automatically save weekly overtime when all working days are complete.'],
+            label: 'Auto-save weekly overtime',
+            labelPos: 'left',
+            type: 'select',
+            options: ['Disabled', 'When complete (unless outdated)', 'Always when complete'],
+            default: 'Disabled'
         }
     };
 
@@ -256,6 +279,7 @@
     // ========== OVERTIME TRACKING ==========
 
     const OVERTIME_STORAGE_KEY = 'weeklyOvertimeData';
+    const WEEKLY_CORRECTIONS_KEY = 'weeklyCorrections';
 
     // Parse TSV data to internal format
     function parseOvertimeTSV(tsvText) {
@@ -325,13 +349,27 @@
         return sign === '-' ? -totalMinutes : totalMinutes;
     }
 
-    // Convert minutes to overtime string (+/-HH:MM)
-    function minutesToOvertimeString(minutes) {
+    const COLOR_POSITIVE = '#2c5282';
+    const COLOR_NEGATIVE = '#e53e3e';
+
+    // Convert minutes to overtime string (+/-HH:MM), optionally colorized
+    // Usage: minutesToOvertimeString(minutes, posColor, negColor)
+    // If posColor/negColor are provided, returns a span with color
+    function minutesToOvertimeString(minutes, useColor=true, showPlusSign=true) {
         const sign = minutes >= 0 ? '+' : '-';
         const absMinutes = Math.abs(minutes);
         const hours = Math.floor(absMinutes / 60);
         const mins = absMinutes % 60;
-        return `${sign}${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+        const str = `${(!showPlusSign && minutes > 0) ? "" : sign}${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+        if (!useColor) return str;
+        if (minutes > 0) {
+            return `<span style="color:${COLOR_POSITIVE}">${str}</span>`;
+        } else if (minutes < 0) {
+            return `<span style="color:${COLOR_NEGATIVE}">${str}</span>`;
+        } else {
+            // minutes === 0
+            return str;
+        }
     }
 
     // Load overtime data from storage
@@ -359,6 +397,37 @@
             console.error('Failed to save overtime data:', e);
             return false;
         }
+    }
+
+    // Load weekly corrections from storage
+    function loadWeeklyCorrections() {
+        try {
+            const data = GM_getValue(WEEKLY_CORRECTIONS_KEY, '{}');
+            return JSON.parse(data);
+        } catch (e) {
+            console.error('Failed to load weekly corrections:', e);
+            return {};
+        }
+    }
+
+    // Save weekly corrections to storage
+    function saveWeeklyCorrections(data) {
+        try {
+            GM_setValue(WEEKLY_CORRECTIONS_KEY, JSON.stringify(data));
+            return true;
+        } catch (e) {
+            console.error('Failed to save weekly corrections:', e);
+            return false;
+        }
+    }
+
+    // Get correction for current week
+    function getWeeklyCorrectionMinutes(weekString) {
+        if (!GM_config.get('allowWeeklyCorrections')) return 0;
+
+        const corrections = loadWeeklyCorrections();
+        const correction = corrections[weekString];
+        return correction ? correction.minutes : 0;
     }
 
     // Get current week number and year from page
@@ -437,6 +506,10 @@
                 const actualMinutes = timeToMinutes(totalWeekCell.textContent);
                 const requiredMinutes = getRequiredMinutes();
                 currentWeekDelta = actualMinutes - requiredMinutes;
+
+                // Apply correction if enabled
+                const correctionMinutes = getWeeklyCorrectionMinutes(currentWeek.weekString);
+                currentWeekDelta += correctionMinutes;
             }
         } catch (e) {
             console.warn('Could not calculate current week delta:', e);
@@ -466,6 +539,9 @@
             background: #f0f8ff;
             border: 1px solid #4682b4;
             border-radius: 4px;
+            box-sizing: border-box;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
         .overtime-summary h3 {
             margin: 0 0 8px 0;
@@ -502,9 +578,13 @@
             text-decoration: none !important;
         }
         .overtime-warning {
-            color: #d97706;
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+            padding: 8px;
+            margin: 8px 0;
+            border-radius: 4px;
             font-size: 13px;
-            margin-top: 5px;
+            color: #d97706;
         }
     `);
 
@@ -571,17 +651,26 @@
     const TOTAL_WEEK_TIME_SELECTOR = `table.activityTable tbody tr:nth-child(6) td:nth-child(9)`;
 
     // get required daily working time based on day-activity type
-    function getRequiredMinutesByType(type, hours, isSub) {
+    function getRequiredMinutesByType(type, configuredHours, isSub) {
+        // For split days (sub-activities), use the configured hours as the basis
+        const hoursToUse = configuredHours;
+
         switch (type) {
             case 'P': // public holiday
-            case 'E': // education
-            case 'S': // sick leave
             case 'H': // holiday
             case 'SPL': // special leave
-                return 0; // no time required
-            default: // regular work time
-                return hours * 60 * (isSub ? 0.5 : 1);
+            case 'S': // sick leave
+            case 'E': // education
+                return 0; // no time required for these types
+            default: // regular work time (W, WHO, etc.)
+                return hoursToUse * 60 * (isSub ? 0.5 : 1);
         }
+    }
+
+    // get required daily working time based on all primary and optional sub-activity type
+    function getRequiredMinutesByActivityTypes(type, hours, hasSub, typeSub) {
+        return getRequiredMinutesByType(type, hours, hasSub)
+            + (hasSub ? getRequiredMinutesByType(typeSub, hours, true) : 0);
     }
 
     // get column index of "today", if any (otherwise -1), note that first column are headers, so index for mo-fr are 1-5
@@ -592,6 +681,49 @@
         const todayTd = todaySpan.closest('td');
         const allTds = Array.from(document.querySelectorAll('table.activityTable tbody > tr:nth-child(1) > td'));
         return allTds.indexOf(todayTd);
+    }
+
+    // Check if today is within the current work week (Mon-Fri) or if week is in the past
+    // Returns: true if today is before or on Friday of current week, false if week is in the past
+    function isTodayInWorkWeek() {
+        const todayCol = getColumnNumberToday();
+        // If today is not in any column (1-5 for Mon-Fri), the week is in the past or future
+        // If today is in columns 1-5 (Mon-Fri), we're still in the work week
+        return todayCol >= 1 && todayCol <= 5;
+    }
+
+    // Check if all working days (Mon-Fri) have status "OK"
+    // This considers holidays, sick days, etc. as "complete" days
+    function isWeekComplete() {
+        // Find the Status row dynamically by looking for the row where first cell contains "Status"
+        // This is robust against injected rows (like Required/Delta rows)
+        const activityTable = document.querySelector('table.activityTable tbody');
+        if (!activityTable) return false;
+
+        let statusRow = null;
+        const rows = activityTable.querySelectorAll('tr');
+        for (const row of rows) {
+            const firstCell = row.querySelector('td:first-child');
+            if (firstCell && firstCell.textContent.trim() === 'Status') {
+                statusRow = row;
+                break;
+            }
+        }
+
+        if (!statusRow) return false;
+
+        // Check Monday to Friday (columns 2-6)
+        for (let i = 0; i < 5; i++) { // Monday to Friday
+            const statusCell = statusRow.querySelector(`td:nth-child(${i + 2})`);
+            if (!statusCell) return false;
+
+            const statusText = statusCell.textContent.trim();
+            // Day is complete if status is "OK" (covers work days, holidays, sick days, etc.)
+            if (statusText !== 'OK') {
+                return false;
+            }
+        }
+        return true;
     }
 
     // get required weekly work time in minutes (int)
@@ -607,10 +739,7 @@
 
             let types = cell.textContent.split('/');
             let hasSubType = types.length > 1;
-            result += getRequiredMinutesByType(types[0], weekDayHours[i], hasSubType);
-            if (hasSubType) {
-                result += getRequiredMinutesByType(types[1], weekDayHours[i], true);
-            }
+            result += getRequiredMinutesByActivityTypes(types[0], weekDayHours[i], hasSubType, hasSubType ? types[1] : 0 );
         }
         return result;
     }
@@ -657,21 +786,40 @@
             let requiredMinutesUpUntilNow = getRequiredMinutes(true);
             let requiredTimeUpUntilNow = minutesToTime(requiredMinutesUpUntilNow);
 
-            let timeUpUntilNowCell = document.querySelector(`table.activityTable tbody tr:nth-child(7) td:nth-child(9)`);
+            // Find the Status row dynamically (same approach as isWeekComplete)
+            const activityTable = document.querySelector('table.activityTable tbody');
+            let statusRow = null;
+            if (activityTable) {
+                const rows = activityTable.querySelectorAll('tr');
+                for (const row of rows) {
+                    const firstCell = row.querySelector('td:first-child');
+                    if (firstCell && firstCell.textContent.trim() === 'Status') {
+                        statusRow = row;
+                        break;
+                    }
+                }
+            }
+
+            let timeUpUntilNowCell = statusRow ? statusRow.querySelector('td:nth-child(9)') : null;
 
             let minutesDelta = actualMinutes - requiredMinutes;
             let minutesDeltaUpUntilNow = actualMinutes - requiredMinutesUpUntilNow;
 
-            // Display work time required up until current day (row 7, last cell)
-            if (timeUpUntilNowCell) {
+            // Display work time required up until current day (Status row, last cell)
+            // Only show if today is within the work week (Mon-Fri)
+            if (timeUpUntilNowCell && isTodayInWorkWeek()) {
                 timeUpUntilNowCell.innerHTML = colorizeTimeDelta(minutesDeltaUpUntilNow) + ' (' + requiredTimeUpUntilNow + ')';
                 timeUpUntilNowCell.style.textAlign = 'center';
                 timeUpUntilNowCell.title = 'Delta actual vs. required time up until today (required time up until today)';
+            } else if (timeUpUntilNowCell) {
+                // Week is in the past or weekend, show same as whole week
+                timeUpUntilNowCell.innerHTML = colorizeTimeDelta(minutesDelta) + ' (' + requiredTime + ')';
+                timeUpUntilNowCell.style.textAlign = 'center';
+                timeUpUntilNowCell.title = 'Delta actual vs. required time for the whole week (required time this week in total)';
             }
 
-            // Find the empty row (row 8) that currently has colspan="8"
-            // This row is between the Status row and the Projects header
-            const emptyRow = document.querySelector(`table.activityTable tbody tr:nth-child(8)`);
+            // Find the empty row after Status row (has colspan="8")
+            const emptyRow = statusRow ? statusRow.nextElementSibling : null;
             if (emptyRow) {
                 // Find the cell with colspan="8"
                 const colspanCell = emptyRow.querySelector('td[colspan="8"]');
@@ -689,12 +837,173 @@
                     emptyRow.appendChild(weeklyTotalCell);
                 }
             }
+
+            // Optionally show daily required time and delta
+            if (GM_config.get('showDailyRequiredTime')) {
+                showDailyRequiredTimes();
+            }
         } catch (e) {
             // Config not ready yet, try again later
             console.log('Config not ready for showTimes(), will retry:', e.message);
             setTimeout(() => showTimes(), 100);
         }
     }
+
+    // Show daily required time and delta in new rows
+    function showDailyRequiredTimes() {
+        const weekDayHours = getWeekDayHours();
+        const activityTable = document.querySelector('table.activityTable tbody');
+        if (!activityTable) return;
+
+        // Check if rows already exist
+        if (document.querySelector('.daily-required-row')) {
+            return; // Already added
+        }
+
+        // Find the "Total (Hours)" row (row 6)
+        const totalHoursRow = activityTable.querySelector('tr:nth-child(6)');
+        if (!totalHoursRow) return;
+
+        // Create "Required (Hours)" row
+        const requiredRow = document.createElement('tr');
+        requiredRow.className = 'daily-required-row';
+
+        const requiredLabelCell = document.createElement('td');
+        requiredLabelCell.align = 'center';
+        requiredLabelCell.className = 'darkColumn';
+        requiredLabelCell.textContent = 'Required (Hours)';
+        requiredRow.appendChild(requiredLabelCell);
+
+        // Create "Delta (Hours)" row
+        const deltaRow = document.createElement('tr');
+        deltaRow.className = 'daily-delta-row';
+
+        const deltaLabelCell = document.createElement('td');
+        deltaLabelCell.align = 'center';
+        deltaLabelCell.className = 'darkColumn';
+        deltaLabelCell.textContent = 'Delta (Hours)';
+        deltaRow.appendChild(deltaLabelCell);
+
+        // Add cells for each day (Monday-Sunday, 7 days + 1 total column = 8 cells)
+        for (let i = 0; i < 8; i++) {
+            const requiredCell = document.createElement('td');
+            requiredCell.style.textAlign = 'center';
+
+            const deltaCell = document.createElement('td');
+            deltaCell.style.textAlign = 'center';
+
+            if (i < 5) { // Monday to Friday
+                // Get actual time from "Total (Hours)" row
+                const actualCell = totalHoursRow.querySelector(`td:nth-child(${i + 2})`);
+                if (actualCell) {
+                    const actualText = actualCell.textContent.trim();
+                    const actualMinutes = timeToMinutes(actualText);
+
+                    // Get activity types for this day
+                    const typeRow = activityTable.querySelector('tr:nth-child(2)');
+                    const typeCell = typeRow?.querySelector(`td:nth-child(${i + 2})`);
+                    let types = [];
+                    if (typeCell) {
+                        const typeText = typeCell.textContent.trim();
+                        types = typeText.split('/');
+                    }
+
+                    // Calculate required minutes for this day
+                    let requiredMinutes = 0;
+                    if (types.length > 0) {
+                        const hasSubType = types.length > 1;
+                        requiredMinutes = getRequiredMinutesByActivityTypes(
+                            types[0],
+                            weekDayHours[i],
+                            hasSubType,
+                            hasSubType ? types[1] : null
+                        );
+                    } else {
+                        // Default: regular working day
+                        requiredMinutes = weekDayHours[i] * 60;
+                    }
+
+                    const requiredTime = minutesToTime(requiredMinutes);
+                    const deltaMinutes = actualMinutes - requiredMinutes;
+
+                    requiredCell.textContent = requiredTime;
+                    deltaCell.innerHTML = colorizeTimeDelta(deltaMinutes);
+
+                    // Use faint color for 00:00 values (no time required/no delta)
+                    if (requiredMinutes === 0) {
+                        requiredCell.style.color = 'silver';
+                    }
+                    if (deltaMinutes === 0) {
+                        deltaCell.style.color = 'silver';
+                    }
+
+                    // Copy hover attributes and identifiers from actual cell
+                    const onmouseover = actualCell.getAttribute('onmouseover');
+                    const onmouseout = actualCell.getAttribute('onmouseout');
+                    const cellId = actualCell.getAttribute('id');
+                    const cellName = actualCell.getAttribute('name');
+
+                    if (onmouseover && onmouseout) {
+                        requiredCell.setAttribute('onmouseover', onmouseover);
+                        requiredCell.setAttribute('onmouseout', onmouseout);
+                        deltaCell.setAttribute('onmouseover', onmouseover);
+                        deltaCell.setAttribute('onmouseout', onmouseout);
+                    }
+
+                    if (cellId) {
+                        requiredCell.setAttribute('id', cellId);
+                        requiredCell.setAttribute('name', cellId);
+                        deltaCell.setAttribute('id', cellId);
+                        deltaCell.setAttribute('name', cellId);
+                    }
+                } else {
+                    requiredCell.innerHTML = '&nbsp;';
+                    deltaCell.innerHTML = '&nbsp;';
+                }
+            } else if (i === 7) { // Week Total column
+                // Show weekly totals
+                requiredCell.textContent = minutesToTime(getRequiredMinutes());
+                const actualMinutes = timeToMinutes(totalHoursRow.querySelector('td:nth-child(9)').textContent);
+                const deltaMinutes = actualMinutes - getRequiredMinutes();
+                deltaCell.innerHTML = colorizeTimeDelta(deltaMinutes);
+            } else {
+                // Saturday/Sunday - empty but copy hover attributes
+                requiredCell.innerHTML = '&nbsp;';
+                deltaCell.innerHTML = '&nbsp;';
+
+                // Copy hover attributes from the weekend cells
+                const weekendCell = totalHoursRow.querySelector(`td:nth-child(${i + 2})`);
+                if (weekendCell) {
+                    const onmouseover = weekendCell.getAttribute('onmouseover');
+                    const onmouseout = weekendCell.getAttribute('onmouseout');
+                    const cellId = weekendCell.getAttribute('id');
+                    const cellName = weekendCell.getAttribute('name');
+
+                    if (onmouseover && onmouseout) {
+                        requiredCell.setAttribute('onmouseover', onmouseover);
+                        requiredCell.setAttribute('onmouseout', onmouseout);
+                        deltaCell.setAttribute('onmouseover', onmouseover);
+                        deltaCell.setAttribute('onmouseout', onmouseout);
+                    }
+
+                    if (cellId) {
+                        requiredCell.setAttribute('id', cellId);
+                        requiredCell.setAttribute('name', cellId);
+                        deltaCell.setAttribute('id', cellId);
+                        deltaCell.setAttribute('name', cellId);
+                    }
+                }
+            }
+
+            requiredRow.appendChild(requiredCell);
+            deltaRow.appendChild(deltaCell);
+        }
+
+        // Insert rows after "Total (Hours)" row
+        totalHoursRow.after(requiredRow);
+        requiredRow.after(deltaRow);
+    }
+
 
     // Display overtime summary on weekly overview page
     function showOvertimeSummary() {
@@ -716,23 +1025,151 @@
             activityTable.parentElement.appendChild(summaryDiv);
         }
 
-        // Build summary HTML
-        const totalStr = minutesToOvertimeString(overtime.total);
-        const currentWeekStr = minutesToOvertimeString(overtime.currentWeekDelta);
-        const carryoverStr = minutesToOvertimeString(overtime.totalBeforeThisWeek);
+        // Match the width of the activity table
+        const tableWidth = activityTable.offsetWidth;
+        if (tableWidth > 0) {
+            summaryDiv.style.width = `${tableWidth}px`;
+        }
+
+
+        // Calculate current week only: now and whole week
+        let actualMinutesUpToToday = 0;
+        let requiredMinutesUpToToday = 0;
+        let minutesDeltaUpToToday = 0;
+        try {
+            const requiredUpToToday = getRequiredMinutes(true);
+            requiredMinutesUpToToday = requiredUpToToday;
+            // Actual up to today: sum all actual times for days up to today
+            const todayCol = getColumnNumberToday();
+            if (todayCol >= 1 && todayCol <= 5) {
+                for (let i = 1; i <= todayCol; i++) {
+                    const cell = document.querySelector(`table.activityTable tbody tr:nth-child(6) td:nth-child(${i + 1})`);
+                    if (cell) actualMinutesUpToToday += timeToMinutes(cell.textContent);
+                }
+            }
+            minutesDeltaUpToToday = actualMinutesUpToToday - requiredMinutesUpToToday;
+        } catch (e) {
+            console.warn('Could not calculate overtime up to today:', e);
+        }
+
+        // Previous weeks total
+        const previousWeeksMinutes = overtime.totalBeforeThisWeek;
+        const previousWeeksStr = minutesToOvertimeString(previousWeeksMinutes)
+
+        // Current week only (already includes correction in calculateTotalOvertime)
+        const minutesDeltaWeek = overtime.currentWeekDelta;
+        const minutesDeltaWeekStr = minutesToOvertimeString(minutesDeltaWeek);
+        const minutesDeltaUpToTodayStr = minutesToOvertimeString(minutesDeltaUpToToday);
+
+        // Current week + overtime account
+        const weekWithOvertime = minutesDeltaWeek + previousWeeksMinutes;
+        const weekWithOvertimeStr = minutesToOvertimeString(weekWithOvertime);
+        const upToTodayWithOvertime = minutesDeltaUpToToday + previousWeeksMinutes;
+        const upToTodayWithOvertimeStr = minutesToOvertimeString(upToTodayWithOvertime);
+
+        // Check if there's a correction applied
+        const correctionMinutes = getWeeklyCorrectionMinutes(overtime.currentWeekString);
+        const hasCorrection = correctionMinutes !== 0;
+
+        // Auto-save logic
+        let autoSaveMessage = '';
+        const autoSaveMode = GM_config.get('autoSaveWeeklyOvertime');
+        if (autoSaveMode !== 'Disabled' && isWeekComplete()) {
+            const storedData = loadOvertimeData();
+            const savedOvertimeStr = storedData[overtime.currentWeekString];
+            const savedMinutes = savedOvertimeStr ? overtimeStringToMinutes(savedOvertimeStr) : null;
+
+            let shouldAutoSave = false;
+            if (autoSaveMode === 'Always when complete') {
+                // Always save when week is complete
+                shouldAutoSave = true;
+            } else if (autoSaveMode === 'When complete (unless outdated)') {
+                // Only save if no record exists OR if saved value matches current calculation
+                shouldAutoSave = savedMinutes === null || savedMinutes === minutesDeltaWeek;
+            }
+
+            if (shouldAutoSave) {
+                // Check if we're overwriting a different value
+                const isOverwriting = savedMinutes !== null && savedMinutes !== minutesDeltaWeek;
+
+                // Perform auto-save
+                const overtimeStr = minutesToOvertimeString(minutesDeltaWeek, false);
+                storedData[overtime.currentWeekString] = overtimeStr;
+                saveOvertimeData(storedData);
+                overtime.currentWeekSaved = true;
+
+                autoSaveMessage = `<div style="background:#e6f7ff;border:1px solid #91d5ff;padding:8px;margin:8px 0;border-radius:4px;font-size:13px;color:#1890ff;">
+                    ℹ️ Week ${overtime.currentWeekString} auto-saved as <b>${overtimeStr}</b>
+                </div>`;
+
+                // Add warning if we overwrote a different value
+                if (isOverwriting) {
+                    autoSaveMessage += `<div class="overtime-warning" style="margin-top:0;">⚠️ Previous value <b>${savedOvertimeStr}</b> was overwritten with the new calculated value.</div>`;
+                }
+            }
+        }
 
         let html = `
-            <h3>📊 Total Overtime</h3>
-            <div class="overtime-total">${totalStr}</div>
-            <div class="overtime-breakdown">
-                This week: ${currentWeekStr} |
-                Previous ${overtime.weeksCounted} weeks: ${carryoverStr}
-            </div>
+            <h2 style="margin-bottom:8px;">📊 Overtime Account</h2>
+            <div style="font-size:20px;font-weight:bold;color:#2c5282;margin-bottom:8px;">${previousWeeksStr}</div>
+
+            <h3 style="margin:8px 0 2px 0;font-size:15px;color:#4682b4;">Current Week Only</h3>
         `;
 
-        // Show warning if current week already saved
-        if (overtime.currentWeekSaved) {
-            html += `<div class="overtime-warning">⚠️ Week ${overtime.currentWeekString} is already saved. Saving again will overwrite.</div>`;
+        // Only show "Time left until now" if today is within the work week
+        if (isTodayInWorkWeek()) {
+            html += `<div style="font-size:14px;margin-bottom:2px;">Time left until now: <b>${minutesDeltaUpToTodayStr}</b> (from ${minutesToOvertimeString(requiredMinutesUpToToday, false)})</div>`;
+        }
+
+        html += `<div style="font-size:14px;margin-bottom:8px;">Time left for whole week: <b>${minutesDeltaWeekStr}</b></div>
+        `;
+
+        // Show correction info if active
+        if (hasCorrection) {
+            const uncorrectedMinutes = minutesDeltaWeek - correctionMinutes;
+            const uncorrectedStr = minutesToOvertimeString(uncorrectedMinutes, false);
+            const correctionStr = minutesToOvertimeString(correctionMinutes, false);
+            const corrections = loadWeeklyCorrections();
+            const correctionReason = corrections[overtime.currentWeekString]?.reason || '';
+            html += `<div style="font-size:13px;margin:4px 0 8px 0;color:#666;font-style:italic;">
+                (Calculated: ${uncorrectedStr}, Manual correction: ${correctionStr}${correctionReason ? ', Reason: ' + correctionReason : ''})
+            </div>`;
+        }
+
+        html += `
+            <h3 style="margin:8px 0 2px 0;font-size:15px;color:#4682b4;">Current Week + Overtime Account</h3>
+        `;
+
+        // Only show "Time left for now" if today is within the work week
+        if (isTodayInWorkWeek()) {
+            html += `<div style="font-size:14px;margin-bottom:2px;">Time left for now: <b>${upToTodayWithOvertimeStr}</b></div>`;
+        }
+
+        html += `<div style="font-size:14px;margin-bottom:8px;">Time left for whole week: <b>${weekWithOvertimeStr}</b></div>
+        `;
+
+        // Show auto-save message if applicable
+        if (autoSaveMessage) {
+            html += autoSaveMessage;
+        }
+
+        // Check if current week already saved and if it differs from calculated value
+        // (but don't show warning if we just auto-saved)
+        if (overtime.currentWeekSaved && !autoSaveMessage) {
+            const storedData = loadOvertimeData();
+            const savedOvertimeStr = storedData[overtime.currentWeekString];
+            const savedMinutes = overtimeStringToMinutes(savedOvertimeStr);
+
+            if (savedMinutes !== minutesDeltaWeek) {
+                // Saved value differs from calculated value - show warning
+                const calculatedStr = minutesToOvertimeString(minutesDeltaWeek, false);
+                html += `<div class="overtime-warning">⚠️ Week ${overtime.currentWeekString} is already saved as <b>${savedOvertimeStr}</b>, but current calculation shows <b>${calculatedStr}</b>. Saving will overwrite with the new value.</div>`;
+            } else {
+                // Saved value matches calculated value - show info
+                html += `<div style="background:#e6f7ff;border:1px solid #91d5ff;padding:8px;margin:8px 0;border-radius:4px;font-size:13px;color:#1890ff;">
+                    ℹ️ Week ${overtime.currentWeekString} has already been saved with the current value (<b>${savedOvertimeStr}</b>).
+                </div>`;
+            }
         }
 
         // Show warning if gaps found
@@ -745,7 +1182,15 @@
             <div class="overtime-actions">
                 <a href="#" id="saveCurrentWeek" class="overtime-button">💾 Save This Week</a>
                 <a href="#" id="copyForExcel" class="overtime-button">📋 Copy for Excel</a>
-                <a href="#" id="manageHistory" class="overtime-button">⚙️ Manage History</a>
+                <a href="#" id="manageHistory" class="overtime-button">⚙️ Manage History</a>`;
+
+        // Add correction button if enabled
+        if (GM_config.get('allowWeeklyCorrections')) {
+            html += `
+                <a href="#" id="editCorrection" class="overtime-button">✏️ Adjust This Week</a>`;
+        }
+
+        html += `
             </div>
         `;
 
@@ -766,6 +1211,15 @@
             e.preventDefault();
             openOvertimeManager();
         });
+
+        // Add event listener for correction button if it exists
+        const editCorrectionBtn = document.getElementById('editCorrection');
+        if (editCorrectionBtn) {
+            editCorrectionBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                editWeeklyCorrection();
+            });
+        }
     }
 
     // Save current week's overtime
@@ -782,7 +1236,7 @@
             return;
         }
 
-        const overtimeStr = minutesToOvertimeString(overtime.currentWeekDelta);
+        const overtimeStr = minutesToOvertimeString(overtime.currentWeekDelta, false);
         const data = loadOvertimeData();
 
         // Check if already exists
@@ -816,7 +1270,7 @@
             return;
         }
 
-        const overtimeStr = minutesToOvertimeString(overtime.currentWeekDelta);
+        const overtimeStr = minutesToOvertimeString(overtime.currentWeekDelta, false);
         const textToCopy = `${currentWeek.weekString}\t${overtimeStr}`;
 
         // Copy to clipboard
@@ -847,7 +1301,8 @@
             `1 - View all data\n` +
             `2 - Import from Excel (paste TSV)\n` +
             `3 - Export to clipboard\n` +
-            `4 - Clear all data\n` +
+            `4 - View/Export corrections\n` +
+            `5 - Clear all data\n` +
             `0 - Cancel`,
             '1'
         );
@@ -883,6 +1338,11 @@
                 break;
 
             case '4':
+                // View corrections
+                viewCorrections();
+                break;
+
+            case '5':
                 // Clear
                 if (confirm(`⚠️ Delete all ${weekCount} weeks of overtime data?\n\nThis cannot be undone!`)) {
                     saveOvertimeData({});
@@ -939,6 +1399,59 @@
         }
     }
 
+    // View and export corrections
+    function viewCorrections() {
+        const corrections = loadWeeklyCorrections();
+        const weeks = Object.keys(corrections).sort((a, b) => {
+            const [wA, yA] = a.split('/').map(Number);
+            const [wB, yB] = b.split('/').map(Number);
+            return (yA - yB) || (wA - wB);
+        });
+
+        if (weeks.length === 0) {
+            alert('No corrections saved.');
+            return;
+        }
+
+        let output = 'Week\tCorrection\tReason\tTimestamp\n';
+        weeks.forEach(week => {
+            const corr = corrections[week];
+            const timeStr = minutesToOvertimeString(corr.minutes, false);
+            const timestamp = corr.timestamp ? new Date(corr.timestamp).toLocaleDateString() : '-';
+            output += `${week}\t${timeStr}\t${corr.reason || '-'}\t${timestamp}\n`;
+        });
+
+        const action = prompt(
+            `📝 Weekly Corrections (${weeks.length} entries)\n\n` +
+            `1 - View all\n` +
+            `2 - Copy to clipboard\n` +
+            `3 - Clear all corrections\n` +
+            `0 - Cancel`,
+            '1'
+        );
+
+        if (!action || action === '0') return;
+
+        switch (action) {
+            case '1':
+                alert(output);
+                break;
+            case '2':
+                navigator.clipboard.writeText(output).then(() => {
+                    alert('✅ Copied to clipboard');
+                }).catch(() => {
+                    prompt('Copy this data:', output);
+                });
+                break;
+            case '3':
+                if (confirm(`⚠️ Delete all ${weeks.length} corrections?\n\nThis cannot be undone!`)) {
+                    saveWeeklyCorrections({});
+                    alert('✅ All corrections cleared');
+                    showOvertimeSummary(); // Refresh display
+                }
+                break;
+        }
+    }
 
     // https://stackoverflow.com/a/41421759/7393995
     function selectOptionAsync(selectElement, value) {
@@ -1541,4 +2054,74 @@
             }
         }
     });
+
+    // Edit weekly correction dialog
+    function editWeeklyCorrection() {
+        const currentWeek = getCurrentWeekAndYear();
+        if (!currentWeek) {
+            alert('Could not determine current week');
+            return;
+        }
+
+        const corrections = loadWeeklyCorrections();
+        const existing = corrections[currentWeek.weekString] || { minutes: 0, reason: '' };
+
+        const currentCorrectionStr = minutesToOvertimeString(existing.minutes, false);
+        const overtime = calculateTotalOvertime();
+
+        // Calculate the uncorrected value
+        const uncorrectedMinutes = overtime.currentWeekDelta - getWeeklyCorrectionMinutes(currentWeek.weekString);
+        const calculatedStr = minutesToOvertimeString(uncorrectedMinutes, false);
+
+        const input = prompt(
+            `⏱️ Adjust Week ${currentWeek.weekString}\n\n` +
+            `Calculated overtime: ${calculatedStr}\n` +
+            `Current correction: ${currentCorrectionStr}\n\n` +
+            `Enter correction in format +/-HH:MM (or "0" to remove):\n` +
+            `Example: +08:00 (working on holiday), -04:00 (half sick day counted as full)\n\n` +
+            `Leave empty to cancel.`,
+            currentCorrectionStr
+        );
+
+        if (input === null) return; // Cancelled
+
+        // Parse input
+        let minutes = 0;
+        if (input.trim() !== '0' && input.trim() !== '') {
+            minutes = overtimeStringToMinutes(input.trim());
+            if (isNaN(minutes)) {
+                alert('❌ Invalid format. Use +/-HH:MM (e.g., +02:30 or -01:15)');
+                return;
+            }
+        }
+
+        // Ask for reason (optional but recommended)
+        let reason = '';
+        if (minutes !== 0) {
+            reason = prompt(
+                `📝 Add a note (optional but recommended):\n\n` +
+                `Example: "Worked 8h on Christmas holiday (WHO/H)"`,
+                existing.reason
+            );
+            if (reason === null) return; // Cancelled
+        }
+
+        // Save or delete
+        if (minutes === 0) {
+            delete corrections[currentWeek.weekString];
+        } else {
+            corrections[currentWeek.weekString] = {
+                minutes: minutes,
+                reason: reason.trim(),
+                timestamp: new Date().toISOString()
+            };
+        }
+
+        if (saveWeeklyCorrections(corrections)) {
+            alert(`✅ Correction ${minutes === 0 ? 'removed' : 'saved'} for week ${currentWeek.weekString}`);
+            showOvertimeSummary(); // Refresh display
+        } else {
+            alert('❌ Failed to save correction');
+        }
+    }
 })();
