@@ -4,7 +4,7 @@
 // @copyright   2021-2024, userscript@cbaoth.de
 //
 // @name        Bilbo Tweaks
-// @version     0.12
+// @version     0.13
 // @description Some improvments to bilbo time tracking
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/bilbo-tweaks.user.js
 //
@@ -819,22 +819,25 @@
             }
 
             // Find the empty row after Status row (has colspan="8")
-            const emptyRow = statusRow ? statusRow.nextElementSibling : null;
-            if (emptyRow) {
-                // Find the cell with colspan="8"
-                const colspanCell = emptyRow.querySelector('td[colspan="8"]');
-                if (colspanCell) {
-                    // Change colspan from 8 to 7
-                    colspanCell.setAttribute('colspan', '7');
+            // Only add weekly total cell if daily required time display is disabled (otherwise it's redundant)
+            if (!GM_config.get('showDailyRequiredTime')) {
+                const emptyRow = statusRow ? statusRow.nextElementSibling : null;
+                if (emptyRow) {
+                    // Find the cell with colspan="8"
+                    const colspanCell = emptyRow.querySelector('td[colspan="8"]');
+                    if (colspanCell) {
+                        // Change colspan from 8 to 7
+                        colspanCell.setAttribute('colspan', '7');
 
-                    // Create new cell for weekly total delta
-                    const weeklyTotalCell = document.createElement('td');
-                    weeklyTotalCell.innerHTML = colorizeTimeDelta(minutesDelta) + ' (' + requiredTime + ')';
-                    weeklyTotalCell.style.textAlign = 'center';
-                    weeklyTotalCell.title = 'Delta actual vs. required time for the whole week (required time this week in total)';
+                        // Create new cell for weekly total delta
+                        const weeklyTotalCell = document.createElement('td');
+                        weeklyTotalCell.innerHTML = colorizeTimeDelta(minutesDelta) + ' (' + requiredTime + ')';
+                        weeklyTotalCell.style.textAlign = 'center';
+                        weeklyTotalCell.title = 'Delta actual vs. required time for the whole week (required time this week in total)';
 
-                    // Append the new cell to the row
-                    emptyRow.appendChild(weeklyTotalCell);
+                        // Append the new cell to the row
+                        emptyRow.appendChild(weeklyTotalCell);
+                    }
                 }
             }
 
