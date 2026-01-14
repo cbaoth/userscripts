@@ -4,7 +4,7 @@
 // @copyright   2021-2024, userscript@cbaoth.de
 //
 // @name        Bilbo Tweaks
-// @version     0.11
+// @version     0.12
 // @description Some improvments to bilbo time tracking
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/bilbo-tweaks.user.js
 //
@@ -1157,23 +1157,11 @@
 
         // Only show "Time left until now" if today is within the work week
         if (isTodayInWorkWeek()) {
-            html += `<div style="font-size:14px;margin-bottom:2px;">Time left until now: <b>${minutesDeltaUpToTodayStr}</b> (from ${minutesToOvertimeString(requiredMinutesUpToToday, false)})</div>`;
+            html += `<div style="font-size:14px;margin-bottom:2px;">Time left until now: <b>${minutesDeltaUpToTodayStr}</b> (from ${minutesToOvertimeString(requiredMinutesUpToToday, false)})${hasCorrection ? ' 🔧' : ''}</div>`;
         }
 
-        html += `<div style="font-size:14px;margin-bottom:8px;">Time left for whole week: <b>${minutesDeltaWeekStr}</b></div>
+        html += `<div style="font-size:14px;margin-bottom:8px;">Time left for whole week: <b>${minutesDeltaWeekStr}</b>${hasCorrection ? ' 🔧' : ''}</div>
         `;
-
-        // Show correction info if active
-        if (hasCorrection) {
-            const uncorrectedMinutes = minutesDeltaWeek - correctionMinutes;
-            const uncorrectedStr = minutesToOvertimeString(uncorrectedMinutes, false);
-            const correctionStr = minutesToOvertimeString(correctionMinutes, false);
-            const corrections = loadWeeklyCorrections();
-            const correctionReason = corrections[overtime.currentWeekString]?.reason || '';
-            html += `<div style="font-size:13px;margin:4px 0 8px 0;color:#666;font-style:italic;">
-                (Calculated: ${uncorrectedStr}, Manual correction: ${correctionStr}${correctionReason ? ', Reason: ' + correctionReason : ''})
-            </div>`;
-        }
 
         html += `
             <h3 style="margin:8px 0 2px 0;font-size:15px;color:#4682b4;">Current Week + Overtime Account</h3>
@@ -1181,11 +1169,24 @@
 
         // Only show "Time left for now" if today is within the work week
         if (isTodayInWorkWeek()) {
-            html += `<div style="font-size:14px;margin-bottom:2px;">Time left for now: <b>${upToTodayWithOvertimeStr}</b></div>`;
+            html += `<div style="font-size:14px;margin-bottom:2px;">Time left for now: <b>${upToTodayWithOvertimeStr}</b>${hasCorrection ? ' 🔧' : ''}</div>`;
         }
 
-        html += `<div style="font-size:14px;margin-bottom:8px;">Time left for whole week: <b>${weekWithOvertimeStr}</b></div>
+        html += `<div style="font-size:14px;margin-bottom:8px;">Time left for whole week: <b>${weekWithOvertimeStr}</b>${hasCorrection ? ' 🔧' : ''}</div>
         `;
+
+        // Show manual adjustment info if active (as a bubble below time displays)
+        if (hasCorrection) {
+            const uncorrectedMinutes = minutesDeltaWeek - correctionMinutes;
+            const uncorrectedStr = minutesToOvertimeString(uncorrectedMinutes, false);
+            const correctionStr = minutesToOvertimeString(correctionMinutes, false);
+            const corrections = loadWeeklyCorrections();
+            const correctionReason = corrections[overtime.currentWeekString]?.reason || '';
+            html += `<div style="background:#f5f5f5;border:1px solid #d9d9d9;padding:8px;margin:8px 0;border-radius:4px;font-size:13px;color:#595959;">
+                🔧 <b>Manual adjustment:</b> ${correctionStr} added to calculated ${uncorrectedStr}${correctionReason ? '<br/>💬 <b>Reason:</b> <span style="font-size: 0.85em; font-style:italic;">' + correctionReason + '</span>' : ''}
+            </div>`;
+        }
+
 
         // Show auto-save message if applicable
         if (autoSaveMessage) {
@@ -2108,16 +2109,21 @@
         const currentCorrectionStr = minutesToOvertimeString(existing.minutes, false);
         const overtime = calculateTotalOvertime();
 
-        // Calculate the uncorrected value
+        // Calculate the uncorrected value (base value without any corrections)
         const uncorrectedMinutes = overtime.currentWeekDelta - getWeeklyCorrectionMinutes(currentWeek.weekString);
         const calculatedStr = minutesToOvertimeString(uncorrectedMinutes, false);
+
+        // Calculate what the final value would be with current correction
+        const currentFinalStr = minutesToOvertimeString(overtime.currentWeekDelta, false);
 
         const input = prompt(
             `⏱️ Adjust Week ${currentWeek.weekString}\n\n` +
             `Calculated overtime: ${calculatedStr}\n` +
-            `Current correction: ${currentCorrectionStr}\n\n` +
-            `Enter correction in format +/-HH:MM (or "0" to remove):\n` +
-            `Example: +08:00 (working on holiday), -04:00 (half sick day counted as full)\n\n` +
+            `Current correction: ${currentCorrectionStr}\n` +
+            `Current final value: ${currentFinalStr}\n\n` +
+            `Enter correction to ADD to calculated value (format +/-HH:MM, or "0" to remove):\n` +
+            `Example: +03:12 (add time for holiday work), -04:00 (subtract wrongly counted time)\n` +
+            `The correction will be ADDED to the calculated value of ${calculatedStr}\n\n` +
             `Leave empty to cancel.`,
             currentCorrectionStr
         );
