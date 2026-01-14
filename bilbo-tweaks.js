@@ -1081,8 +1081,8 @@
 
             let shouldAutoSave = false;
             if (autoSaveMode === 'Always when complete') {
-                // Always save when week is complete
-                shouldAutoSave = true;
+                // Always save when week is complete unless saved value matches current calculation (info will be shown later on)
+                shouldAutoSave = savedMinutes === null || savedMinutes !== minutesDeltaWeek;
             } else if (autoSaveMode === 'When complete (unless outdated)') {
                 // Only save if no record exists OR if saved value matches current calculation
                 shouldAutoSave = savedMinutes === null || savedMinutes === minutesDeltaWeek;
@@ -1109,9 +1109,48 @@
             }
         }
 
+        // Build overtime account header with calculation if week is complete and saved
+        let overtimeAccountDisplay = previousWeeksStr;
+        if (isWeekComplete() && overtime.currentWeekSaved) {
+            const storedData = loadOvertimeData();
+            const savedOvertimeStr = storedData[overtime.currentWeekString];
+            const savedMinutes = savedOvertimeStr ? overtimeStringToMinutes(savedOvertimeStr) : null;
+
+            if (savedMinutes !== null) {
+                const newTotal = previousWeeksMinutes + savedMinutes;
+                const newTotalStr = minutesToOvertimeString(newTotal);
+
+                // Check if saved value differs from current calculation
+                const isOutdated = savedMinutes !== minutesDeltaWeek;
+                const warningIcon = isOutdated ? ' ⚠️' : '';
+
+                // Get colored version of saved value, but override with warning color if outdated
+                let savedValueDisplay = minutesToOvertimeString(savedMinutes);
+                if (isOutdated) {
+                    // Override color with warning orange for outdated values
+                    savedValueDisplay = `<span style="color:#d97706;font-weight:bold;">${savedOvertimeStr}${warningIcon}</span>`;
+                } else {
+                    // Use normal colored version (red for negative, blue for positive)
+                    savedValueDisplay = savedValueDisplay + warningIcon;
+                }
+
+                // Underline the new total to make it more prominent
+                const underlinedNewTotal = newTotalStr.includes('style=')
+                    ? newTotalStr.replace('style="', 'style="text-decoration:underline;')
+                    : newTotalStr.includes('<span')
+                    ? newTotalStr.replace('<span', '<span style="text-decoration:underline;"')
+                    : `<span style="text-decoration:underline;">${newTotalStr}</span>`;
+
+                overtimeAccountDisplay = `
+                    <div style="font-size:20px;font-weight:bold;margin-bottom:4px;">${previousWeeksStr} <span style="font-size:16px;font-weight:normal;color:#666;">+</span> ${savedValueDisplay} <span style="font-size:16px;font-weight:normal;color:#666;">=</span> ${underlinedNewTotal}</div>
+                    <div style="font-size:12px;color:#666;margin-bottom:4px;">Previous weeks + Current week (saved) = <span style="text-decoration:underline;">New total</span></div>
+                `;
+            }
+        }
+
         let html = `
             <h2 style="margin-bottom:8px;">📊 Overtime Account</h2>
-            <div style="font-size:20px;font-weight:bold;color:#2c5282;margin-bottom:8px;">${previousWeeksStr}</div>
+            ${typeof overtimeAccountDisplay === 'string' && overtimeAccountDisplay.includes('<div') ? overtimeAccountDisplay : `<div style="font-size:20px;font-weight:bold;color:#2c5282;margin-bottom:8px;">${overtimeAccountDisplay}</div>`}
 
             <h3 style="margin:8px 0 2px 0;font-size:15px;color:#4682b4;">Current Week Only</h3>
         `;
