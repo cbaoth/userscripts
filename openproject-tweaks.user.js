@@ -4,7 +4,7 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        OpenProject Tweaks
-// @version     0.1.8
+// @version     0.1.9
 // @description Some tweaks for OpenProject
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/openproject-tweaks.user.js
 //
@@ -20,6 +20,13 @@
 
 // prevent jQuery version conflicts (with page)
 this.$ = this.jQuery = jQuery.noConflict(true);
+//debugger
+
+/**
+ * TODO
+ * - Show/Copy ID for parents
+ * -
+ */
 
 (function () {
 
@@ -123,7 +130,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         ["span.wp-table--cell-span.type",
          [[/(Bug)/gi, "$1", { "color": "#ff6641" }],
           [/(Epic)/gi, "$1", { "color": "navi" }],
-          [/(Task|Feature)/gi, "$1", { "color": "black" }],
+          [/(Task|Feature)/gi, "$1", { "color": "white" }], // light mode: black
           [/(Idea)/gi, "$1", { "color": "silver" }],
           [/Application/gi, "APP", {}], // customer tracker only
           [/Change Request/gi, "CR", {}]]], // customer tracker only
@@ -133,13 +140,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
          [[/(Immediate)/gi, "$1", { "color": "rgb(255, 102, 65)", "font-weight": "bold", "animation": "blinker .7s linear infinite" }],
           [/(Urgent)/gi, "$1", { "color": "rgb(255, 102, 65)", "font-weight": "bold" }],
           [/(High)/gi, "$1", { "color": "rgb(241, 196, 15)", "font-weight": "bold" }],
-          [/(Normal)/gi, "$1", { "color": "black" }],
+          [/(Normal)/gi, "$1", { "color": "white" }], // light mode: black
           [/(Low)/gi, "$1", { "color": "silver" }]]],
 
         // highlight issues statuses
         ["span.status"
          + ", div.status_id", // backlog
-         [[/(New)/gi, "$1", { "color": "black" }],
+         [[/(New)/gi, "$1", { "color": "white" }], // light mode: black
           [/(Feedback)/gi, "$1", { "color": "#8E44AD" }],
           [/(In Progress)/gi, "$1", { "color": "rgb(11, 73, 191)" }],
           [/(Resolved)/gi, "$1", { "color": "#229954" }],
@@ -169,6 +176,15 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const SCREEN_ROADMAP = 4; // roadmap
     /* }}} -- CONSTANTS ------------------------------------------------------- */
 
+    /* }}} -- BASE FUNCTIONS -------------------------------------------------- */
+    //generate work package url by id (leading # will be ignored if present)
+    function opWorkPackageIdToLink(id) {
+        // Remove the leading # if present
+        const cleanId = id.startsWith('#') ? id.substring(1) : id;
+        return `https://openproject.seeburger.de/work_packages/${cleanId}`;
+    }
+    /* {{{ -- BASE FUNCTIONS -------------------------------------------------- */
+
     /* {{{ -- SCREENS --------------------------------------------------------- */
     var opCurrentScreen = opGetOPScreen();
 
@@ -188,6 +204,29 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     function opUpdateScreenType() {
         opCurrentScreen = opGetOPScreen();
     }
+
+    // replace the work package ID span, in work package info row, with a link to said work package
+    function opWorkPackageInfoRowIdToLink() {
+        // Select the element containing the work package ID
+        const workPackageIdElement = document.querySelector('.work-packages--info-row > span:first-child');
+
+        if (workPackageIdElement) {
+            // Extract the work package ID
+            const workPackageId = workPackageIdElement.textContent;
+
+            // Generate the URL using the first function
+            const url = opWorkPackageIdToLink(workPackageId);
+
+            // Create the new link element
+            const newLink = document.createElement('a');
+            newLink.href = url;
+            newLink.textContent = workPackageId;
+
+            // Replace the original span with the new link
+            workPackageIdElement.parentNode.replaceChild(newLink, workPackageIdElement);
+        }
+    }
+
     /* }}} -- SCREEN ---------------------------------------------------------- */
 
     /* {{{ -- DEBUG ----------------------------------------------------------- */
@@ -289,7 +328,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     /* {{{ -- SPECIAL TWEAKS -------------------------------------------------- */
     function sortUserSelectOptionsByText() {
         var select = $(`select[data-filter-name="user_id"].filter-value`),
-            options = $(`select[data-filter-name="user_id"].filter-value option`);
+            options = $(`select[data-filter-name="user_id"].filter-value option`),
+            checked = $(`select[data-filter-name="user_id"].filter-value option:checked`);
         options.sort(function(o1, o2) {
             var t1 = o1.text.toLowerCase(), t2 = o2.text.toLowerCase(); // sort case insensitive
             return o1.text == 'me' ? -1 // special user 'me' should always come first
@@ -300,6 +340,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         });
         options.detach();
         options.appendTo(select);
+        // FIXME scroll to previous position / selection on single-select
+        //select.value = checked.value;
+        //options[0].prop('checked', true);
     }
     /* }}} -- SPECIAL TWEAKS -------------------------------------------------- */
 
@@ -325,6 +368,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                     opApplyTweaksDebounce);
                 // issue details
                 waitForKeyElements(".detail-activity", opApplyTweaksDebounce);
+                // register work package info row separately so the list screen work package details sidebar is
+                // updated on change
+                waitForKeyElements(".work-packages--info-row > span:first-child", opWorkPackageInfoRowIdToLink);
             }
             break;
         case SCREEN_BACKLOG: // backlog
@@ -343,7 +389,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     }
 
     // special tweaks: sort (otherwise randomely listed) names in user-name filter (e.g. cost_reports site)
-    waitForKeyElements(`select[data-filter-name="user_id"].filter-value option`, _.debounce(sortUserSelectOptionsByText, 250));
+    // FIXME messes up selection
+    //waitForKeyElements(`select[data-filter-name="user_id"].filter-value option`, _.debounce(sortUserSelectOptionsByText, 250));
     /* }}} -- EXECUTION ------------------------------------------------------- */
 
 }());
