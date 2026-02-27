@@ -4,8 +4,8 @@
 // @copyright   2018+, userscript@cbaoth.de
 //
 // @name        OpenProject Tweaks
-// @version     0.1.9
-// @description Some tweaks for OpenProject
+// @version     0.2.0
+// @description Some tweaks for OpenProject (incl. Markdown Editor improvements)
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/openproject-tweaks.user.js
 //
 // @include     /^https?://openproject\.[^/]+//
@@ -40,6 +40,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const ENABLE_WORKPACKAGES_TWEAKS = true; // enable tweaks in issue list (+gantt) and details screen
     const ENABLE_BACKLOG_TWEAKS = true; // enable tweaks in backlog screen
     const ENABLE_ROADMAP_TWEAKS = true; // entable tweaks in roadmap screen
+    const ENABLE_MARKDOWN_EDITOR_TWEAKS = true; // enable markdown source editor improvements (height, font-size, resize)
+
+    // Markdown Editor Settings (only applies if ENABLE_MARKDOWN_EDITOR_TWEAKS is true)
+    const MARKDOWN_EDITOR_HEIGHT = "65vh"; // default editor height (e.g., "65vh", "800px", or "calc(100vh - 300px)")
+    const MARKDOWN_EDITOR_FONT_SIZE = "12px"; // font size in markdown source mode
+    // FIXME prototype, broken due to scrollbar conflicts (editor height is set to 100% of parent container, which should allow resizing, but scrollbar appears on editor itself instead of parent container, preventing resizing)
+    const MARKDOWN_EDITOR_ENABLE_RESIZE = false; // allow vertical resizing via drag at bottom-right corner (currently disabled due to scrollbar conflicts)
 
     // shorten target version in issue list (id only, strip subject)
     const ENABLE_SHORTEN_VERSION = false;
@@ -278,7 +285,157 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         GM_addStyle(`@keyframes blinker {  0% { opacity: 1; }
                                         30% { opacity: 0.4; }
                                         60% { opacity: 1; } }`);
+
+        // -- MARKDOWN EDITOR IMPROVEMENTS ---------------------------------------
+        if (ENABLE_MARKDOWN_EDITOR_TWEAKS) {
+            opAddMarkdownEditorCSS();
+        }
     }
+
+    /* }}} -- OPENPROJECT CORE ------------------------------------------------ */
+
+    /* {{{ -- MARKDOWN EDITOR IMPROVEMENTS ------------------------------------ */
+    // Add CSS styles for improved Markdown source editor
+    function opAddMarkdownEditorCSS() {
+        GM_addStyle(`
+/* === Markdown Source Editor (CodeMirror) Improvements === */
+
+/* Main editor container: increase height */
+.CodeMirror {
+    min-height: ${MARKDOWN_EDITOR_HEIGHT} !important;
+    height: ${MARKDOWN_EDITOR_HEIGHT} !important;
+    box-sizing: border-box !important;
+}
+
+/* Scroll area should inherit height and handle overflow properly */
+.CodeMirror-scroll {
+    min-height: inherit !important;
+    max-height: inherit !important;
+    height: 100% !important;
+}
+
+/* Reduce font size and adjust line height for better overview */
+.CodeMirror pre,
+.CodeMirror .CodeMirror-line,
+.CodeMirror .CodeMirror-code {
+    font-size: ${MARKDOWN_EDITOR_FONT_SIZE} !important;
+    line-height: 1.4 !important;
+}
+
+/* Line numbers with smaller font */
+.CodeMirror-gutters {
+    font-size: ${MARKDOWN_EDITOR_FONT_SIZE} !important;
+}
+
+/* Ensure parent containers don't restrict height */
+.op-ckeditor--markdown-source,
+.wp-editor--container,
+.attribute-editor-content,
+.op-uc-textarea-wrapper {
+    max-height: unset !important;
+    height: auto !important;
+    overflow: visible !important;
+}
+        `);
+    }
+
+    // Check if element is a CodeMirror instance
+    function isCodeMirrorElement(el) {
+        return el && el.classList && el.classList.contains("CodeMirror");
+    }
+
+    // Find all visible CodeMirror editors
+    function findVisibleCodeMirrorEditors(root = document) {
+        const editors = Array.from(root.querySelectorAll(".CodeMirror"));
+        return editors.filter((el) => el.offsetParent !== null); // only visible elements
+    }
+
+    // Refresh CodeMirror instance to properly render after size changes
+    function refreshCodeMirror(cmRoot) {
+        try {
+            // CodeMirror stores its API reference on the root element
+            const cm = cmRoot && cmRoot.CodeMirror;
+            if (cm && typeof cm.refresh === "function") {
+                cm.refresh();
+                return true;
+            }
+            // Fallback: check scroll container
+            const scroller = cmRoot.querySelector(".CodeMirror-scroll");
+            if (scroller && scroller.CodeMirror && typeof scroller.CodeMirror.refresh === "function") {
+                scroller.CodeMirror.refresh();
+                return true;
+            }
+        } catch (e) {
+            console.warn("OpenProject Tweaks: Failed to refresh CodeMirror:", e);
+        }
+        return false;
+    }
+
+    // Apply enhancements to all currently visible CodeMirror editors
+    function opEnhanceMarkdownEditors() {
+        if (!ENABLE_MARKDOWN_EDITOR_TWEAKS) return;
+
+        const editors = findVisibleCodeMirrorEditors();
+
+        editors.forEach((cmRoot) => {
+            // Skip if already enhanced (check for marker attribute)
+            if (cmRoot.hasAttribute("data-op-enhanced")) return;
+
+            // Mark as enhanced
+            cmRoot.setAttribute("data-op-enhanced", "true");
+
+            // Apply initial height
+            cmRoot.style.minHeight = MARKDOWN_EDITOR_HEIGHT;
+            cmRoot.style.height = MARKDOWN_EDITOR_HEIGHT;
+
+            // Initial refresh to ensure proper rendering
+            setTimeout(() => refreshCodeMirror(cmRoot), 100);
+        });
+    }
+
+    // Observe DOM for new CodeMirror instances (e.g., when switching between WYSIWYG ↔ Markdown)
+    function opObserveMarkdownEditors() {
+        if (!ENABLE_MARKDOWN_EDITOR_TWEAKS) return;
+
+        const observer = new MutationObserver((mutations) => {
+            let relevantChange = false;
+
+            for (const mutation of mutations) {
+                // Check for added nodes
+                if (mutation.addedNodes && mutation.addedNodes.length) {
+                    for (const node of mutation.addedNodes) {
+                        if (node.nodeType === 1) { // Element node
+                            if (isCodeMirrorElement(node) || node.querySelector && node.querySelector(".CodeMirror")) {
+                                relevantChange = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                // Check for attribute changes on CodeMirror elements
+                if (mutation.type === "attributes" && mutation.target && mutation.target.classList) {
+                    if (mutation.target.classList.contains("CodeMirror")) {
+                        relevantChange = true;
+                    }
+                }
+                if (relevantChange) break;
+            }
+
+            if (relevantChange) {
+                // Debounce is applied below
+                opEnhanceMarkdownEditorsDebounced();
+            }
+        });
+
+        // Observe the entire document for CodeMirror instances
+        observer.observe(document.documentElement || document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ["class", "style"],
+        });
+    }
+    /* }}} -- MARKDOWN EDITOR IMPROVEMENTS ------------------------------------ */
 
     // apply tweaks (should be called when all relevant elements are loaded and when they are updated)
     function opApplyTweaks() {
@@ -354,6 +511,19 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // dbounce tweak function (call no more than once every 250ms)
     var opApplyTweaksDebounce = _.debounce(opApplyTweaks, 250);
+
+    // debounce markdown editor enhancements
+    var opEnhanceMarkdownEditorsDebounced = _.debounce(opEnhanceMarkdownEditors, 250);
+
+    // Initialize markdown editor improvements
+    if (ENABLE_MARKDOWN_EDITOR_TWEAKS) {
+        // Apply enhancements to any existing editors
+        opEnhanceMarkdownEditors();
+        // Start observing for new editors
+        opObserveMarkdownEditors();
+        // Also watch for CodeMirror elements explicitly
+        waitForKeyElements(".CodeMirror", opEnhanceMarkdownEditorsDebounced);
+    }
 
     // (re)apply tweaks after when the selected elements are ready
     // choose elements carefully to reduce calls (though debounce should help with this)
