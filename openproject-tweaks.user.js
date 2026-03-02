@@ -46,7 +46,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const MARKDOWN_EDITOR_HEIGHT = "65vh"; // default editor height (e.g., "65vh", "800px", or "calc(100vh - 300px)")
     const MARKDOWN_EDITOR_FONT_SIZE = "12px"; // font size in markdown source mode
     // FIXME prototype, broken due to scrollbar conflicts (editor height is set to 100% of parent container, which should allow resizing, but scrollbar appears on editor itself instead of parent container, preventing resizing)
-    const MARKDOWN_EDITOR_ENABLE_RESIZE = false; // allow vertical resizing via drag at bottom-right corner (currently disabled due to scrollbar conflicts)
+    //const MARKDOWN_EDITOR_ENABLE_RESIZE = false; // allow vertical resizing via drag at bottom-right corner (currently disabled due to scrollbar conflicts)
 
     // shorten target version in issue list (id only, strip subject)
     const ENABLE_SHORTEN_VERSION = false;

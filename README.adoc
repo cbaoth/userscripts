@@ -202,6 +202,13 @@ image:jenkins-console1.png[]
 * Highlights issue priority, status, and type (tracker).
 * Highlights _[tags]_ and \*bold* in issue subjects.
 * Allows adding of additoinal custom styles _(substitute text fragments via generic regex search mechanism)_.
+* **Markdown Source Editor Improvements**:
+** Increases editor height significantly (default: 65vh, configurable) for better overview
+** Automatically detects and enhances editors when switching between WYSIWYG ↔ Markdown modes
+** Reduces font size (default: 12px) to display more content
+** Configurable via constants at the top of the script:
+*** `MARKDOWN_EDITOR_HEIGHT` - default height (e.g., "65vh", "800px")
+*** `MARKDOWN_EDITOR_FONT_SIZE` - font size in source mode
 
 
 === Search Hotkey
