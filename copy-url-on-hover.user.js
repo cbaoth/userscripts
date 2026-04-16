@@ -30,8 +30,8 @@
     const TT_FADEOUT = 250; // Tooltip fadeout time in ms
 
     // Global state
-    var currentKeys = { shift: false, ctrl: false, alt: false, meta: false };
-    var lastCopiedUrl = null;
+    const currentKeys = { shift: false, ctrl: false, alt: false, meta: false };
+    let lastCopiedUrl = null;
 
     /* }}} = END: CONSTANTS AND GLOBALS =================================== */
 
@@ -261,8 +261,8 @@
      * @returns {string|undefined} The extracted URL, or undefined if not found.
      */
     function getUrlFromCSS(e, style) {
-        var bg_img = window.getComputedStyle(e).getPropertyValue(style) || '';
-        var src = bg_img.replace(/^url\(['"]?([^'"]*)['" ]?\)/, '$1');
+        const bg_img = window.getComputedStyle(e).getPropertyValue(style) || '';
+        const src = bg_img.replace(/^url\(['"]?([^'"]*)['" ]?\)/, '$1');
         return src == '' ? undefined : src;
     }
 
@@ -275,7 +275,7 @@
      * @returns {string|undefined} The found URL value, or undefined if not found.
      */
     function findSrc(e, sel, dict = { a: ['href'] }) {
-        var v = getSrc(e, dict);
+        let v = getSrc(e, dict);
         if (v !== undefined) {
             return v;
         }
@@ -283,16 +283,16 @@
             return undefined;
         }
         // search for matching children (recursively)
-        var children = e.querySelectorAll(sel);
-        for (var i = 0; i < children.length; i++) {
+        const children = e.querySelectorAll(sel);
+        for (let i = 0; i < children.length; i++) {
             v = getSrc(children[i], dict);
             if (v !== undefined) return v;
         }
         // search for siblings (sometimes sibling divs cover media)
-        var parent = e.parentElement;
+        const parent = e.parentElement;
         if (parent) {
-            var siblings = parent.querySelectorAll(sel);
-            for (var i = 0; i < siblings.length; i++) {
+            const siblings = parent.querySelectorAll(sel);
+            for (let i = 0; i < siblings.length; i++) {
                 if (siblings[i] !== e) {
                     v = getSrc(siblings[i], dict);
                     if (v !== undefined) return v;
@@ -300,7 +300,7 @@
             }
         }
         // search for matching parent (recursively)
-        var ancestor = e.parentElement;
+        let ancestor = e.parentElement;
         while (ancestor) {
             if (ancestor.matches(sel)) {
                 v = getSrc(ancestor, dict);
@@ -320,11 +320,11 @@
      * @returns {string|undefined} The extracted URL value, or undefined if not found.
      */
     function getSrc(e, dict = { a: ['href'] }, includeBgImg = false) {
-        var v;
-        for (var k in dict) {
+        let v;
+        for (const k in dict) {
             if (e.matches(k)) {
-                for (var i in dict[k]) {
-                    var a = dict[k][i];
+                for (const i in dict[k]) {
+                    const a = dict[k][i];
                     if (/^css:.*/.test(a)) {
                         // special case for css styles
                         v = getUrlFromCSS(e, a.replace(/^css:/, ''));
@@ -356,7 +356,7 @@
 
     // register global keydown event
     document.addEventListener('keydown', function (event) {
-        var ev = event || window.event;
+        const ev = event || window.event;
         if (ev === undefined) {
             return;
         }
@@ -390,7 +390,7 @@
      * @param {KeyboardEvent} event - The keyboard event.
      */
     function updateModState(event) {
-        var ev = event || window.event;
+        const ev = event || window.event;
         if (ev === undefined) {
             return;
         }
@@ -407,8 +407,8 @@
      * @returns {boolean} True if the current key state matches.
      */
     function checkKeyState(keys) {
-        var metaKey = ['shift', 'ctrl', 'alt', 'meta'];
-        for (var i in metaKey) {
+        const metaKey = ['shift', 'ctrl', 'alt', 'meta'];
+        for (const i in metaKey) {
             if (currentKeys[metaKey[i]] !== (keys[metaKey[i]] || false)) {
                 return false;
             }
@@ -424,22 +424,22 @@
      * @returns {boolean} True if all modifier keys match the expected state.
      */
     function checkModState(event, keys) {
-        var ev = event || window.event;
+        const ev = event || window.event;
         if (ev === undefined) {
             return false;
         }
 
-        var shift = ev.shiftKey === (keys.shift || false);
-        var ctrl = ev.ctrlKey === (keys.ctrl || false);
-        var alt = ev.altKey === (keys.alt || false);
-        var meta = ev.metaKey === (keys.meta || false);
+        const shift = ev.shiftKey === (keys.shift || false);
+        const ctrl = ev.ctrlKey === (keys.ctrl || false);
+        const alt = ev.altKey === (keys.alt || false);
+        const meta = ev.metaKey === (keys.meta || false);
 
         return shift && ctrl && alt && meta;
     }
 
     // Register global keyup event
     document.addEventListener('keyup', function (event) {
-        var ev = event || window.event;
+        const ev = event || window.event;
         if (ev === undefined) {
             return;
         }

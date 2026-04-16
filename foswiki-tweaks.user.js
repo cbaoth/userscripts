@@ -49,7 +49,7 @@ window.addEventListener('load', () => {
     // Function to adjust height
     function adjustHeight(element, multiplier) {
         if (element) {
-            let currentHeight = parseFloat(window.getComputedStyle(element).height);
+            const currentHeight = parseFloat(window.getComputedStyle(element).height);
             element.style.height = currentHeight * multiplier + 'px';
         }
     }

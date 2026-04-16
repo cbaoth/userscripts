@@ -72,7 +72,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // register generic playback rate keys
     function genericPlayPauseReg(player) {
         // keys: space -> play/pause
-        cb.bindKeyDown(KEY_SPACE, (e) => {
+        cb.bindKeyDown(KEY_SPACE, () => {
             genericPlayPause(player);
         });
     }
@@ -83,24 +83,24 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             genericShowTT(`<i>NOT READY YET</i>`, 'darkred');
             return;
         }
-        var newTime = player.currentTime + offset;
+        const newTime = player.currentTime + offset;
         player.currentTime = Math.min(Math.max(0, newTime), player.duration);
     }
 
     // register generic video player fast forwad / rewind keys
     function genericTimeOffsetReg(player) {
         // keys: shift+left/+right -> skip +/-1min
-        cb.bindKeyDown(KEY_LEFT, (e) => genericTimeOffset(player, -60), {
+        cb.bindKeyDown(KEY_LEFT, () => genericTimeOffset(player, -60), {
             mods: { shift: true, preventDefault: true },
         });
-        cb.bindKeyDown(KEY_RIGHT, (e) => genericTimeOffset(player, 60), {
+        cb.bindKeyDown(KEY_RIGHT, () => genericTimeOffset(player, 60), {
             mods: { shift: true, preventDefault: true },
         });
         // keys: ctrl+left/+right -> skip +/-10min
-        cb.bindKeyDown(KEY_LEFT, (e) => genericTimeOffset(player, -600), {
+        cb.bindKeyDown(KEY_LEFT, () => genericTimeOffset(player, -600), {
             mods: { ctrl: true, preventDefault: true },
         });
-        cb.bindKeyDown(KEY_RIGHT, (e) => genericTimeOffset(player, 600), {
+        cb.bindKeyDown(KEY_RIGHT, () => genericTimeOffset(player, 600), {
             mods: { ctrl: true },
             preventDefault: true,
         });
@@ -114,9 +114,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             genericShowTT(`<i>NOT READY YET</i>`, 'darkred');
             return;
         }
-        var rateCurrent = player.playbackRate;
-        var idx = RATES.indexOf(rateCurrent);
-        var rate, rateColor;
+        const rateCurrent = player.playbackRate;
+        const idx = RATES.indexOf(rateCurrent);
+        let rate, rateColor;
         if ((up && idx < RATES.length - 1) || (!up && idx > 0)) {
             // +/-
             rate = RATES[idx + (up ? +1 : -1)];
@@ -141,8 +141,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             genericShowTT(`<i>NOT READY YET</i>`, 'darkred');
             return;
         }
-        var rateCurrent = player.playbackRate;
-        var rateColor = rate == 1 ? 'white' : rate > 1 ? '#99ff99' : '#ff9999';
+        const rateCurrent = player.playbackRate;
+        const rateColor = rate == 1 ? 'white' : rate > 1 ? '#99ff99' : '#ff9999';
         if (rate == rateCurrent) {
             // unchanged
             genericShowTT(
@@ -228,11 +228,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             fields: GM_CONFIG_FIELDS,
             events: {
                 open: function (doc) {
-                    var config = this;
+                    const config = this;
                     doc.getElementById(config.id + '_closeBtn').textContent = 'Cancel';
                 },
-                save: function (values) {
-                    var config = this;
+                save: function () {
+                    const config = this;
                     config.close();
                 },
             },
@@ -248,7 +248,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         );
 
         // control (click) function
-        var amazonCtrl = (elements, event, times = 1) => {
+        const amazonCtrl = (elements, event, times = 1) => {
             // perform click(s)
             cb.clickElement(elements[0], times);
         };
@@ -305,11 +305,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             fields: GM_CONFIG_FIELDS,
             events: {
                 open: function (doc) {
-                    var config = this;
+                    const config = this;
                     doc.getElementById(config.id + '_closeBtn').textContent = 'Cancel';
                 },
-                save: function (values) {
-                    var config = this;
+                save: function () {
+                    const config = this;
                     config.close();
                 },
             },
@@ -325,20 +325,20 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         );
 
         // control (click) function
-        var netflixCtrl = (elements, event, times = 1, { autoplay } = { autoplay: true }) => {
+        const netflixCtrl = (elements, event, times = 1, { autoplay } = { autoplay: true }) => {
             // perform click(s)
             cb.clickElement(elements[0], times);
             // playback may be paused, in this case press "play" after 1sec delay
             if (autoplay) {
                 setTimeout(() => {
-                    var play = $('button.button-nfplayerPlay')[0];
+                    const play = $('button.button-nfplayerPlay')[0];
                     if (play !== undefined) play.click();
                 }, 250);
             }
             // TODO hide controls (auto pop-up)
         };
 
-        var player = document.getElementsByTagName('video')[0];
+        const player = document.getElementsByTagName('video')[0];
 
         // register generic player key bindings
         //genericPlayPausReg(player);
@@ -400,11 +400,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             fields: GM_CONFIG_FIELDS,
             events: {
                 open: function (doc) {
-                    var config = this;
+                    const config = this;
                     doc.getElementById(config.id + '_closeBtn').textContent = 'Cancel';
                 },
-                save: function (values) {
-                    var config = this;
+                save: function () {
+                    const config = this;
                     config.close();
                 },
             },
@@ -419,7 +419,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             { skipEditable: true }
         );
 
-        var ytplayer = document.getElementById('movie_player') || document.getElementsByTagName('embed')[0];
+        const ytplayer = document.getElementById('movie_player') || document.getElementsByTagName('embed')[0];
         const PLAYBACK_RATES = ytplayer.getAvailablePlaybackRates();
         const QUALITY_LEVELS = ytplayer.getAvailableQualityLevels();
         // https://developers.google.com/youtube/iframe_api_reference
@@ -442,9 +442,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 showTT(`<i>NOT READY YET</i>`, 'darkred');
                 return;
             }
-            var rateCurrent = ytplayer.getPlaybackRate();
-            var idx = PLAYBACK_RATES.indexOf(rateCurrent);
-            var rate, rateColor;
+            const rateCurrent = ytplayer.getPlaybackRate();
+            const idx = PLAYBACK_RATES.indexOf(rateCurrent);
+            let rate, rateColor;
             if ((up && idx < PLAYBACK_RATES.length - 1) || (!up && idx > 0)) {
                 // +/-
                 rate = PLAYBACK_RATES[idx + (up ? +1 : -1)];
@@ -471,8 +471,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 showTT(`<i>NOT READY YET</i>`, 'darkred');
                 return;
             }
-            var rateCurrent = ytplayer.getPlaybackRate();
-            var rateColor = rate == 1 ? 'white' : rate > 1 ? '#99ff99' : '#ff9999';
+            const rateCurrent = ytplayer.getPlaybackRate();
+            const rateColor = rate == 1 ? 'white' : rate > 1 ? '#99ff99' : '#ff9999';
             if (rate == rateCurrent) {
                 // unchanged
                 showTT(
@@ -497,14 +497,14 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 showTT(`<i>NOT READY YET</i>`, 'darkred');
                 return;
             }
-            var currentLevel = ytplayer.getPlaybackQuality();
-            var idx = QUALITY_LEVELS.indexOf(currentLevel);
-            var level, diffColor;
+            const currentLevel = ytplayer.getPlaybackQuality();
+            const idx = QUALITY_LEVELS.indexOf(currentLevel);
+            let level, diffColor;
             if ((up && idx < QUALITY_LEVELS.length - 1) || (!up && idx > 0)) {
                 // +/-
-                var newIdx = idx + (up ? +1 : -1);
-                var newLevel = QUALITY_LEVELS[newIdx];
-                var levelAuto = newIdx == QUALITY_LEVELS.length - 1;
+                const newIdx = idx + (up ? +1 : -1);
+                const newLevel = QUALITY_LEVELS[newIdx];
+                const levelAuto = newIdx == QUALITY_LEVELS.length - 1;
                 diffColor = levelAuto || newIdx == idx ? 'white' : newIdx > idx ? '#99ff99' : '#ff9999';
                 showTT(`Quality: <span style="color: ${diffColor}">${newLevel}</span>`);
             } else {
@@ -526,14 +526,14 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 showTT(`<i>NOT READY YET</i>`, 'darkred');
                 return;
             }
-            var currentLevel = ytplayer.getPlaybackQuality();
-            var currentIdx = QUALITY_LEVELS.indexOf(currentLevel);
-            var newIdx = Math.min(Math.max(idx, 0), QUALITY_LEVELS.length - 1);
-            var newLevel = QUALITY_LEVELS[newIdx];
-            var levelAuto = newIdx == QUALITY_LEVELS.length - 1;
-            var levelChanged = newIdx != currentIdx;
+            const currentLevel = ytplayer.getPlaybackQuality();
+            const currentIdx = QUALITY_LEVELS.indexOf(currentLevel);
+            const newIdx = Math.min(Math.max(idx, 0), QUALITY_LEVELS.length - 1);
+            const newLevel = QUALITY_LEVELS[newIdx];
+            const levelAuto = newIdx == QUALITY_LEVELS.length - 1;
+            const levelChanged = newIdx != currentIdx;
             debugger;
-            var diffColor = levelAuto || levelChanged ? 'white' : newIdx > currentIdx ? '#99ff99' : '#ff9999';
+            const diffColor = levelAuto || levelChanged ? 'white' : newIdx > currentIdx ? '#99ff99' : '#ff9999';
             if (!levelChanged) {
                 // unchanged
                 showTT(
@@ -549,16 +549,16 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         }
 
         function ytSetThumb(up, off) {
-            var button = up
+            const button = up
                 ? $('div#segmented-like-button ytd-toggle-button-renderer button')[0]
                 : $(' div#segmented-dislike-button ytd-toggle-button-renderer button')[0];
             if (button === undefined) {
                 showTT(`<i>NOT READY YET</i>`, 'darkred');
                 return;
             }
-            var thumbColor = up ? '#99ff99' : 'red';
-            var thumbText = 'Thumb ' + (up ? 'Up' : 'Down');
-            var thumbIsSet = $(button).attr('aria-pressed') == 'true';
+            const thumbColor = up ? '#99ff99' : 'red';
+            const thumbText = 'Thumb ' + (up ? 'Up' : 'Down');
+            const thumbIsSet = $(button).attr('aria-pressed') == 'true';
             if (off) {
                 // remove thumbs up/down flag?
                 if (thumbIsSet) {
@@ -745,11 +745,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             fields: GM_CONFIG_FIELDS,
             events: {
                 open: function (doc) {
-                    var config = this;
+                    const config = this;
                     doc.getElementById(config.id + '_closeBtn').textContent = 'Cancel';
                 },
-                save: function (values) {
-                    var config = this;
+                save: function () {
+                    const config = this;
                     config.close();
                 },
             },
@@ -811,22 +811,22 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // register spotify tweaks
     function spotifyTweaksReg() {
         // keys: ./, -> next/previous track
-        cb.bindKeyDown(KEY_PERIOD, (e) => cb.clickElement($('.player-controls button[class*="forward"]')[0]), {
+        cb.bindKeyDown(KEY_PERIOD, () => cb.clickElement($('.player-controls button[class*="forward"]')[0]), {
             skipEditable: true,
         });
-        cb.bindKeyDown(KEY_COMMA, (e) => cb.clickElement($('.player-controls button[class*="back"]')[0]), {
+        cb.bindKeyDown(KEY_COMMA, () => cb.clickElement($('.player-controls button[class*="back"]')[0]), {
             skipEditable: true,
         });
         // keys: s -> toggle shuffle
-        cb.bindKeyDown(KEY_S, (e) => cb.clickElement($('.player-controls button[class*="shuffle"]')[0]), {
+        cb.bindKeyDown(KEY_S, () => cb.clickElement($('.player-controls button[class*="shuffle"]')[0]), {
             skipEditable: true,
         });
         // keys: r -> switch repeat mode
-        cb.bindKeyDown(KEY_R, (e) => cb.clickElement($('.player-controls button[class*="repeat"]')[0]), {
+        cb.bindKeyDown(KEY_R, () => cb.clickElement($('.player-controls button[class*="repeat"]')[0]), {
             skipEditable: true,
         });
         // keys: / -> search
-        cb.bindKeyDown(KEY_SLASH, (e) => cb.clickElement($('.navBar div[class*="search-icon"]')[0]), {
+        cb.bindKeyDown(KEY_SLASH, () => cb.clickElement($('.navBar div[class*="search-icon"]')[0]), {
             skipEditable: true,
             preventDefault: true,
         });
@@ -855,13 +855,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
         // dial ZDF Mediathek playbak speed up/down
         function zdfRateChange(up) {
-            var rateE = $('fieldset[id^=config_speed-zdf-player] input.zdfplayer-config_radiobutton:checked');
+            const rateE = $('fieldset[id^=config_speed-zdf-player] input.zdfplayer-config_radiobutton:checked');
             if (rateE.length != 1) {
                 showTT(`<i>NOT READY YET</i>`, 'darkred');
                 return;
             }
-            var rateCurrent = parseFloat(rateE[0].value);
-            var rate, rateColor;
+            const rateCurrent = parseFloat(rateE[0].value);
+            let rate, rateColor;
             if ((up && rateCurrent < 2) || (!up && rateCurrent > 0.25)) {
                 // +/-
                 rate = rateCurrent + (up ? +0.25 : -0.25);
@@ -883,13 +883,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
         // set ZDF Mediathek playbak speed
         function zdfRateSet(rate) {
-            var rateE = $('fieldset[id^=config_speed-zdf-player] input.zdfplayer-config_radiobutton:checked');
+            const rateE = $('fieldset[id^=config_speed-zdf-player] input.zdfplayer-config_radiobutton:checked');
             if (rateE.length != 1) {
                 showTT(`<i>NOT READY YET</i>`, 'darkred');
                 return;
             }
-            var rateCurrent = parseFloat(rateE[0].value);
-            var rateColor = rate == 1 ? 'white' : rate > 1 ? '#99ff99' : '#ff9999';
+            const rateCurrent = parseFloat(rateE[0].value);
+            const rateColor = rate == 1 ? 'white' : rate > 1 ? '#99ff99' : '#ff9999';
             if (rate == rateCurrent) {
                 // unchanged
                 showTT(
@@ -941,8 +941,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         // TODO keys: space -> toggle play/pause
         //cb.bindKeyDown(KEY_SPACE, (e) => cb.clickElement($('button.zdfplayer-play')[0]));
         // keys: shift+left/+right -> skip +/-1min
-        cb.bindKeyDown(KEY_LEFT, (e) => cb.clickElement($('button.zdfplayer-10-backward')[0]));
-        cb.bindKeyDown(KEY_RIGHT, (e) => cb.clickElement($('button.zdfplayer-10-forward')[0]));
+        cb.bindKeyDown(KEY_LEFT, () => cb.clickElement($('button.zdfplayer-10-backward')[0]));
+        cb.bindKeyDown(KEY_RIGHT, () => cb.clickElement($('button.zdfplayer-10-forward')[0]));
         // TODO keys: shift+left/+right -> skip +/-1min
         //cb.bindKeyDown(KEY_LEFT, (e) => cb.clickElement($('button.zdfplayer-10-backward')[0], 6), { mods: { shift: true }});
         //cb.bindKeyDown(KEY_RIGHT, (e) => cb.clickElement($('button.zdfplayer-10-forward')[0], 6), { mods: { shift: true }});
@@ -957,7 +957,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // register PLEX TVk tweaks
     function plexTweaksReg() {
-        var player = document.getElementsByTagName('video')[0];
+        const player = document.getElementsByTagName('video')[0];
 
         // register generic player key bindings
         //genericPlayPausReg(player);
@@ -965,7 +965,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         genericTimeOffsetReg(player);
 
         // keys: M -> toggle mute
-        cb.bindKeyDown(KEY_M, (e) => cb.clickElement($(`button[class*='PlayerControls-volumeButton']`)[0]));
+        cb.bindKeyDown(KEY_M, () => cb.clickElement($(`button[class*='PlayerControls-volumeButton']`)[0]));
     }
 
     /**

@@ -39,7 +39,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // add style classes to selected span.cm-keyword nodes
     function updateKeyword(node) {
-        var text = node.text();
+        const text = node.text();
         switch (true) {
             case /^return$/.test(text):
                 node.addClass('keyword-return');
@@ -54,10 +54,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // add style classes to selected span.cm-variable nodes
     function updateVariable(node) {
-        var text = node.text();
+        const text = node.text();
         switch (true) {
             case /^Preconditions$/.test(text): // old gerrit
-                var nextNode = $(node)[0].nextSibling;
+                const nextNode = $(node)[0].nextSibling;
                 if (nextNode.nodeType == 3 && nextNode.nodeValue == '.') {
                     // "." -> static call, ";" -> import
                     $(node).addClass('variable-Preconditions'); // highlight Preconditoins

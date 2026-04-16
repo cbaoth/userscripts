@@ -214,7 +214,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     /* {{{ -- BASE FUNCTIONS -------------------------------------------------- */
 
     /* {{{ -- SCREENS --------------------------------------------------------- */
-    var opCurrentScreen = opGetOPScreen();
+    let opCurrentScreen = opGetOPScreen();
 
     // identify current screen type
     function opGetOPScreen() {
@@ -258,7 +258,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     /* }}} -- SCREEN ---------------------------------------------------------- */
 
     /* {{{ -- DEBUG ----------------------------------------------------------- */
-    var opDebugCounter = 1;
+    let opDebugCounter = 1;
 
     // show a counter in the upper left corner indicating tweak function calls
     function opAddOrRefreshDebugCounter() {
@@ -495,7 +495,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         if (opCurrentScreen == SCREEN_WORKPACKAGES && ENABLE_SHORTEN_VERSION) {
             //debugger;
             $('span.wp-table--cell-span.version').each(function (i, e) {
-                var text = e.innerText.trim();
+                const text = e.innerText.trim();
                 e.innerText = cb.shortenString(text, MAX_VERSION_LENGTH);
                 e.title = text;
             });
@@ -505,7 +505,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         if (opCurrentScreen == SCREEN_WORKPACKAGES && ENABLE_SHORTEN_NAMES) {
             //debugger;
             $('td span.wp-table--cell-span.assignee, td span.wp-table--cell-span.author').each(function (i, e) {
-                var text = e.innerText.trim();
+                const text = e.innerText.trim();
                 if (!/, /.test(text)) {
                     // contains no comma (else: most likely already shortened)
                     e.innerText = cb.nameToInitials(text, { separator: ', ', lastLength: 20, reverse: true });
@@ -518,11 +518,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     /* {{{ -- SPECIAL TWEAKS -------------------------------------------------- */
     function sortUserSelectOptionsByText() {
-        var select = $(`select[data-filter-name="user_id"].filter-value`),
+        const select = $(`select[data-filter-name="user_id"].filter-value`),
             options = $(`select[data-filter-name="user_id"].filter-value option`),
             checked = $(`select[data-filter-name="user_id"].filter-value option:checked`);
         options.sort(function (o1, o2) {
-            var t1 = o1.text.toLowerCase(),
+            const t1 = o1.text.toLowerCase(),
                 t2 = o2.text.toLowerCase(); // sort case insensitive
             return o1.text == 'me'
                 ? -1 // special user 'me' should always come first
@@ -549,10 +549,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     }
 
     // dbounce tweak function (call no more than once every 250ms)
-    var opApplyTweaksDebounce = _.debounce(opApplyTweaks, 250);
+    const opApplyTweaksDebounce = _.debounce(opApplyTweaks, 250);
 
     // debounce markdown editor enhancements
-    var opEnhanceMarkdownEditorsDebounced = _.debounce(opEnhanceMarkdownEditors, 250);
+    const opEnhanceMarkdownEditorsDebounced = _.debounce(opEnhanceMarkdownEditors, 250);
 
     // Initialize markdown editor improvements
     if (ENABLE_MARKDOWN_EDITOR_TWEAKS) {

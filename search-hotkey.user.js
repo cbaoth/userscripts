@@ -22,7 +22,7 @@
     const KEYCODE_F = 70;
 
     function focusInput(selector) {
-        var e = $(selector);
+        const e = $(selector);
         e.focus();
         // TODO window.scrollTo(x, y);
     }

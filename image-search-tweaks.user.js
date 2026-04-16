@@ -28,8 +28,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const KEY_S = 82;
 
     function shuffleResult(rootSelector, childSelector) {
-        var root = $(rootSelector);
-        var elements = root.children();
+        const root = $(rootSelector);
+        const elements = root.children();
         while (elements.length) {
             root.append(elements.splice(Math.floor(Math.random() * elements.length), 1)[0]);
         }

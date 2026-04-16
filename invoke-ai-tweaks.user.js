@@ -106,10 +106,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         // batchRunIterationStartedAt = -1;
 
         originalPrompt = $(SEL_PROMPT).val();
-        let doSubstitute = GM_config.get('iai-prompt-substitute');
-        let samplers = SAMPLERS.filter((s) => GM_config.get('iai-sampler-' + s));
+        const doSubstitute = GM_config.get('iai-prompt-substitute');
+        const samplers = SAMPLERS.filter((s) => GM_config.get('iai-sampler-' + s));
         // collect custom promts, remove empty lines
-        let customPrompts = GM_config.get('iai-prompt-lines')
+        const customPrompts = GM_config.get('iai-prompt-lines')
             .split(/\r?\n/)
             .map((p) => p.trim())
             .filter((p) => p.length > 0);
@@ -143,16 +143,16 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             prompts = [originalPrompt]; // no custom prompts, use original one only
         }
 
-        let randomIterationMultiplier = GM_config.get('iai-random-iteration-multiplier');
+        const randomIterationMultiplier = GM_config.get('iai-random-iteration-multiplier');
         // generate all prompt/sampler combinations
         prompts
             .slice()
             .reverse()
-            .forEach((p, i) => {
+            .forEach((p) => {
                 // repeat random prompt generation multiplier-times
                 for (let rmi = 0; rmi < randomIterationMultiplier; rmi++) {
                     // get prompt with random values (same one used for all samplers below)
-                    let prompt = substituteRandomLines(p);
+                    const prompt = substituteRandomLines(p);
                     if (prompt.trim().lenght <= 0) {
                         // empty prompt?
                         continue; // skip empty prompt
@@ -161,7 +161,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                     samplers
                         .slice()
                         .reverse()
-                        .forEach((s, j) => {
+                        .forEach((s) => {
                             batchRunSequence.push([prompt, s]);
                         });
                 }
@@ -185,7 +185,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     function shuffle(array) {
         array.forEach((item, i) => {
-            let j = Math.floor(Math.random() * array.length);
+            const j = Math.floor(Math.random() * array.length);
             [array[i], array[j]] = [array[j], array[i]];
         });
         return array;
@@ -198,13 +198,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // https://stackoverflow.com/a/59599339
     // react textArea needs some magic to receive text updates
     function reactSetInputValue($input, val) {
-        let lastValue = $input[0].value;
+        const lastValue = $input[0].value;
         $input[0].value = val;
-        let event = new Event('input', { bubbles: true });
+        const event = new Event('input', { bubbles: true });
         // hack React15
         event.simulated = true;
         // hack React16
-        let tracker = $input[0]._valueTracker;
+        const tracker = $input[0]._valueTracker;
         if (tracker) {
             tracker.setValue(lastValue);
         }
@@ -215,7 +215,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     function reactSetSelection($select, val) {
         $select[0].dispatchEvent(new Event('click'));
         $select.val(val);
-        let option = Array.from($select[0].options).find((o) => o.value === val);
+        const option = Array.from($select[0].options).find((o) => o.value === val);
         option.selected = true;
         $select[0].dispatchEvent(new Event('change', { bubbles: true }));
     }
@@ -240,13 +240,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         if ($(SEL_INVOKE_BUTTON_ENABLED).length >= 1) {
             // button found and enabled?
             //batchRunIterationStartedAt = Date.now();
-            let tuple = batchRunSequence.pop();
-            let idx = batchRunTotal - batchRunSequence.length;
-            let prompt = tuple[0].trim();
-            let sampler = tuple[1];
+            const tuple = batchRunSequence.pop();
+            const idx = batchRunTotal - batchRunSequence.length;
+            const prompt = tuple[0].trim();
+            const sampler = tuple[1];
             // in case of random wheight / width config, set it now
             if (batchResolution.length > 1 && isMultiDimensional(batchResolution)) {
-                let res = batchResolution[Math.floor(Math.random() * batchResolution.length)];
+                const res = batchResolution[Math.floor(Math.random() * batchResolution.length)];
                 reactSetSelection($(SEL_WIDTH_SELECT), res[0]); // select width
                 reactSetSelection($(SEL_HEIGHT_SELECT), res[1]); // select heigth
             }
@@ -260,7 +260,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             // todo: random/re-use seed
         } else {
             // no button or disabled -> wait a bit and retry
-            let idx = batchRunTotal - batchRunSequence.length;
+            const idx = batchRunTotal - batchRunSequence.length;
             ttAndLog(`Batch Run: Invocation [${idx}/${batchRunTotal}] running ...`);
             // todo: timeouts - if (batchRunIterationStartedAt
         }
@@ -276,7 +276,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     }
 
     function substituteRandom(prompt, idx) {
-        let val = GM_config.get(`iai-prompt-rnd${idx}-lines`).trim();
+        const val = GM_config.get(`iai-prompt-rnd${idx}-lines`).trim();
         if (val.length <= 0) {
             // no random lines provided?
             if (prompt.includes(PROMPT_SUB_RND_VARS[idx - 1])) {
@@ -287,8 +287,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             }
             return prompt;
         }
-        let lines = val.split(/\r?\n/);
-        let text = lines[Math.floor(Math.random() * lines.length)];
+        const lines = val.split(/\r?\n/);
+        const text = lines[Math.floor(Math.random() * lines.length)];
         return prompt.replaceAll(PROMPT_SUB_RND_VARS[idx - 1], text);
     }
 
@@ -414,7 +414,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             events: {
                 open: function (doc) {
                     batchRunActive = false;
-                    let config = this;
+                    const config = this;
                     doc.getElementById(config.id + '_closeBtn').textContent = 'Cancel';
                     doc.getElementById(config.id + '_saveBtn').textContent = 'Batch Invoke';
                     doc.getElementById(config.id + '_field_iai-prompt-lines').cols = 125;
@@ -424,8 +424,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                         doc.getElementById(config.id + `_field_iai-prompt-rnd${i}-lines`).cols = 125;
                     }
                 },
-                save: function (values) {
-                    let config = this;
+                save: function () {
+                    const config = this;
                     config.close();
                     batchRun();
                 },
@@ -434,7 +434,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     }
 
     // register stuff only in case the invoke button has been found
-    waitForKeyElements(SEL_INVOKE_BUTTON, (e) => {
+    waitForKeyElements(SEL_INVOKE_BUTTON, () => {
         registerTweaks();
         // add hotkeys
         cb.bindKeyDown(KEY_B, () => GM_config.open(), { skipEditable: true }); //mods: { alt: true } });

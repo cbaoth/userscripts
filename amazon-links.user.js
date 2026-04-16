@@ -50,11 +50,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                      opacity: 0.65;
                  }`); // fade on hover
 
-    var TLD = getTld();
+    const TLD = getTld();
 
     function getTld() {
         // get top level domain (the simple way)
-        var tld = document.domain.split('.').pop();
+        let tld = document.domain.split('.').pop();
         if (['au', 'br', 'mx'].indexOf(tld) > -1) {
             // add .com to some domains
             tld = 'com.' + tld;
@@ -67,12 +67,12 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // clean-up product page link (strip all parameters and unnecessary texts)
     function cleanLink(a) {
-        var href = $(a).attr('href');
+        const href = $(a).attr('href');
         if (!/\/[dg]p\/\w{10}([/?].+)?$/.test(href)) {
             // not a product page links?
             return; // do nothing
         }
-        var custReview = /#customerReviews/.test(href) ? '#customerReviews' : '';
+        const custReview = /#customerReviews/.test(href) ? '#customerReviews' : '';
         if (/^\s*http/.test(href)) {
             // absolute link?
             $(a).attr('href', toSmileURL(href).replace(/(?<=\w)\/.*(\/[dg]p\/\w{10})[/?].+/, '$1/') + custReview);
@@ -86,11 +86,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         if ($('#' + AVG_RATING_TWEAKS_ID)[0]) {
             return; // already done
         }
-        var div = $(e);
+        const div = $(e);
 
-        var asin = $('input#ASIN').val();
-        var reviewMetaURL = `https://reviewmeta.com/amazon-${TLD}/${asin}`;
-        var tweak = `<a target="_blank" class="${HOVER_FADE_CLASS}" style="text-decoration: none; padding-right: .25em;"
+        const asin = $('input#ASIN').val();
+        const reviewMetaURL = `https://reviewmeta.com/amazon-${TLD}/${asin}`;
+        const tweak = `<a target="_blank" class="${HOVER_FADE_CLASS}" style="text-decoration: none; padding-right: .25em;"
                         href="${reviewMetaURL}" title="ReviewMeta (click to open in new tab).">
                        <span style="background: #2173b9; color: white; font-size: .65em; font-weight: bold; vertical-align: text-top; line-height: 16px;
                              padding: .2em .4em .1em .45em; text-align: center; filter: drop-shadow(1px 1px 1px black); border-radius: 2px;">R</span>
@@ -105,9 +105,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         }
 
         // get price tag
-        var price = $(e).hasClass('corePrice_desktop') ? $(e).parent() : $(e);
+        const price = $(e).hasClass('corePrice_desktop') ? $(e).parent() : $(e);
         // get the ASIN (product id)
-        var asin;
+        let asin;
 
         if (page == PAGE_PRODUCT) {
             asin = $('input#ASIN').val();
@@ -122,12 +122,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         }
 
         // direct link
-        var azURL = `https://smile.amazon.${TLD}/dp/${asin}`;
-        var azICO = `https://www.amazon.${TLD}/favicon.ico`;
-        var rmICO = `https://www.amazon.${TLD}/favicon.ico`;
+        const azURL = `https://smile.amazon.${TLD}/dp/${asin}`;
+        const azICO = `https://www.amazon.${TLD}/favicon.ico`;
 
         // keepa.com
-        var keepaIds = {
+        const keepaIds = {
             com: 1,
             uk: 2,
             de: 3,
@@ -142,7 +141,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             br: 12,
             au: 13,
         };
-        var keepaURL = `https://keepa.com/#!product/${keepaIds[TLD]}-${asin}`;
+        const keepaURL = `https://keepa.com/#!product/${keepaIds[TLD]}-${asin}`;
 
         // add kappa link icon and amazon (clean product "share") link icon next to the price
         price.after(`<span id="${PRICE_TWEAKS_ID}" style="display: inline-block; vertical-align: middle; margin-bottom: 1px;">
@@ -171,19 +170,19 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             return;
         }
         if (/^(www\.)?amazon.(\w+)/.test(location.hostname) && !/^smile\./.test(location.hostname)) {
-            var orgURL = window.location.href || window.parent.location.href;
-            var smileURL = toSmileURL(orgURL);
+            const orgURL = window.location.href || window.parent.location.href;
+            const smileURL = toSmileURL(orgURL);
             if (orgURL != smileURL) {
                 // try replacing location in various ways
                 try {
                     Location.replace(smileURL);
-                } catch (e) {}
+                } catch {}
                 try {
                     window.location.replace(smileURL);
-                } catch (e) {}
+                } catch {}
                 try {
                     window.parent.location.replace(smileURL);
-                } catch (e) {}
+                } catch {}
             }
         }
     }

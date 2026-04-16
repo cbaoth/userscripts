@@ -61,7 +61,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     /* }}} -- CONSOLE HIGHLIGHTING -------------------------------------------- */
     // job console output
-    var subsituteConsoleText = function (s) {
+    const subsituteConsoleText = function (s) {
         cb.substituteTextWithCSS(CONSOLE_SUBSTITUTION);
         // quick fix: mark ALL selected elements as processed, ignore regularly updated ones in selectors
         $(s).addClass('cbSubstituteTextWithCSS');

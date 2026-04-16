@@ -32,7 +32,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const RETRY_AFTER_MS = 500;
 
     // retry
-    var retry = function (f, ms = RETRY_AFTER_MS, retries = MAX_RETRIES) {
+    const retry = function (f, ms = RETRY_AFTER_MS, retries = MAX_RETRIES) {
         try {
             return f();
         } catch (ex) {
@@ -42,8 +42,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     };
 
     // click button and add blacklist class
-    var click = function (e) {
-        var button = $(e);
+    const click = function (e) {
+        const button = $(e);
         button.addClass(CLASS);
         // retry max 5 times every 500ms (necessary scripts not yet loaded)
         retry(() => cb.clickElement(button));

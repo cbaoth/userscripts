@@ -44,11 +44,11 @@ $ = jQuery = jQuery.noConflict(true);
         fields: GM_CONFIG_FIELDS,
         events: {
             open: function (doc) {
-                var config = this;
+                const config = this;
                 doc.getElementById(config.id + '_closeBtn').textContent = 'Cancel';
             },
-            save: function (values) {
-                var config = this;
+            save: function () {
+                const config = this;
                 config.close();
             },
         },
@@ -63,7 +63,7 @@ $ = jQuery = jQuery.noConflict(true);
         svg,
         { id = 'glow', color = 'gold', floodOpacity = 0.75, radius = 1.75, stdDeviation = 1.5 } = {}
     ) {
-        var defs = `<defs>
+        const defs = `<defs>
             <filter id="${id}" x="-5000%" y="-5000%" width="10000%" height="10000%">
                 <feFlood result="flood" flood-color="${color}" flood-opacity="${floodOpacity}"></feFlood>
                 <feComposite in="flood" result="mask" in2="SourceGraphic" operator="in"></feComposite>
@@ -80,7 +80,7 @@ $ = jQuery = jQuery.noConflict(true);
     }
 
     function starSetStyle(star, rating, { isAverage = false, light = false } = {}) {
-        var svg = $(star);
+        const svg = $(star);
 
         function _fill(color) {
             svg.attr('fill', color);
@@ -122,8 +122,8 @@ $ = jQuery = jQuery.noConflict(true);
     }
 
     // star change style update on input style change
-    var scObserver = new MutationObserver(function (mutations) {
-        mutations.forEach(function (mutationRecord) {
+    const scObserver = new MutationObserver(function (mutations) {
+        mutations.forEach(function () {
             updateMyStarStyle();
         });
     });
@@ -131,11 +131,11 @@ $ = jQuery = jQuery.noConflict(true);
     // update style of user rating stars
     function updateUserStarStyle() {
         $('div.ipl-rating-widget > div.ipl-rating-star  svg.ipl-star-icon').each(function (i, svg) {
-            var ratingDiv = $(svg).parent().siblings('span.ipl-rating-star__rating')[0];
+            const ratingDiv = $(svg).parent().siblings('span.ipl-rating-star__rating')[0];
             if (ratingDiv === undefined) {
                 return;
             }
-            var rating = parseInt(ratingDiv.textContent);
+            const rating = parseInt(ratingDiv.textContent);
             starSetStyle(svg, rating, { light: true });
         });
     }
@@ -147,68 +147,68 @@ $ = jQuery = jQuery.noConflict(true);
                 // first time (element creation)? add style change observer
                 scObserver.observe($(svg).closest('label')[0], { attributes: true, attributeFilter: ['style'] });
             }
-            var ratingDiv = $(svg).parent().siblings('span.ipl-rating-star__rating')[0];
+            const ratingDiv = $(svg).parent().siblings('span.ipl-rating-star__rating')[0];
             if (ratingDiv === undefined) {
                 return;
             }
-            var rating = parseInt(ratingDiv.textContent);
+            const rating = parseInt(ratingDiv.textContent);
             starSetStyle(svg, rating);
         });
     }
 
     function updateUserAvgRatingStarStyle() {
-        var ratingDivParent = $('div.avg-rating-star')[0];
+        const ratingDivParent = $('div.avg-rating-star')[0];
         if (ratingDivParent === undefined) {
             return;
         }
-        var svg = $(ratingDivParent).find('svg.ipl-icon')[0];
-        var ratingSpan = $(ratingDivParent).find('span.avg-rating')[0];
+        const svg = $(ratingDivParent).find('svg.ipl-icon')[0];
+        const ratingSpan = $(ratingDivParent).find('span.avg-rating')[0];
         if (ratingSpan === undefined) {
             return;
         }
-        var rating = parseInt(ratingSpan.textContent);
+        const rating = parseInt(ratingSpan.textContent);
         starSetStyle(svg, rating, { isAverage: true, light: true });
     }
 
     function addSeasonAvgRating() {
-        var episodeCount = $('div.eplist .list_item').length;
-        var userRatings = $('div.ipl-rating-widget > div.ipl-rating-star > span.ipl-rating-star__rating');
-        var myRatings = $(
+        const episodeCount = $('div.eplist .list_item').length;
+        const userRatings = $('div.ipl-rating-widget > div.ipl-rating-star > span.ipl-rating-star__rating');
+        const myRatings = $(
             'label.ipl-rating-interactive__star-container div.ipl-rating-interactive__star span.ipl-rating-star__rating'
         );
-        var userRatedEpisodesCount = 0;
-        var userRatingsSum = 0;
-        var myRatedEpisodesCount = 0;
-        var myRatingsSum = 0;
+        let userRatedEpisodesCount = 0;
+        let userRatingsSum = 0;
+        let myRatedEpisodesCount = 0;
+        let myRatingsSum = 0;
 
-        for (var i in userRatings) {
-            var userRating = parseFloat(userRatings[i].textContent);
+        for (const i in userRatings) {
+            const userRating = parseFloat(userRatings[i].textContent);
             if (userRating !== NaN && userRating > 0) {
                 userRatedEpisodesCount++;
                 userRatingsSum += userRating;
             }
-            var myRating = parseInt(myRatings[i].textContent);
+            const myRating = parseInt(myRatings[i].textContent);
             if (myRating !== NaN && myRating > 0) {
                 myRatedEpisodesCount++;
                 myRatingsSum += myRating;
             }
         }
 
-        var header = $('#episode_top');
+        const header = $('#episode_top');
         header.wrap('<div style="display: table; padding-top: 0.5em;"></div>');
-        var ratingDiv = header.parent();
+        const ratingDiv = header.parent();
         header.wrap('<span style="display: table-cell;vertical-align:top;"></span>');
 
-        var tDiv =
+        const tDiv =
             '<div class="avg-rating-star" style="display: table-cell; vertical-align:middle; padding-left: 1em; font-size: 1.2em;"><div style="display: table-row;"></div></div>';
-        var tSpan = '<span class="avg-rating" style="display:table-cell; vertical-align:middle;"></span>';
-        var starSvg = $('svg.ipl-star-icon')[0];
-        var starBorderSvg = $('svg.ipl-star-border-icon')[0];
+        const tSpan = '<span class="avg-rating" style="display:table-cell; vertical-align:middle;"></span>';
+        const starSvg = $('svg.ipl-star-icon')[0];
+        const starBorderSvg = $('svg.ipl-star-border-icon')[0];
 
-        var userAvgRating = userRatingsSum / userRatedEpisodesCount;
-        var userAvgRatingDiv = $(tDiv);
-        var userAvgRatingSpan = $(tSpan);
-        var userStar;
+        const userAvgRating = userRatingsSum / userRatedEpisodesCount;
+        const userAvgRatingDiv = $(tDiv);
+        const userAvgRatingSpan = $(tSpan);
+        let userStar;
         if (userAvgRating > 0) {
             userStar = $(starSvg).clone();
             userStar.css('fill', '#c39400');
@@ -231,10 +231,10 @@ $ = jQuery = jQuery.noConflict(true);
         ratingDiv.append(userAvgRatingDiv);
 
         // TODO same stuff as above
-        var myAvgRating = myRatingsSum / myRatedEpisodesCount;
-        var myAvgRatingDiv = $(tDiv);
-        var myAvgRatingSpan = $(tSpan);
-        var myStar;
+        const myAvgRating = myRatingsSum / myRatedEpisodesCount;
+        const myAvgRatingDiv = $(tDiv);
+        const myAvgRatingSpan = $(tSpan);
+        let myStar;
         if (myAvgRating > 0) {
             myStar = $(starSvg).clone();
             starSetStyle(myStar, myAvgRating, { isAverage: true });
@@ -260,14 +260,14 @@ $ = jQuery = jQuery.noConflict(true);
     function episodeListTweaks() {
         // add season selector
         cb.waitAndDebounce('select#bySeason', () => {
-            var url = new URL(window.location.href);
-            var currentNr = url.searchParams.get('season');
-            var anchors = $('select#bySeason > option').map((i, e) => {
-                var nr = $(e).val();
+            const url = new URL(window.location.href);
+            const currentNr = url.searchParams.get('season');
+            const anchors = $('select#bySeason > option').map((i, e) => {
+                const nr = $(e).val();
                 if (nr == currentNr) {
                     return nr;
                 }
-                var href = `${HREF_CLEAN}?season=${$(e).val()}`;
+                const href = `${HREF_CLEAN}?season=${$(e).val()}`;
                 if (nr >= 0 && nr <= 9) {
                     // add numeric key binding 0-9 for season 0-9
                     cb.bindKeyDown(48 + parseInt(nr), () => $(`a#t_season_link_${nr}`)[0].click(), {
@@ -304,7 +304,7 @@ $ = jQuery = jQuery.noConflict(true);
                 );
         });
 
-        cb.waitAndDebounce('div.eplist', (e) => {
+        cb.waitAndDebounce('div.eplist', () => {
             // add season average rating
             addSeasonAvgRating();
 
@@ -315,8 +315,8 @@ $ = jQuery = jQuery.noConflict(true);
 
             // add episode number to title
             $('.eplist .list_item').each((i, e) => {
-                var numberDiv = $(e).find('.image .hover-over-image > div');
-                var titleA = $(e).find('.info > strong > a');
+                const numberDiv = $(e).find('.image .hover-over-image > div');
+                const titleA = $(e).find('.info > strong > a');
                 if (/\w+[0-9]+[,. ]+\w+[0-9]+/i.test(numberDiv.text())) {
                     titleA.text(
                         numberDiv.text().replace(/[A-Za-z]+([0-9]+)[,. ]+[A-Za-z]+([0-9]+)/i, '$2. ') + titleA.text()
@@ -332,15 +332,15 @@ $ = jQuery = jQuery.noConflict(true);
 
         // always shorten description text so that the episode details don't get larger than the image height
         cb.waitAndDebounce('div.item_description', () => {
-            var elements = $('div.item_description');
+            const elements = $('div.item_description');
             elements.css({ 'padding-bottom': '0px', 'margin-bottom': '0px', 'line-height': '125%' });
             elements.each((i, e) => $(e).text(cb.stringShorten($(e).text(), 200)));
             detailsToggle(GM_config.get('imdb-weaks-eplist-start-compact'));
         });
 
         // toggle episode description
-        var detailsHidden = false;
-        var detailsToggle = function (compact) {
+        let detailsHidden = false;
+        const detailsToggle = function (compact) {
             if (compact === void 0) {
                 detailsHidden = !detailsHidden; // toggle
             } else {
