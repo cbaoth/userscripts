@@ -1,7 +1,6 @@
 // ==UserScript==
-// @namespace   https://cbaoth.de
-// @author      Andreas Weyer
-// @copyright   2018+, userscript@cbaoth.de
+// @namespace   https://github.com/cbaoth/userscripts
+// @author      cbaoth235
 //
 // @name        Streaming Tweaks
 // @version     0.1.35

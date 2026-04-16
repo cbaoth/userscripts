@@ -8,3 +8,11 @@ _*
 
 # shell
 .zcompdump
+
+# local
+/#*/
+/_local/
+/.env
+/*.env
+/*.local
+/*.local.*

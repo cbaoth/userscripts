@@ -2,9 +2,8 @@
 // @name        Foswiki Tweaks
 // @version     0.1
 // @description Some improvements to Foswiki
-// @author      Andreas Weyer
-// @copyright   2025+, userscript@cbaoth.de
-// @namespace   https://cbaoth.de
+// @author      cbaoth235
+// @namespace   https://github.com/cbaoth/userscripts
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/foswiki-tweaks.user.js
 // @iconURL     https://foswiki.org/pub/System/ProjectLogos/favicon.ico
 //

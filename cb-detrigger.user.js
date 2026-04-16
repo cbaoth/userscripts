@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name        CB DeTrigger
-// @namespace   https://cbaoth.de
+// @namespace   https://github.com/cbaoth/userscripts
 // @version     2025-05-26
 // @description Filters potentially triggering elements to reduce emotional friction and foster a more serene browsing experience.
-// @author      Andreas Weyer
+// @author      cbaoth235
 // @license     MIT
 //
 // @match       https://civitai.com/*

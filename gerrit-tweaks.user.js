@@ -1,7 +1,6 @@
 // ==UserScript==
-// @namespace   https://cbaoth.de
-// @author      Andreas Weyer
-// @copyright   2017+, userscript@cbaoth.de
+// @namespace   https://github.com/cbaoth/userscripts
+// @author      cbaoth235
 //
 // @name        Gerrit Tweaks
 // @version     0.1.2

@@ -3,9 +3,8 @@
 // @description Some tweaks for the invoke-ai web tool
 // @version     0.13
 //
-// @namespace   https://cbaoth.de
-// @author      Andreas Weyer
-// @copyright   2023+, userscript@cbaoth.de
+// @namespace   https://github.com/cbaoth/userscripts
+// @author      cbaoth235
 //
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/invoke-ai-tweaks.user.js
 // @updateURL   https://github.com/cbaoth/userscripts/raw/master/invoke-ai-tweaks.user.js

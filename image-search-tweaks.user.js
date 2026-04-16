@@ -1,7 +1,6 @@
 // ==UserScript==
-// @namespace   https://cbaoth.de
-// @author      Andreas Weyer
-// @copyright   2019+, userscript@cbaoth.de
+// @namespace   https://github.com/cbaoth/userscripts
+// @author      cbaoth235
 //
 // @name        Image Search Tweaks
 // @version     0.2

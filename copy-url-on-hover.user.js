@@ -1,7 +1,6 @@
 // ==UserScript==
-// @namespace   https://cbaoth.de
-// @author      Andreas Weyer
-// @copyright   2018+, userscript@cbaoth.de
+// @namespace   https://github.com/cbaoth/userscripts
+// @author      cbaoth235
 //
 // @name        Copy URL on hover
 // @description Copy link / media urls on mouse-over while alt-c/-b is pressed
