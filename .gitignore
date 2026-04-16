@@ -2,6 +2,14 @@
 ~*
 _*
 \#*
+*.bak
+*.tmp
+*.swp
+*.temp
+
+# node
+/node_modules/
+/package-lock.json
 
 # vscode
 .vscode/

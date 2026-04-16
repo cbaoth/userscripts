@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Invoke-AI tweaks
 // @description Some tweaks for the invoke-ai web tool
-// @version     0.13
+// @version     2023-01-30
 //
 // @namespace   https://github.com/cbaoth/userscripts
 // @author      cbaoth235
@@ -23,8 +23,7 @@
 
 this.$ = this.jQuery = jQuery.noConflict(true);
 
-(function() {
-
+(function () {
     const KEY_B = 66;
     const SEL_INVOKE_BUTTON = `button.invoke-btn[type=submit]`;
     //const SEL_INVOKE_BUTTON_DISABLED = SEL_INVOKE_BUTTON + `[disabled]`;
@@ -33,9 +32,29 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const SEL_HEIGHT_SELECT = `div.main-options-list > div.main-options-row:nth-child(2) > div:nth-child(2) select`;
     const SEL_SAMPLER_SELECT = `div.main-options-list > div.main-options-row:nth-child(2) > div:nth-child(3) select`;
     const SEL_PROMPT = `textarea#prompt`;
-    const SAMPLERS = ['ddim', 'plms', 'k_lms', 'k_dpm_2', 'k_dpm_2_a', 'k_dpmpp_2', 'k_dpmpp_2_a', 'k_euler', 'k_euler_a', 'k_heun'];
-    const RESOLUTIONS = { '[unchanged]': [], '512x768': ['512', '768'], '768x512': ['768', '512'], '512x512': ['512', '512'], '768x768': ['768', '768'],
-                          '[random: 512x768/768x512]': [['512', '768'], ['768', '512']] };
+    const SAMPLERS = [
+        'ddim',
+        'plms',
+        'k_lms',
+        'k_dpm_2',
+        'k_dpm_2_a',
+        'k_dpmpp_2',
+        'k_dpmpp_2_a',
+        'k_euler',
+        'k_euler_a',
+        'k_heun',
+    ];
+    const RESOLUTIONS = {
+        '[unchanged]': [],
+        '512x768': ['512', '768'],
+        '768x512': ['768', '512'],
+        '512x512': ['512', '512'],
+        '768x768': ['768', '768'],
+        '[random: 512x768/768x512]': [
+            ['512', '768'],
+            ['768', '512'],
+        ],
+    };
     //const TIMEOUT_INVOCATION = 20000; // 20sec
     const TIMEOUT_INVOCATION_IT = 500; // 500ms between batch iterations
     const PROMPT_SUB_VAR = '${prompt}';
@@ -45,7 +64,14 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const PROMPT_SUB_RND4_VAR = '${random4}';
     const PROMPT_SUB_RND5_VAR = '${random5}';
     const PROMPT_SUB_RND6_VAR = '${random6}';
-    const PROMPT_SUB_RND_VARS = [PROMPT_SUB_RND1_VAR, PROMPT_SUB_RND2_VAR, PROMPT_SUB_RND3_VAR, PROMPT_SUB_RND4_VAR, PROMPT_SUB_RND5_VAR, PROMPT_SUB_RND6_VAR];
+    const PROMPT_SUB_RND_VARS = [
+        PROMPT_SUB_RND1_VAR,
+        PROMPT_SUB_RND2_VAR,
+        PROMPT_SUB_RND3_VAR,
+        PROMPT_SUB_RND4_VAR,
+        PROMPT_SUB_RND5_VAR,
+        PROMPT_SUB_RND6_VAR,
+    ];
 
     let batchRunActive;
     //let batchRunStartedAt = -1;
@@ -58,12 +84,18 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     let batchResolution;
 
     // tooltip
-    function showTT(msg, color="white", size="0.8em", timeout=500) {
+    function showTT(msg, color = 'white', size = '0.8em', timeout = 500) {
         // use invocation timeout, show tt constantly
-        cb.createTT(msg, timeout, { offsetX: 250, offsetY: 25, offsetMouse: false, fadeoutTime: 150, css:{ "font-size": size, "color": color }});
+        cb.createTT(msg, timeout, {
+            offsetX: 250,
+            offsetY: 25,
+            offsetMouse: false,
+            fadeoutTime: 150,
+            css: { 'font-size': size, color: color },
+        });
     }
 
-    function ttAndLog(msg, color="white", size="0.8em", timeout=500) {
+    function ttAndLog(msg, color = 'white', size = '0.8em', timeout = 500) {
         showTT(msg, color, size, timeout);
         console.log(msg);
     }
@@ -75,23 +107,36 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
         originalPrompt = $(SEL_PROMPT).val();
         let doSubstitute = GM_config.get('iai-prompt-substitute');
-        let samplers = SAMPLERS.filter(s => GM_config.get('iai-sampler-' + s));
+        let samplers = SAMPLERS.filter((s) => GM_config.get('iai-sampler-' + s));
         // collect custom promts, remove empty lines
-        let customPrompts = GM_config.get('iai-prompt-lines').split(/\r?\n/).map(p => p.trim()).filter(p => p.length > 0);
+        let customPrompts = GM_config.get('iai-prompt-lines')
+            .split(/\r?\n/)
+            .map((p) => p.trim())
+            .filter((p) => p.length > 0);
 
         // check pre-conditions
         if (samplers.length <= 0) {
-            ttAndLog("ERROR: No sampler(s) selected!", "red", "1em", 4000);
+            ttAndLog('ERROR: No sampler(s) selected!', 'red', '1em', 4000);
             return;
         }
 
         // collect custom prompts (with optional substitutions) or just use the original prompt if none given
         let prompts;
-        if (customPrompts.length > 0) { // any custom prompts?
-            if (originalPrompt.includes(PROMPT_SUB_VAR)) { // prompt variable there?
-                prompts = (doSubstitute ? customPrompts.map(p => originalPrompt.replaceAll(PROMPT_SUB_VAR, p)) : customPrompts); // substitute if necessary
-            } else { // missing?
-                ttAndLog(`ERROR: Custom prompts provided but <code>${PROMPT_SUB_VAR}</code> missing in original prompt!`, "red", "1em", 4000);
+        if (customPrompts.length > 0) {
+            // any custom prompts?
+            if (originalPrompt.includes(PROMPT_SUB_VAR)) {
+                // prompt variable there?
+                prompts = doSubstitute
+                    ? customPrompts.map((p) => originalPrompt.replaceAll(PROMPT_SUB_VAR, p))
+                    : customPrompts; // substitute if necessary
+            } else {
+                // missing?
+                ttAndLog(
+                    `ERROR: Custom prompts provided but <code>${PROMPT_SUB_VAR}</code> missing in original prompt!`,
+                    'red',
+                    '1em',
+                    4000
+                );
                 return;
             }
         } else {
@@ -100,20 +145,27 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
         let randomIterationMultiplier = GM_config.get('iai-random-iteration-multiplier');
         // generate all prompt/sampler combinations
-        prompts.slice().reverse().forEach((p, i) => {
-            // repeat random prompt generation multiplier-times
-            for (let rmi = 0; rmi < randomIterationMultiplier; rmi++) {
-                // get prompt with random values (same one used for all samplers below)
-                let prompt = substituteRandomLines(p);
-                if (prompt.trim().lenght <= 0) { // empty prompt?
-                    continue; // skip empty prompt
+        prompts
+            .slice()
+            .reverse()
+            .forEach((p, i) => {
+                // repeat random prompt generation multiplier-times
+                for (let rmi = 0; rmi < randomIterationMultiplier; rmi++) {
+                    // get prompt with random values (same one used for all samplers below)
+                    let prompt = substituteRandomLines(p);
+                    if (prompt.trim().lenght <= 0) {
+                        // empty prompt?
+                        continue; // skip empty prompt
+                    }
+                    // one entry per sampler for the given prompt
+                    samplers
+                        .slice()
+                        .reverse()
+                        .forEach((s, j) => {
+                            batchRunSequence.push([prompt, s]);
+                        });
                 }
-                // one entry per sampler for the given prompt
-                samplers.slice().reverse().forEach((s, j) => {
-                    batchRunSequence.push([prompt, s]);
-                });
-            }
-        });
+            });
         // shuffle batch run sequence (if configured)
         if (GM_config.get('iai-prompt-random-iteration-shuffle')) {
             batchRunSequence = shuffle(batchRunSequence);
@@ -131,19 +183,17 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         batchRunIterate();
     }
 
-
     function shuffle(array) {
         array.forEach((item, i) => {
             let j = Math.floor(Math.random() * array.length);
             [array[i], array[j]] = [array[j], array[i]];
-        })
+        });
         return array;
     }
 
     function isMultiDimensional(array) {
-        return JSON.stringify(array).startsWith("[[");
+        return JSON.stringify(array).startsWith('[[');
     }
-
 
     // https://stackoverflow.com/a/59599339
     // react textArea needs some magic to receive text updates
@@ -163,48 +213,54 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // react combobox needs some magic to receive text updates
     function reactSetSelection($select, val) {
-        $select[0].dispatchEvent(new Event("click"));
+        $select[0].dispatchEvent(new Event('click'));
         $select.val(val);
-        let option = Array.from($select[0].options).find(o => o.value === val);
+        let option = Array.from($select[0].options).find((o) => o.value === val);
         option.selected = true;
-        $select[0].dispatchEvent(new Event("change", {bubbles: true}));
+        $select[0].dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     // FIXME - make sure that batch runs don't overlap (e.g. pass on an id, stop if id differs)
     // FIXME - add an iteration timeout so we don't end up looping (recursing) forever
     // TODO - support prompt variable and iteratiion over prompt text (lines in config)
-    function batchRunIterate(rndIdx=1) {
-        if (batchRunSequence.length <= 0) { // batch run ended?
+    function batchRunIterate(rndIdx = 1) {
+        if (batchRunSequence.length <= 0) {
+            // batch run ended?
             ttAndLog(`Batch Run: Finished (last invokation running)!`, 'lime');
             reactSetInputValue($(SEL_PROMPT), originalPrompt); // reset original prompt
             return; // no further itreations
         }
-        if (!batchRunActive) { // batch no longer active (interrupted)?
+        if (!batchRunActive) {
+            // batch no longer active (interrupted)?
             ttAndLog(`Batch Run: Stopped!`, 'red');
             reactSetInputValue($(SEL_PROMPT), originalPrompt); // reset original prompt
             return;
         }
 
-        if ($(SEL_INVOKE_BUTTON_ENABLED).length >= 1) { // button found and enabled?
+        if ($(SEL_INVOKE_BUTTON_ENABLED).length >= 1) {
+            // button found and enabled?
             //batchRunIterationStartedAt = Date.now();
             let tuple = batchRunSequence.pop();
-            let idx = batchRunTotal-batchRunSequence.length;
+            let idx = batchRunTotal - batchRunSequence.length;
             let prompt = tuple[0].trim();
             let sampler = tuple[1];
             // in case of random wheight / width config, set it now
             if (batchResolution.length > 1 && isMultiDimensional(batchResolution)) {
-                let res = batchResolution[Math.floor(Math.random()*batchResolution.length)];
+                let res = batchResolution[Math.floor(Math.random() * batchResolution.length)];
                 reactSetSelection($(SEL_WIDTH_SELECT), res[0]); // select width
                 reactSetSelection($(SEL_HEIGHT_SELECT), res[1]); // select heigth
             }
             showTT(`Batch Run: Starting next invocation [${idx}/${batchRunTotal}]`, '#87cefa');
-            console.log(`Batch Run: Starting next invocation [${idx}/${batchRunTotal}, sampler: ${sampler}, prompt: ${prompt}]`);
+            console.log(
+                `Batch Run: Starting next invocation [${idx}/${batchRunTotal}, sampler: ${sampler}, prompt: ${prompt}]`
+            );
             reactSetSelection($(SEL_SAMPLER_SELECT), sampler); // select sampler
             reactSetInputValue($(SEL_PROMPT), prompt); // set prompt
             $(SEL_INVOKE_BUTTON).click(); // press invoke button
             // todo: random/re-use seed
-        } else { // no button or disabled -> wait a bit and retry
-            let idx = batchRunTotal-batchRunSequence.length;
+        } else {
+            // no button or disabled -> wait a bit and retry
+            let idx = batchRunTotal - batchRunSequence.length;
             ttAndLog(`Batch Run: Invocation [${idx}/${batchRunTotal}] running ...`);
             // todo: timeouts - if (batchRunIterationStartedAt
         }
@@ -213,151 +269,150 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     function substituteRandomLines(prompt) {
         let result = prompt;
-        for (let i=1; i<= PROMPT_SUB_RND_VARS.length; i++) {
+        for (let i = 1; i <= PROMPT_SUB_RND_VARS.length; i++) {
             result = substituteRandom(result, i);
         }
         return result;
     }
 
-
     function substituteRandom(prompt, idx) {
         let val = GM_config.get(`iai-prompt-rnd${idx}-lines`).trim();
-        if (val.length <= 0) { // no random lines provided?
-            if (prompt.includes(PROMPT_SUB_RND_VARS[idx-1])) {
-                console.log(`Batch Run: ${PROMPT_SUB_RND_VARS[idx-1]} found but no lines provided, skipping substitution!`);
-                return prompt.replaceAll(PROMPT_SUB_RND_VARS[idx-1], ""); // remove unused variable
+        if (val.length <= 0) {
+            // no random lines provided?
+            if (prompt.includes(PROMPT_SUB_RND_VARS[idx - 1])) {
+                console.log(
+                    `Batch Run: ${PROMPT_SUB_RND_VARS[idx - 1]} found but no lines provided, skipping substitution!`
+                );
+                return prompt.replaceAll(PROMPT_SUB_RND_VARS[idx - 1], ''); // remove unused variable
             }
             return prompt;
         }
         let lines = val.split(/\r?\n/);
-        let text = lines[Math.floor(Math.random()*lines.length)];
-        return prompt.replaceAll(PROMPT_SUB_RND_VARS[idx-1], text);
+        let text = lines[Math.floor(Math.random() * lines.length)];
+        return prompt.replaceAll(PROMPT_SUB_RND_VARS[idx - 1], text);
     }
-
 
     function registerTweaks() {
         // GM_config - batch run
-        const GM_CONFIG_BATCHRUN_ID = 'InvokeAITweaks_BatchRun_Config'
+        const GM_CONFIG_BATCHRUN_ID = 'InvokeAITweaks_BatchRun_Config';
         const GM_CONFIG_BATCHRUN_FIELDS = {
             'iai-sampler-ddim': {
-                section: ['Samplers',
-                          'One invocation per sampler'], // Appears above the field
-                type: "checkbox",
+                section: ['Samplers', 'One invocation per sampler'], // Appears above the field
+                type: 'checkbox',
                 default: false,
-                label: "ddim"
+                label: 'ddim',
             },
             'iai-sampler-plms': {
-                type: "checkbox",
+                type: 'checkbox',
                 default: false,
-                label: "plms"
+                label: 'plms',
             },
             'iai-sampler-k_lms': {
-                type: "checkbox",
+                type: 'checkbox',
                 default: false,
-                label: "k_lms"
+                label: 'k_lms',
             },
             'iai-sampler-k_dpm_2': {
-                type: "checkbox",
+                type: 'checkbox',
                 default: false,
-                label: "k_dpm_2"
+                label: 'k_dpm_2',
             },
             'iai-sampler-k_dpm_2_a': {
-                type: "checkbox",
+                type: 'checkbox',
                 default: false,
-                label: "k_dpm_2_a"
+                label: 'k_dpm_2_a',
             },
             'iai-sampler-k_dpmpp_2': {
-                type: "checkbox",
+                type: 'checkbox',
                 default: false,
-                label: "k_dpmpp_2"
+                label: 'k_dpmpp_2',
             },
             'iai-sampler-k_dpmpp_2_a': {
-                type: "checkbox",
+                type: 'checkbox',
                 default: true, // default
-                label: "k_dpmpp_2_a"
+                label: 'k_dpmpp_2_a',
             },
             'iai-sampler-k_euler': {
-                type: "checkbox",
+                type: 'checkbox',
                 default: false,
-                label: "k_euler"
+                label: 'k_euler',
             },
             'iai-sampler-k_euler_a': {
-                type: "checkbox",
+                type: 'checkbox',
                 default: true, // default
-                label: "k_euler_a"
+                label: 'k_euler_a',
             },
             'iai-sampler-k_heun': {
-                type: "checkbox",
+                type: 'checkbox',
                 default: false,
-                label: "k_heun"
+                label: 'k_heun',
             },
             'iai-resolution': {
-                section: ['Resolution',
-                          'Optionally override or randomize the resolution'], // Appears above the field
-                type: "select",
-                options: ["[unchanged]", "512x768", "768x512", "512x512", "768x768", "[random: 512x768/768x512]"],
-                default: "[unchanged]",
-                label: "Resolution"
+                section: ['Resolution', 'Optionally override or randomize the resolution'], // Appears above the field
+                type: 'select',
+                options: ['[unchanged]', '512x768', '768x512', '512x512', '768x768', '[random: 512x768/768x512]'],
+                default: '[unchanged]',
+                label: 'Resolution',
             },
             'iai-prompt-lines': {
-                section: ['Prompts',
-                          'One invocation per sampler and prompt line combination'], // Appears above the field
-                type: "textarea",
-                default: "most beautiful photo of (${random1}) in ${random2}\n35mm amateur camera photo of (${random1}) in ${random2}\nstylized masterpiece fine art photo of (${random1}) in ${random2}",
-                label: "Prompts"
+                section: ['Prompts', 'One invocation per sampler and prompt line combination'], // Appears above the field
+                type: 'textarea',
+                default:
+                    'most beautiful photo of (${random1}) in ${random2}\n35mm amateur camera photo of (${random1}) in ${random2}\nstylized masterpiece fine art photo of (${random1}) in ${random2}',
+                label: 'Prompts',
             },
             'iai-prompt-substitute': {
-                type: "checkbox",
+                type: 'checkbox',
                 default: true,
-                label: `Substitute <code>${PROMPT_SUB_VAR}</code> in existing prompt with one below (else use as full prompt)`
+                label: `Substitute <code>${PROMPT_SUB_VAR}</code> in existing prompt with one below (else use as full prompt)`,
             },
             'iai-random-iteration-multiplier': {
-                section: ['Random Snippets',
-                          'Random prompt snippets to be used, one random line per invocation'], // Appears above the field
-                label: "Multiply invocations by the given factor, 1 meaning no additional promts, x>1 meaning x randomized versions per sampler & prompt (regular iterations).",
+                section: ['Random Snippets', 'Random prompt snippets to be used, one random line per invocation'], // Appears above the field
+                label: 'Multiply invocations by the given factor, 1 meaning no additional promts, x>1 meaning x randomized versions per sampler & prompt (regular iterations).',
                 type: 'int',
                 min: 1,
                 max: 9999,
-                default: 1
+                default: 1,
             },
             'iai-prompt-random-iteration-shuffle': {
-                type: "checkbox",
+                type: 'checkbox',
                 default: true, // default
-                label: "Shuffle all iterations so that prompts & sampler combinations are executed in a random order instead of running e.g. all ranedom multiplications with prompt a and sampler b first."
+                label: 'Shuffle all iterations so that prompts & sampler combinations are executed in a random order instead of running e.g. all ranedom multiplications with prompt a and sampler b first.',
             },
             'iai-prompt-rnd1-lines': {
                 label: `Random snippets 1, sibsituting <code>${PROMPT_SUB_RND1_VAR}</code> in existing prompt with a random line from this text field`,
-                type: "textarea",
-                default: "Bergen Norway\nMarrakesh Morocco\nLausanne Switzerland\nPorto Portugal\nPlovdiv Bulgaria\nReykjavik Iceland\nChiang Mai Thailand\nVictoria Canada\Aalborg Denmark\Trieste Italy\nHaarlem Netherlands\nSalzburg Austria\nBanska Bystrica Slovakia\nHoi An Vietnam"
+                type: 'textarea',
+                default:
+                    'Bergen Norway\nMarrakesh Morocco\nLausanne Switzerland\nPorto Portugal\nPlovdiv Bulgaria\nReykjavik Iceland\nChiang Mai Thailand\nVictoria Canada\Aalborg Denmark\Trieste Italy\nHaarlem Netherlands\nSalzburg Austria\nBanska Bystrica Slovakia\nHoi An Vietnam',
             },
             'iai-prompt-rnd2-lines': {
                 label: `Random snippets 2, sibsituting <code>${PROMPT_SUB_RND2_VAR}</code> in existing prompt with a random line from this text field`,
-                type: "textarea",
-                default: "spring\nsummer\nfall\nwinter"
+                type: 'textarea',
+                default: 'spring\nsummer\nfall\nwinter',
             },
             'iai-prompt-rnd3-lines': {
                 label: `Random snippets 3, sibsituting <code>${PROMPT_SUB_RND3_VAR}</code> in existing prompt with a random line from this text field`,
-                type: "textarea"
+                type: 'textarea',
             },
             'iai-prompt-rnd4-lines': {
                 label: `Random snippets 4, sibsituting <code>${PROMPT_SUB_RND4_VAR}</code> in existing prompt with a random line from this text field`,
-                type: "textarea"
+                type: 'textarea',
             },
             'iai-prompt-rnd5-lines': {
                 label: `Random snippets 5, sibsituting <code>${PROMPT_SUB_RND5_VAR}</code> in existing prompt with a random line from this text field`,
-                type: "textarea"
+                type: 'textarea',
             },
             'iai-prompt-rnd6-lines': {
                 label: `Random snippets 6, sibsituting <code>${PROMPT_SUB_RND6_VAR}</code> in existing prompt with a random line from this text field`,
-                type: "textarea"
-            }
-        }
+                type: 'textarea',
+            },
+        };
         GM_config.init({
-            'id': GM_CONFIG_BATCHRUN_ID,
-            'title': 'Invoke-AI Tweaks - Batch Run Config',
-            'fields': GM_CONFIG_BATCHRUN_FIELDS,
-            'events': {
-                'open': function(doc) {
+            id: GM_CONFIG_BATCHRUN_ID,
+            title: 'Invoke-AI Tweaks - Batch Run Config',
+            fields: GM_CONFIG_BATCHRUN_FIELDS,
+            events: {
+                open: function (doc) {
                     batchRunActive = false;
                     let config = this;
                     doc.getElementById(config.id + '_closeBtn').textContent = 'Cancel';
@@ -369,12 +424,12 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                         doc.getElementById(config.id + `_field_iai-prompt-rnd${i}-lines`).cols = 125;
                     }
                 },
-                'save': function(values) {
+                save: function (values) {
                     let config = this;
                     config.close();
                     batchRun();
-                }
-            }
+                },
+            },
         });
     }
 
@@ -382,7 +437,6 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     waitForKeyElements(SEL_INVOKE_BUTTON, (e) => {
         registerTweaks();
         // add hotkeys
-        cb.bindKeyDown(KEY_B, () => GM_config.open(), { skipEditable: true });  //mods: { alt: true } });
+        cb.bindKeyDown(KEY_B, () => GM_config.open(), { skipEditable: true }); //mods: { alt: true } });
     });
-
 })();

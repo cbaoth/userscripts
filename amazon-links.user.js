@@ -3,7 +3,7 @@
 // @author      cbaoth235
 //
 // @name        Amazon Tweaks
-// @version     0.17
+// @version     2022-01-11
 // @description Some improvments to amazon shop pages
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/amazon-links.user.js
 //
@@ -29,11 +29,11 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const LINK_SELECTOR_SEARCH = `div[data-asin][data-cel-widget] a.a-text-normal[href*="/dp/"],
                                    div[data-asin][data-cel-widget] a.a-link-normal[href*="/dp/"],
                                    li[data-asin] a.s-access-detail-page,
-                                   li[data-asin] a.a-text-normal`
-    const KEEPA_ICO = 'https://keepa.com/favicon.ico'
-    const PRICE_TWEAKS_ID = 'cb-price-tweaks'
-    const AVG_RATING_TWEAKS_ID = 'cb-avg-rating-tweaks'
-    const HOVER_FADE_CLASS = 'cb-hover-fade'
+                                   li[data-asin] a.a-text-normal`;
+    const KEEPA_ICO = 'https://keepa.com/favicon.ico';
+    const PRICE_TWEAKS_ID = 'cb-price-tweaks';
+    const AVG_RATING_TWEAKS_ID = 'cb-avg-rating-tweaks';
+    const HOVER_FADE_CLASS = 'cb-hover-fade';
 
     // static styles
     GM_addStyle(`div.order > div.shipment-is-delivered { background: #90ee9050 !important; }`); // delivered order -> green
@@ -50,14 +50,16 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                      opacity: 0.65;
                  }`); // fade on hover
 
-    var TLD = getTld()
+    var TLD = getTld();
 
     function getTld() {
         // get top level domain (the simple way)
         var tld = document.domain.split('.').pop();
-        if (['au', 'br', 'mx'].indexOf(tld) > -1) { // add .com to some domains
+        if (['au', 'br', 'mx'].indexOf(tld) > -1) {
+            // add .com to some domains
             tld = 'com.' + tld;
-        } else if (['uk', 'jp'].indexOf(tld) > -1) { // add .co to others
+        } else if (['uk', 'jp'].indexOf(tld) > -1) {
+            // add .co to others
             tld = 'co.' + tld;
         }
         return tld;
@@ -66,11 +68,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // clean-up product page link (strip all parameters and unnecessary texts)
     function cleanLink(a) {
         var href = $(a).attr('href');
-        if (! /\/[dg]p\/\w{10}([/?].+)?$/.test(href)) { // not a product page links?
+        if (!/\/[dg]p\/\w{10}([/?].+)?$/.test(href)) {
+            // not a product page links?
             return; // do nothing
         }
-        var custReview = /#customerReviews/.test(href) ? '#customerReviews' : ''
-        if (/^\s*http/.test(href)) { // absolute link?
+        var custReview = /#customerReviews/.test(href) ? '#customerReviews' : '';
+        if (/^\s*http/.test(href)) {
+            // absolute link?
             $(a).attr('href', toSmileURL(href).replace(/(?<=\w)\/.*(\/[dg]p\/\w{10})[/?].+/, '$1/') + custReview);
         } else {
             $(a).attr('href', toSmileURL(href).replace(/.*(\/[dg]p\/\w{10})[/?].+/, '$1/') + custReview);
@@ -85,14 +89,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         var div = $(e);
 
         var asin = $('input#ASIN').val();
-        var reviewMetaURL = `https://reviewmeta.com/amazon-${TLD}/${asin}`
+        var reviewMetaURL = `https://reviewmeta.com/amazon-${TLD}/${asin}`;
         var tweak = `<a target="_blank" class="${HOVER_FADE_CLASS}" style="text-decoration: none; padding-right: .25em;"
                         href="${reviewMetaURL}" title="ReviewMeta (click to open in new tab).">
                        <span style="background: #2173b9; color: white; font-size: .65em; font-weight: bold; vertical-align: text-top; line-height: 16px;
                              padding: .2em .4em .1em .45em; text-align: center; filter: drop-shadow(1px 1px 1px black); border-radius: 2px;">R</span>
-                     </a>`
+                     </a>`;
         div.prepend(tweak);
-
     }
 
     // add price links
@@ -109,7 +112,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         if (page == PAGE_PRODUCT) {
             asin = $('input#ASIN').val();
         } else if (page == PAGE_SEARCH) {
-            if (price.parent().is('a')) { // un-link price tag
+            if (price.parent().is('a')) {
+                // un-link price tag
                 price.unwrap();
             }
             asin = price.closest('li[data-asin], div[data-asin]').attr('data-asin');
@@ -123,7 +127,21 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         var rmICO = `https://www.amazon.${TLD}/favicon.ico`;
 
         // keepa.com
-        var keepaIds = { "com": 1, "uk": 2, "de": 3, "fr": 4, "jp": 5, "ca": 6, "cn": 7, "it": 8, "es": 9, "in": 10, "mx": 11, "br": 12, "au": 13 };
+        var keepaIds = {
+            com: 1,
+            uk: 2,
+            de: 3,
+            fr: 4,
+            jp: 5,
+            ca: 6,
+            cn: 7,
+            it: 8,
+            es: 9,
+            in: 10,
+            mx: 11,
+            br: 12,
+            au: 13,
+        };
         var keepaURL = `https://keepa.com/#!product/${keepaIds[TLD]}-${asin}`;
 
         // add kappa link icon and amazon (clean product "share") link icon next to the price
@@ -138,7 +156,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                      </span>`);
 
         // make price a link to keepa (open in new tab/window)
-        price.wrapInner(`<a target="_blank" class="a-color-price" href="${keepaURL}" title="Keepa price watch (click to open in new tab)."></a>`);
+        price.wrapInner(
+            `<a target="_blank" class="a-color-price" href="${keepaURL}" title="Keepa price watch (click to open in new tab)."></a>`
+        );
     }
 
     function toSmileURL(url) {
@@ -147,39 +167,49 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     function smileRedirect() {
         // are we logged in? if not, don't redirect (won't work, infinite loop)
-        if (! $('#nav-link-accountList[data-nav-role="signin"] ~ a[href*="signout"]').length) {
+        if (!$('#nav-link-accountList[data-nav-role="signin"] ~ a[href*="signout"]').length) {
             return;
         }
-        if (/^(www\.)?amazon.(\w+)/.test(location.hostname) && ! /^smile\./.test(location.hostname)) {
+        if (/^(www\.)?amazon.(\w+)/.test(location.hostname) && !/^smile\./.test(location.hostname)) {
             var orgURL = window.location.href || window.parent.location.href;
             var smileURL = toSmileURL(orgURL);
             if (orgURL != smileURL) {
                 // try replacing location in various ways
-                try { Location.replace(smileURL) } catch(e) {}
-                try { window.location.replace(smileURL) } catch(e) {}
-                try { window.parent.location.replace(smileURL) } catch(e) {}
+                try {
+                    Location.replace(smileURL);
+                } catch (e) {}
+                try {
+                    window.location.replace(smileURL);
+                } catch (e) {}
+                try {
+                    window.parent.location.replace(smileURL);
+                } catch (e) {}
             }
         }
     }
 
     // tweak pages, currently only
     // smile rederict only on these pages (to be safe, pages might exist where this will not work)
-    if (/\/[dg]p\/(product\/)?\w{10}([/?].*)?$/.test(window.location.pathname)) { // product page
+    if (/\/[dg]p\/(product\/)?\w{10}([/?].*)?$/.test(window.location.pathname)) {
+        // product page
         // redirect to smile (if not already the case)
         smileRedirect();
         waitForKeyElements(PRICE_SELECTOR, (e) => addAmazonLinks(e, PAGE_PRODUCT));
         waitForKeyElements(AVG_RATING_SELECTOR, (e) => addRatingLins(e));
         // auto selection of one-time buy option (instead of default: subscription)
-        waitForKeyElements("#oneTimeBuyBox .a-accordion-radio", (e) => cb.clickElement(e));
-    } if (/\/s([/?].+)?$/.test(window.location.pathname)) { // search result
+        waitForKeyElements('#oneTimeBuyBox .a-accordion-radio', (e) => cb.clickElement(e));
+    }
+    if (/\/s([/?].+)?$/.test(window.location.pathname)) {
+        // search result
         // redirect to smile (if not already the case)
         smileRedirect();
         // change price links (normally product link too) to keepa links
         waitForKeyElements(PRICE_SELECTOR_SEARCH, (e) => addAmazonLinks(e, PAGE_SEARCH));
         // replace all product links in search result with clean links
         waitForKeyElements(LINK_SELECTOR_SEARCH, (e) => cleanLink(e));
-    } else if (/\/gp\/cart\//.test(window.location.pathname)) { // shopping cart
+    } else if (/\/gp\/cart\//.test(window.location.pathname)) {
+        // shopping cart
         // redirect to smile (if not already the case)
         smileRedirect(); // most important smile redirect (checkout)
     }
-}());
+})();

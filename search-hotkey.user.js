@@ -3,7 +3,7 @@
 // @author      cbaoth235
 //
 // @name        Search Hotkey
-// @version     0.2
+// @version     2022-07-01
 // @description Open / focus the search field via alt-f in some wikis, forums, etc.
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/search-hotkey.user.js
 //
@@ -18,8 +18,8 @@
 // @require     https://github.com/cbaoth/userscripts/raw/master/lib/cblib.js
 // ==/UserScript==
 
-(function() {
-    const KEYCODE_F = 70
+(function () {
+    const KEYCODE_F = 70;
 
     function focusInput(selector) {
         var e = $(selector);
@@ -27,9 +27,11 @@
         // TODO window.scrollTo(x, y);
     }
 
-    if (/fandom/.test(window.location.host)) { // fandom wikis
+    if (/fandom/.test(window.location.host)) {
+        // fandom wikis
         cb.bindKeyDown(KEYCODE_F, () => $(`a.wds-button.wiki-tools__search`)[0].click(), { mods: { alt: true } });
-    } else if (/wikipedia/.test(window.location.host)) { // wikipedia
+    } else if (/wikipedia/.test(window.location.host)) {
+        // wikipedia
         cb.bindKeyDown(KEYCODE_F, () => focusInput(`input#searchInput`), { mods: { alt: true } });
     }
 })();

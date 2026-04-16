@@ -3,7 +3,7 @@
 // @author      cbaoth235
 //
 // @name        OpenProject Tweaks
-// @version     0.2.0
+// @version     2026-02-27
 // @description Some tweaks for OpenProject (incl. Markdown Editor improvements)
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/openproject-tweaks.user.js
 //
@@ -28,13 +28,12 @@ this.$ = this.jQuery = jQuery.noConflict(true);
  */
 
 (function () {
-
     /* {{{ -- SETTINGS / CONSTANTS -------------------------------------------- */
     // show a counter in the top left corner indicating how many times opApplyTweaks
     // was called, this can be helpful in determining which elements to watch for update
     const DEBUG_ENABLE_COUNTER = false;
 
-    const MY_NAME = $('meta[name="current_user"]').attr("data-name"); // highlight this name
+    const MY_NAME = $('meta[name="current_user"]').attr('data-name'); // highlight this name
 
     const ENABLE_WORKPACKAGES_TWEAKS = true; // enable tweaks in issue list (+gantt) and details screen
     const ENABLE_BACKLOG_TWEAKS = true; // enable tweaks in backlog screen
@@ -42,49 +41,53 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const ENABLE_MARKDOWN_EDITOR_TWEAKS = true; // enable markdown source editor improvements (height, font-size, resize)
 
     // Markdown Editor Settings (only applies if ENABLE_MARKDOWN_EDITOR_TWEAKS is true)
-    const MARKDOWN_EDITOR_HEIGHT = "65vh"; // default editor height (e.g., "65vh", "800px", or "calc(100vh - 300px)")
-    const MARKDOWN_EDITOR_FONT_SIZE = "12px"; // font size in markdown source mode
+    const MARKDOWN_EDITOR_HEIGHT = '65vh'; // default editor height (e.g., "65vh", "800px", or "calc(100vh - 300px)")
+    const MARKDOWN_EDITOR_FONT_SIZE = '12px'; // font size in markdown source mode
     // FIXME prototype, broken due to scrollbar conflicts (editor height is set to 100% of parent container, which should allow resizing, but scrollbar appears on editor itself instead of parent container, preventing resizing)
     //const MARKDOWN_EDITOR_ENABLE_RESIZE = false; // allow vertical resizing via drag at bottom-right corner (currently disabled due to scrollbar conflicts)
 
     // shorten target version in issue list (id only, strip subject)
     const ENABLE_SHORTEN_VERSION = false;
-    const MAX_VERSION_LENGTH = 30;// max text length
+    const MAX_VERSION_LENGTH = 30; // max text length
 
     // shorten author, assignee etc. names (like "Last, F.") in tables for smaller columns
     const ENABLE_SHORTEN_NAMES = true;
 
     /* Add CSS to the selected element if the elements (inner) text matches (regex)
-    *
-    * Array format:
-    *  [<selector>,        [i,0]      - match elements
-    *   [                  [i,1]      - multiple patterns per selector are supported
-    *    [<pattern>,       [i,1,j,0]  - match regex pattern within the selected element's inner text
-    *     {css}], ...j+1   [i,1,j,2]  - css styles applied to all elements matching selector + pattern
-    *   ], ...i+1
-    *  ]
-    *
-    * Example:
-    * // make (complete) div elements with class=foo containing text "foo bar" red
-    * ["div.foo"
-    *  [[ /foo bar/i, { "color": "red" } ]]]
-    *    -> <div class="foo">Foo <b>bar</b> baz</div>
-    *    => <div class="foo" style="color: red;">Foo <b>bar</b> baz</div>
-    */
+     *
+     * Array format:
+     *  [<selector>,        [i,0]      - match elements
+     *   [                  [i,1]      - multiple patterns per selector are supported
+     *    [<pattern>,       [i,1,j,0]  - match regex pattern within the selected element's inner text
+     *     {css}], ...j+1   [i,1,j,2]  - css styles applied to all elements matching selector + pattern
+     *   ], ...i+1
+     *  ]
+     *
+     * Example:
+     * // make (complete) div elements with class=foo containing text "foo bar" red
+     * ["div.foo"
+     *  [[ /foo bar/i, { "color": "red" } ]]]
+     *    -> <div class="foo">Foo <b>bar</b> baz</div>
+     *    => <div class="foo" style="color: red;">Foo <b>bar</b> baz</div>
+     */
     const SET_CSS_BY_TEXT_MATCH = [];
 
     // user name found?
     if (MY_NAME !== undefined && MY_NAME != '') {
         // highlight own user name
-        SET_CSS_BY_TEXT_MATCH.push(["span.user > a" // activity details comments section
-            + ", span.author" // work_packages and activity details
-            + ", user-link.user-link > a" // task created by (samll text on top)
-            + ", user-link.user-link > a", // task created by (samll text on top)
-        [[new RegExp(MY_NAME), { "color": "rgb(11, 73, 191)" }]]]);
+        SET_CSS_BY_TEXT_MATCH.push([
+            'span.user > a' + // activity details comments section
+                ', span.author' + // work_packages and activity details
+                ', user-link.user-link > a' + // task created by (samll text on top)
+                ', user-link.user-link > a', // task created by (samll text on top)
+            [[new RegExp(MY_NAME), { color: 'rgb(11, 73, 191)' }]],
+        ]);
         // additional color highlighting in case user name is assignee
-        SET_CSS_BY_TEXT_MATCH.push(["span.assignee",
-        [[new RegExp(MY_NAME), { "color": "rgb(255, 102, 65)", "animation": "blinker 1.5s linear infinite" }]]]);
-    };
+        SET_CSS_BY_TEXT_MATCH.push([
+            'span.assignee',
+            [[new RegExp(MY_NAME), { color: 'rgb(255, 102, 65)', animation: 'blinker 1.5s linear infinite' }]],
+        ]);
+    }
 
     /**
      * Substitute texts and inject CSS styles by wrapping text in spans.
@@ -118,50 +121,69 @@ this.$ = this.jQuery = jQuery.noConflict(true);
      */
     const TEXT_SUBSTITUTION = [
         // highlight [tags] and *bold* in issue subjects
-        ["span.subject"
-         + ", .form--fieldset > div > ul > li" // roadmap
-         + ", .timeline-element > .containerRight > .labelFarRight > .label-content" // gant diagram
-         + ", div.subject", // backlog
-         [[/(\[[^\]]+\])/g, "$1", { "color": "rgb(11, 73, 191)" }],
-          [/(\[story\])/gi, "[STORY]", {}], // just upper case (style added with pattern above)
-          [/(\[concept\])/gi, "[Concept]", { "color": "rgb(32, 173, 147)" }],
-          [/(\[idea\])/gi, "[Idea]", { "color": "gray" }],
-          [/(\[graylog\])/gi, "[Graylog]", { "color": "FireBrick" }],
-          [/(\[sonar(cube)?\])/gi, "[Sonar]", { "color": "FireBrick" }],
-          [/(\[(UI)?Tests?\])/gi, "[$2Test]", { "color": "BlueViolet" }],
-          [/\[(new)\]/gi, "[new]", { "color": "#44C94D" }],
-          [/(\*[^ ][^*]+[^ ]\*)/g, "$1", { "color": "rgb(255, 102, 65)" }]]], // make *bold* text orange
+        [
+            'span.subject' +
+                ', .form--fieldset > div > ul > li' + // roadmap
+                ', .timeline-element > .containerRight > .labelFarRight > .label-content' + // gant diagram
+                ', div.subject', // backlog
+            [
+                [/(\[[^\]]+\])/g, '$1', { color: 'rgb(11, 73, 191)' }],
+                [/(\[story\])/gi, '[STORY]', {}], // just upper case (style added with pattern above)
+                [/(\[concept\])/gi, '[Concept]', { color: 'rgb(32, 173, 147)' }],
+                [/(\[idea\])/gi, '[Idea]', { color: 'gray' }],
+                [/(\[graylog\])/gi, '[Graylog]', { color: 'FireBrick' }],
+                [/(\[sonar(cube)?\])/gi, '[Sonar]', { color: 'FireBrick' }],
+                [/(\[(UI)?Tests?\])/gi, '[$2Test]', { color: 'BlueViolet' }],
+                [/\[(new)\]/gi, '[new]', { color: '#44C94D' }],
+                [/(\*[^ ][^*]+[^ ]\*)/g, '$1', { color: 'rgb(255, 102, 65)' }],
+            ],
+        ], // make *bold* text orange
 
         // highlight / shorten tracker names (by type)
-        ["span.wp-table--cell-span.type",
-         [[/(Bug)/gi, "$1", { "color": "#ff6641" }],
-          [/(Epic)/gi, "$1", { "color": "navi" }],
-          [/(Task|Feature)/gi, "$1", { "color": "white" }], // light mode: black
-          [/(Idea)/gi, "$1", { "color": "silver" }],
-          [/Application/gi, "APP", {}], // customer tracker only
-          [/Change Request/gi, "CR", {}]]], // customer tracker only
+        [
+            'span.wp-table--cell-span.type',
+            [
+                [/(Bug)/gi, '$1', { color: '#ff6641' }],
+                [/(Epic)/gi, '$1', { color: 'navi' }],
+                [/(Task|Feature)/gi, '$1', { color: 'white' }], // light mode: black
+                [/(Idea)/gi, '$1', { color: 'silver' }],
+                [/Application/gi, 'APP', {}], // customer tracker only
+                [/Change Request/gi, 'CR', {}],
+            ],
+        ], // customer tracker only
 
         // highlight issues priorities
-        ["span.priority",
-         [[/(Immediate)/gi, "$1", { "color": "rgb(255, 102, 65)", "font-weight": "bold", "animation": "blinker .7s linear infinite" }],
-          [/(Urgent)/gi, "$1", { "color": "rgb(255, 102, 65)", "font-weight": "bold" }],
-          [/(High)/gi, "$1", { "color": "rgb(241, 196, 15)", "font-weight": "bold" }],
-          [/(Normal)/gi, "$1", { "color": "white" }], // light mode: black
-          [/(Low)/gi, "$1", { "color": "silver" }]]],
+        [
+            'span.priority',
+            [
+                [
+                    /(Immediate)/gi,
+                    '$1',
+                    { color: 'rgb(255, 102, 65)', 'font-weight': 'bold', animation: 'blinker .7s linear infinite' },
+                ],
+                [/(Urgent)/gi, '$1', { color: 'rgb(255, 102, 65)', 'font-weight': 'bold' }],
+                [/(High)/gi, '$1', { color: 'rgb(241, 196, 15)', 'font-weight': 'bold' }],
+                [/(Normal)/gi, '$1', { color: 'white' }], // light mode: black
+                [/(Low)/gi, '$1', { color: 'silver' }],
+            ],
+        ],
 
         // highlight issues statuses
-        ["span.status"
-         + ", div.status_id", // backlog
-         [[/(New)/gi, "$1", { "color": "white" }], // light mode: black
-          [/(Feedback)/gi, "$1", { "color": "#8E44AD" }],
-          [/(In Progress)/gi, "$1", { "color": "rgb(11, 73, 191)" }],
-          [/(Resolved)/gi, "$1", { "color": "#229954" }],
-          [/(Closed)/gi, "$1", { "color": "silver" }],
-          [/(Rejected)/gi, "$1", { "color": "silver" }]]],
+        [
+            'span.status' + ', div.status_id', // backlog
+            [
+                [/(New)/gi, '$1', { color: 'white' }], // light mode: black
+                [/(Feedback)/gi, '$1', { color: '#8E44AD' }],
+                [/(In Progress)/gi, '$1', { color: 'rgb(11, 73, 191)' }],
+                [/(Resolved)/gi, '$1', { color: '#229954' }],
+                [/(Closed)/gi, '$1', { color: 'silver' }],
+                [/(Rejected)/gi, '$1', { color: 'silver' }],
+            ],
+        ],
 
         // shorten long table headers (to reduce column widht)
-        ["th.wp-table--table-header a#storyPoints", [[/Story Points/gi, "SP", {}]]],
-        ["th.wp-table--table-header a#priority", [[/Priority/gi, "Prio", {}]]]
+        ['th.wp-table--table-header a#storyPoints', [[/Story Points/gi, 'SP', {}]]],
+        ['th.wp-table--table-header a#priority', [[/Priority/gi, 'Prio', {}]]],
 
         // highlight / shorten category names
         //[ "span.category",
@@ -240,12 +262,16 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // show a counter in the upper left corner indicating tweak function calls
     function opAddOrRefreshDebugCounter() {
-        if ($('div#opdebugcounter').length) { // exists? then update
+        if ($('div#opdebugcounter').length) {
+            // exists? then update
             $('div#opdebugcounter')[0].innerText = opDebugCounter++;
-        } else { // else create new div
-            $('body').prepend(`<div id="opdebugcounter" style="display: block; position: fixed; z-index:9999; opacity: 1; background: yellow; color: black; font-weight: bold; font-size: 18px; text-align: center; vertical-align: middle;">`
-                + opDebugCounter++
-                + `</div>`);
+        } else {
+            // else create new div
+            $('body').prepend(
+                `<div id="opdebugcounter" style="display: block; position: fixed; z-index:9999; opacity: 1; background: yellow; color: black; font-weight: bold; font-size: 18px; text-align: center; vertical-align: middle;">` +
+                    opDebugCounter++ +
+                    `</div>`
+            );
         }
     }
     /* {{{ -- DEBUG ----------------------------------------------------------- */
@@ -259,7 +285,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                     return; // stop, tweaks for this screen are disabled
                 }
                 // remove these green dots in front of status "New" (most open issues are new, not really relevant more distracting)
-                GM_addStyle(`[class^='__hl_dot_']::before, [class*=' __hl_dot_']::before { display: none  !important; }`);
+                GM_addStyle(
+                    `[class^='__hl_dot_']::before, [class*=' __hl_dot_']::before { display: none  !important; }`
+                );
                 // hide the "Estimates and Time" section from the details view
                 //GM_addStyle(`div[data-group-name='Estimates and time'] { display:none; }`);
                 break;
@@ -340,12 +368,12 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
     // Check if element is a CodeMirror instance
     function isCodeMirrorElement(el) {
-        return el && el.classList && el.classList.contains("CodeMirror");
+        return el && el.classList && el.classList.contains('CodeMirror');
     }
 
     // Find all visible CodeMirror editors
     function findVisibleCodeMirrorEditors(root = document) {
-        const editors = Array.from(root.querySelectorAll(".CodeMirror"));
+        const editors = Array.from(root.querySelectorAll('.CodeMirror'));
         return editors.filter((el) => el.offsetParent !== null); // only visible elements
     }
 
@@ -354,18 +382,18 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         try {
             // CodeMirror stores its API reference on the root element
             const cm = cmRoot && cmRoot.CodeMirror;
-            if (cm && typeof cm.refresh === "function") {
+            if (cm && typeof cm.refresh === 'function') {
                 cm.refresh();
                 return true;
             }
             // Fallback: check scroll container
-            const scroller = cmRoot.querySelector(".CodeMirror-scroll");
-            if (scroller && scroller.CodeMirror && typeof scroller.CodeMirror.refresh === "function") {
+            const scroller = cmRoot.querySelector('.CodeMirror-scroll');
+            if (scroller && scroller.CodeMirror && typeof scroller.CodeMirror.refresh === 'function') {
                 scroller.CodeMirror.refresh();
                 return true;
             }
         } catch (e) {
-            console.warn("OpenProject Tweaks: Failed to refresh CodeMirror:", e);
+            console.warn('OpenProject Tweaks: Failed to refresh CodeMirror:', e);
         }
         return false;
     }
@@ -378,10 +406,10 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
         editors.forEach((cmRoot) => {
             // Skip if already enhanced (check for marker attribute)
-            if (cmRoot.hasAttribute("data-op-enhanced")) return;
+            if (cmRoot.hasAttribute('data-op-enhanced')) return;
 
             // Mark as enhanced
-            cmRoot.setAttribute("data-op-enhanced", "true");
+            cmRoot.setAttribute('data-op-enhanced', 'true');
 
             // Apply initial height
             cmRoot.style.minHeight = MARKDOWN_EDITOR_HEIGHT;
@@ -403,8 +431,12 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                 // Check for added nodes
                 if (mutation.addedNodes && mutation.addedNodes.length) {
                     for (const node of mutation.addedNodes) {
-                        if (node.nodeType === 1) { // Element node
-                            if (isCodeMirrorElement(node) || node.querySelector && node.querySelector(".CodeMirror")) {
+                        if (node.nodeType === 1) {
+                            // Element node
+                            if (
+                                isCodeMirrorElement(node) ||
+                                (node.querySelector && node.querySelector('.CodeMirror'))
+                            ) {
                                 relevantChange = true;
                                 break;
                             }
@@ -412,8 +444,8 @@ this.$ = this.jQuery = jQuery.noConflict(true);
                     }
                 }
                 // Check for attribute changes on CodeMirror elements
-                if (mutation.type === "attributes" && mutation.target && mutation.target.classList) {
-                    if (mutation.target.classList.contains("CodeMirror")) {
+                if (mutation.type === 'attributes' && mutation.target && mutation.target.classList) {
+                    if (mutation.target.classList.contains('CodeMirror')) {
                         relevantChange = true;
                     }
                 }
@@ -431,7 +463,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             childList: true,
             subtree: true,
             attributes: true,
-            attributeFilter: ["class", "style"],
+            attributeFilter: ['class', 'style'],
         });
     }
     /* }}} -- MARKDOWN EDITOR IMPROVEMENTS ------------------------------------ */
@@ -460,8 +492,9 @@ this.$ = this.jQuery = jQuery.noConflict(true);
 
         // == LIST SCREEN ========================================================
         // -- SHORTEN VERSION ----------------------------------------------------
-        if (opCurrentScreen == SCREEN_WORKPACKAGES && ENABLE_SHORTEN_VERSION) { //debugger;
-            $("span.wp-table--cell-span.version").each(function (i, e) {
+        if (opCurrentScreen == SCREEN_WORKPACKAGES && ENABLE_SHORTEN_VERSION) {
+            //debugger;
+            $('span.wp-table--cell-span.version').each(function (i, e) {
                 var text = e.innerText.trim();
                 e.innerText = cb.shortenString(text, MAX_VERSION_LENGTH);
                 e.title = text;
@@ -469,11 +502,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         }
 
         // -- SHORTEN NAMES ------------------------------------------------------
-        if (opCurrentScreen == SCREEN_WORKPACKAGES && ENABLE_SHORTEN_NAMES) { //debugger;
-            $("td span.wp-table--cell-span.assignee, td span.wp-table--cell-span.author").each(function (i, e) {
+        if (opCurrentScreen == SCREEN_WORKPACKAGES && ENABLE_SHORTEN_NAMES) {
+            //debugger;
+            $('td span.wp-table--cell-span.assignee, td span.wp-table--cell-span.author').each(function (i, e) {
                 var text = e.innerText.trim();
-                if (! /, /.test(text)) { // contains no comma (else: most likely already shortened)
-                    e.innerText = cb.nameToInitials(text, { separator: ", ", lastLength: 20, reverse: true });
+                if (!/, /.test(text)) {
+                    // contains no comma (else: most likely already shortened)
+                    e.innerText = cb.nameToInitials(text, { separator: ', ', lastLength: 20, reverse: true });
                     e.title = text;
                 }
             });
@@ -486,13 +521,18 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         var select = $(`select[data-filter-name="user_id"].filter-value`),
             options = $(`select[data-filter-name="user_id"].filter-value option`),
             checked = $(`select[data-filter-name="user_id"].filter-value option:checked`);
-        options.sort(function(o1, o2) {
-            var t1 = o1.text.toLowerCase(), t2 = o2.text.toLowerCase(); // sort case insensitive
-            return o1.text == 'me' ? -1 // special user 'me' should always come first
-            : o2.text == 'me' ? 1
-            : t1 > t2 ? 1
-            : t1 < t2 ? -1
-            : 0;
+        options.sort(function (o1, o2) {
+            var t1 = o1.text.toLowerCase(),
+                t2 = o2.text.toLowerCase(); // sort case insensitive
+            return o1.text == 'me'
+                ? -1 // special user 'me' should always come first
+                : o2.text == 'me'
+                  ? 1
+                  : t1 > t2
+                    ? 1
+                    : t1 < t2
+                      ? -1
+                      : 0;
         });
         options.detach();
         options.appendTo(select);
@@ -521,7 +561,7 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         // Start observing for new editors
         opObserveMarkdownEditors();
         // Also watch for CodeMirror elements explicitly
-        waitForKeyElements(".CodeMirror", opEnhanceMarkdownEditorsDebounced);
+        waitForKeyElements('.CodeMirror', opEnhanceMarkdownEditorsDebounced);
     }
 
     // (re)apply tweaks after when the selected elements are ready
@@ -531,26 +571,28 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             if (ENABLE_WORKPACKAGES_TWEAKS) {
                 // watch first record in table (should be sufficient to refresh on sort, fitler, etc.)
                 // and for first gant diagram record to appear
-                waitForKeyElements(".results-tbody > tr:first-child"
-                    + ", .wp-table-timeline--header-inner > .wp-timeline--header-element:first-child"
-                    + ", span.user > a", //user name in details comment section
-                    opApplyTweaksDebounce);
+                waitForKeyElements(
+                    '.results-tbody > tr:first-child' +
+                        ', .wp-table-timeline--header-inner > .wp-timeline--header-element:first-child' +
+                        ', span.user > a', //user name in details comment section
+                    opApplyTweaksDebounce
+                );
                 // issue details
-                waitForKeyElements(".detail-activity", opApplyTweaksDebounce);
+                waitForKeyElements('.detail-activity', opApplyTweaksDebounce);
                 // register work package info row separately so the list screen work package details sidebar is
                 // updated on change
-                waitForKeyElements(".work-packages--info-row > span:first-child", opWorkPackageInfoRowIdToLink);
+                waitForKeyElements('.work-packages--info-row > span:first-child', opWorkPackageInfoRowIdToLink);
             }
             break;
         case SCREEN_BACKLOG: // backlog
             if (ENABLE_BACKLOG_TWEAKS) {
                 // watch all list items (many initial calls, but to update after drag-n-drop)
-                waitForKeyElements("li.story > div.id", opApplyTweaksDebounce);
+                waitForKeyElements('li.story > div.id', opApplyTweaksDebounce);
             }
             break;
         case SCREEN_ROADMAP: // roadmap
             if (ENABLE_ROADMAP_TWEAKS) {
-                waitForKeyElements("div#roadmap", opApplyTweaksDebounce);
+                waitForKeyElements('div#roadmap', opApplyTweaksDebounce);
             }
             break;
         default: // unknown screen, currently not supported (no changes necessary)
@@ -561,5 +603,4 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // FIXME messes up selection
     //waitForKeyElements(`select[data-filter-name="user_id"].filter-value option`, _.debounce(sortUserSelectOptionsByText, 250));
     /* }}} -- EXECUTION ------------------------------------------------------- */
-
-}());
+})();

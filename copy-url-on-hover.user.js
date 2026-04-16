@@ -4,7 +4,7 @@
 //
 // @name        Copy URL on hover
 // @description Copy link / media urls on mouse-over while alt-c/-b is pressed
-// @version     0.2.0
+// @version     2025-12-27
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/copy-url-on-hover.user.js
 //
 // @include     *
@@ -13,7 +13,6 @@
 // ==/UserScript==
 
 (function () {
-
     /* {{{ = CONSTANTS AND GLOBALS ======================================== */
 
     // Key codes
@@ -25,13 +24,13 @@
     const KCODE_C = 67;
 
     // Timing constants
-    const POLL_RATE = 25;        // Polling interval for key state checks (deprecated)
-    const SHOW_TT = true;         // Show tooltip?
-    const TT_TIMEOUT = 750;       // Tooltip timeout in ms
-    const TT_FADEOUT = 250;       // Tooltip fadeout time in ms
+    const POLL_RATE = 25; // Polling interval for key state checks (deprecated)
+    const SHOW_TT = true; // Show tooltip?
+    const TT_TIMEOUT = 750; // Tooltip timeout in ms
+    const TT_FADEOUT = 250; // Tooltip fadeout time in ms
 
     // Global state
-    var currentKeys = { "shift": false, "ctrl": false, "alt": false, "meta": false };
+    var currentKeys = { shift: false, ctrl: false, alt: false, meta: false };
     var lastCopiedUrl = null;
 
     /* }}} = END: CONSTANTS AND GLOBALS =================================== */
@@ -50,17 +49,13 @@
      * @returns {MutationObserver} The observer instance.
      */
     function waitForElements(selector, callback, options = {}) {
-        const {
-            target = document.body,
-            once = false,
-            timeout = null
-        } = options;
+        const { target = document.body, once = false, timeout = null } = options;
 
         const processedElements = new WeakSet();
 
         const checkElements = () => {
             const elements = document.querySelectorAll(selector);
-            elements.forEach(element => {
+            elements.forEach((element) => {
                 if (!processedElements.has(element)) {
                     processedElements.add(element);
                     callback(element);
@@ -83,7 +78,7 @@
 
         observer.observe(target, {
             childList: true,
-            subtree: true
+            subtree: true,
         });
 
         // Optional timeout
@@ -130,8 +125,8 @@
 
         // Position tooltip near mouse cursor
         const updatePosition = (e) => {
-            tt.style.left = (e.clientX + 10) + 'px';
-            tt.style.top = (e.clientY + 10) + 'px';
+            tt.style.left = e.clientX + 10 + 'px';
+            tt.style.top = e.clientY + 10 + 'px';
         };
 
         // Track mouse for initial positioning
@@ -209,11 +204,14 @@
      */
     function normalizeUrl(newValue) {
         if (newValue === undefined || newValue === null || newValue === '' || newValue === 'none') return undefined;
-        if (/^\w+:/.test(newValue)) { // already has scheme
+        if (/^\w+:/.test(newValue)) {
+            // already has scheme
             return newValue;
-        } else if (/^\/\//.test(newValue)) { // protocol-relative
+        } else if (/^\/\//.test(newValue)) {
+            // protocol-relative
             return document.location.protocol + newValue;
-        } else if (/^\.*\//.test(newValue) || !/^(\w+:\/\/)/.test(newValue)) { // relative or path without scheme
+        } else if (/^\.*\//.test(newValue) || !/^(\w+:\/\/)/.test(newValue)) {
+            // relative or path without scheme
             return document.location.origin + '/' + String(newValue).replace(/^[./]+/, '');
         } else {
             return newValue;
@@ -245,7 +243,9 @@
         }
         if (!url) return;
         if (url === lastCopiedUrl) {
-            tooltip('<span style="font-size: 0.9em; font-style: italic; color: gray">Unchanged URL (not copied)</span>');
+            tooltip(
+                '<span style="font-size: 0.9em; font-style: italic; color: gray">Unchanged URL (not copied)</span>'
+            );
             return;
         }
         GM_setClipboard(url);
@@ -261,9 +261,9 @@
      * @returns {string|undefined} The extracted URL, or undefined if not found.
      */
     function getUrlFromCSS(e, style) {
-        var bg_img = window.getComputedStyle(e).getPropertyValue(style) || "";
+        var bg_img = window.getComputedStyle(e).getPropertyValue(style) || '';
         var src = bg_img.replace(/^url\(['"]?([^'"]*)['" ]?\)/, '$1');
-        return src == "" ? undefined : src;
+        return src == '' ? undefined : src;
     }
 
     /**
@@ -274,7 +274,7 @@
      * @param {Object} dict - Dictionary mapping selectors to attribute names.
      * @returns {string|undefined} The found URL value, or undefined if not found.
      */
-    function findSrc(e, sel, dict = { 'a': ['href'] }) {
+    function findSrc(e, sel, dict = { a: ['href'] }) {
         var v = getSrc(e, dict);
         if (v !== undefined) {
             return v;
@@ -319,13 +319,14 @@
      * @param {boolean} [includeBgImg=false] - Deprecated, not used.
      * @returns {string|undefined} The extracted URL value, or undefined if not found.
      */
-    function getSrc(e, dict = { 'a': ['href'] }, includeBgImg = false) {
+    function getSrc(e, dict = { a: ['href'] }, includeBgImg = false) {
         var v;
         for (var k in dict) {
             if (e.matches(k)) {
                 for (var i in dict[k]) {
                     var a = dict[k][i];
-                    if (/^css:.*/.test(a)) { // special case for css styles
+                    if (/^css:.*/.test(a)) {
+                        // special case for css styles
                         v = getUrlFromCSS(e, a.replace(/^css:/, ''));
                     } else {
                         v = e.getAttribute(a);
@@ -350,13 +351,11 @@
      * @returns {boolean} True if the key is a modifier key.
      */
     function isModKey(keyCode) {
-        return keyCode === KCODE_SHIFT || keyCode === KCODE_CTRL
-            || keyCode === KCODE_ALT || keyCode === KCODE_META;
+        return keyCode === KCODE_SHIFT || keyCode === KCODE_CTRL || keyCode === KCODE_ALT || keyCode === KCODE_META;
     }
 
-
     // register global keydown event
-    document.addEventListener("keydown", function (event) {
+    document.addEventListener('keydown', function (event) {
         var ev = event || window.event;
         if (ev === undefined) {
             return;
@@ -370,13 +369,17 @@
         // Handle immediate copy on key press without requiring mouseenter
         if (!ev.repeat) {
             if (ev.altKey && ev.keyCode === KCODE_C) {
-                copyFromHover('a', { 'a': ['href'] }, 'Link Copied');
+                copyFromHover('a', { a: ['href'] }, 'Link Copied');
             } else if (ev.altKey && ev.keyCode === KCODE_B) {
-                copyFromHover('img, video', {
-                    'img': ['src'],
-                    'video': ['src', 'data', 'data-mp4', 'data-webm', 'data-src'],
-                    'source': ['src', 'data', 'data-mp4', 'data-webm', 'data-src']
-                }, 'Media Source Copied');
+                copyFromHover(
+                    'img, video',
+                    {
+                        img: ['src'],
+                        video: ['src', 'data', 'data-mp4', 'data-webm', 'data-src'],
+                        source: ['src', 'data', 'data-mp4', 'data-webm', 'data-src'],
+                    },
+                    'Media Source Copied'
+                );
             }
         }
     });
@@ -404,7 +407,7 @@
      * @returns {boolean} True if the current key state matches.
      */
     function checkKeyState(keys) {
-        var metaKey = ["shift", "ctrl", "alt", "meta"];
+        var metaKey = ['shift', 'ctrl', 'alt', 'meta'];
         for (var i in metaKey) {
             if (currentKeys[metaKey[i]] !== (keys[metaKey[i]] || false)) {
                 return false;
@@ -435,7 +438,7 @@
     }
 
     // Register global keyup event
-    document.addEventListener("keyup", function (event) {
+    document.addEventListener('keyup', function (event) {
         var ev = event || window.event;
         if (ev === undefined) {
             return;
@@ -448,5 +451,4 @@
     });
 
     /* }}} = END: KEY EVENT HANDLING ====================================== */
-
-}());
+})();

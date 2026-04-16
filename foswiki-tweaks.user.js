@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name        Foswiki Tweaks
-// @version     0.1
+// @version     2025-01-24
 // @description Some improvements to Foswiki
 // @author      cbaoth235
 // @namespace   https://github.com/cbaoth/userscripts
@@ -21,16 +21,16 @@ GM_config.init({
         editorHeightMultiplier: {
             label: 'Editor Height Multiplier',
             type: 'float',
-            default: 2.0
-        }
+            default: 2.0,
+        },
     },
     css: '#FoswikiTweaksConfig { background: #f4f4f4; padding: 20px; }',
     events: {
-        save: function() {
+        save: function () {
             console.log('Config saved');
             GM_config.close();
-        }
-    }
+        },
+    },
 });
 
 GM_registerMenuCommand('Configure Foswiki Tweaks', () => {
@@ -50,7 +50,7 @@ window.addEventListener('load', () => {
     function adjustHeight(element, multiplier) {
         if (element) {
             let currentHeight = parseFloat(window.getComputedStyle(element).height);
-            element.style.height = (currentHeight * multiplier) + 'px';
+            element.style.height = currentHeight * multiplier + 'px';
         }
     }
 

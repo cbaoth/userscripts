@@ -3,7 +3,7 @@
 // @author      cbaoth235
 //
 // @name        Auto Show Forum Spoilers
-// @version     0.2.0
+// @version     2021-02-23
 // @description Automatically show all spoilers in forum posts and expand partially shown articles
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/auto-show-forum-spoilers.user.js
 //
@@ -23,7 +23,7 @@
 this.$ = this.jQuery = jQuery.noConflict(true);
 
 (function () {
-    const CLASS = "autoShowForumSpoilers";
+    const CLASS = 'autoShowForumSpoilers';
     const SPOILER_SELECTORS = `input[type='button'][class~='folded'][value='Spoiler']:not(.${CLASS}),
         input[type='button'][title='Show'][value='Show']:not(.${CLASS}),
         div.pre-spoiler > input[type=button]:not(.${CLASS})`;
@@ -34,12 +34,12 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     // retry
     var retry = function (f, ms = RETRY_AFTER_MS, retries = MAX_RETRIES) {
         try {
-            return f()
+            return f();
         } catch (ex) {
             if (retries <= 0) throw ex;
             return _.delay(retry, ms, f, retries - 1);
         }
-    }
+    };
 
     // click button and add blacklist class
     var click = function (e) {
@@ -47,11 +47,13 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         button.addClass(CLASS);
         // retry max 5 times every 500ms (necessary scripts not yet loaded)
         retry(() => cb.clickElement(button));
-    }
+    };
 
-    if (/([^/.]+\.)*patreon.com$/.test(window.location.host)) { // Patreon
+    if (/([^/.]+\.)*patreon.com$/.test(window.location.host)) {
+        // Patreon
         waitForKeyElements(PATREON_UNCOLLAPSE_SELECTORS, (e) => click(e));
-    } else { // Common forums
+    } else {
+        // Common forums
         waitForKeyElements(SPOILER_SELECTORS, (e) => click(e));
     }
-}());
+})();

@@ -3,7 +3,7 @@
 // @author      cbaoth235
 //
 // @name        Gerrit Tweaks
-// @version     0.1.2
+// @version     2018-12-02
 // @description Some tweaks for gerrit
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/gerrit-tweaks.user.js
 //
@@ -27,7 +27,6 @@
 this.$ = this.jQuery = jQuery.noConflict(true);
 
 (function () {
-
     // tweak existing css classes
     GM_addStyle(`.gr-diff.section.contextControl { background-color: #eee !important; }`);
 
@@ -43,15 +42,15 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         var text = node.text();
         switch (true) {
             case /^return$/.test(text):
-                node.addClass("keyword-return");
+                node.addClass('keyword-return');
                 break;
             case /^throw$/.test(text):
-                node.addClass("keyword-throw");
+                node.addClass('keyword-throw');
                 break;
         }
     }
-    waitForKeyElements(".cm-keyword", _.debounce(updateKeyword, 200)); // old gerrit
-    waitForKeyElements(".gr-diff.gr-syntax-keyword", _.debounce(updateKeyword, 200)); // new gerrit
+    waitForKeyElements('.cm-keyword', _.debounce(updateKeyword, 200)); // old gerrit
+    waitForKeyElements('.gr-diff.gr-syntax-keyword', _.debounce(updateKeyword, 200)); // new gerrit
 
     // add style classes to selected span.cm-variable nodes
     function updateVariable(node) {
@@ -59,20 +58,23 @@ this.$ = this.jQuery = jQuery.noConflict(true);
         switch (true) {
             case /^Preconditions$/.test(text): // old gerrit
                 var nextNode = $(node)[0].nextSibling;
-                if (nextNode.nodeType == 3 && nextNode.nodeValue == ".") { // "." -> static call, ";" -> import
-                    $(node).addClass("variable-Preconditions"); // highlight Preconditoins
-                    $(node).next("span.cm-variable").addClass("variable-Preconditions-method"); // highlight method
+                if (nextNode.nodeType == 3 && nextNode.nodeValue == '.') {
+                    // "." -> static call, ";" -> import
+                    $(node).addClass('variable-Preconditions'); // highlight Preconditoins
+                    $(node).next('span.cm-variable').addClass('variable-Preconditions-method'); // highlight method
                 }
                 break;
             case /^[\s\n\r]*Preconditions\..*/.test(text): // new gerrit
-                node[0].innerHTML = node[0].innerHTML.replace("Preconditions\.", '<span class="variable-Preconditions">Preconditions</span>.');
+                node[0].innerHTML = node[0].innerHTML.replace(
+                    'Preconditions\.',
+                    '<span class="variable-Preconditions">Preconditions</span>.'
+                );
                 break;
             case /^result$/.test(text): // old gerrit only
-                node.addClass("variable-result");
+                node.addClass('variable-result');
                 break;
         }
     }
-    waitForKeyElements(".cm-variable", _.debounce(updateVariable, 200)); // old gerrit
-    waitForKeyElements(".gr-diff.contentText", _.debounce(updateVariable, 200)); // new gerrit
-
-}());
+    waitForKeyElements('.cm-variable', _.debounce(updateVariable, 200)); // old gerrit
+    waitForKeyElements('.gr-diff.contentText', _.debounce(updateVariable, 200)); // new gerrit
+})();
