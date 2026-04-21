@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Emoji Replacer - More Subtle Emotions
 // @namespace   https://github.com/cbaoth/userscripts
-// @version     2026-04-19
+// @version     2026-04-21
 // @description Replaces potentially triggering emojis with more subtle/neutral alternatives to reduce emotional friction while browsing.
 // @author      cbaoth235
 // @license     MIT
@@ -251,5 +251,5 @@
         }
     }).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
 
-    GM_registerMenuCommand('Emoji Replacer — Edit Mappings', openSettings);
+    GM_registerMenuCommand('Edit Emoji Mappings', openSettings);
 })();
