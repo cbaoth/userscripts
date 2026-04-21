@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        Emoji Replacer - More Subtle Emotions
+// @name        Emoji Replacer
 // @namespace   https://github.com/cbaoth/userscripts
 // @version     2026-04-21
-// @description Replaces potentially triggering emojis with more subtle/neutral alternatives to reduce emotional friction while browsing.
+// @description Replace emojis with customizable alternatives (e.g. less triggering, more neutral).
 // @author      cbaoth235
 // @license     MIT
 //
@@ -25,23 +25,21 @@
     // Mapping: <code>{replacement emoji}: {emoji 1} {emoji 2} …</code>
     // Comment: Lines starting with <code>#</code> or <code>//</code>, as well as empty lines, are ignored
     const DEFAULT_MAPPINGS = `\
-# anger, annoyance, contempt, hostility, provocative, ...
-🤔: 🤬 😡 👿 😠 😒 ☹️ 😤 🤨 🫤 🤮 💩 😾
+# frown <- nasty, hateful, angry, frowning, ...
+🙁 <- 💩 🤮 🤬 😡 👿 😠 😤 ☹️ 😾 🙁 😕 😦 🤨 😒 🫤
 
-# sadness, worry, distress, ...
-😔: 😢 😕 🙁 😟 😦 😧 😥 😰 😭 😩 😓 😞 😣 😖 😿
-
-# fatigue, exhaustion, ...
-😴: 😫 😪 😮‍💨 🫩 🥴 🥵
-
-# illness, physical discomfort, ... (disabled — uncomment to enable)
-// 🤒: 🤢 🤧 😷 🤕
-
-# scheming, sly, creepy, ...
-🤭: 😈 👹 👻 💀 ☠️ 👺 🤡 👽 🤤 🥸 😏 😼
-
-# exaggerated laughter, mocking, ...
-😄: 😹 🤣 😂 😆 😁 😋
+# random examples (disabled — uncomment to enable)
+//🙁 <- 🙍 🙍‍♀️ 🙍‍♂️ 🙍🏻 🙍🏻‍♀️ 🙍🏻‍♂️ 🙍🏼 🙍🏼‍♀️ 🙍🏼‍♂️ 🙍🏽 🙍🏽‍♀️ 🙍🏽‍♂️ 🙍🏾 🙍🏾‍♀️ 🙍🏾‍♂️ 🙍🏿 🙍🏿‍♀️ 🙍🏿‍♂️
+//🤭 <- 😈 👹 👻 💀 ☠️ 👺 🤡 👽 🥸 😏 😼
+//😴 <- 🥱 😫 😩 😪 😮‍💨 🫩 🥴 😵‍💫 😵
+//😔 <- 😭 😢 😥 😿 😞 😣 😖 😟 😧
+//😨 <- 😱 😰 🙀
+//🤕 <- 🤢 🤒 🤧 😷
+//🩹 <- 💉 🩸
+//😲 <- 😮
+//😀 <- 😹 🤣 😂 😆 😄 😃 😁
+//😛 <- 😝 😜 🤪
+//😋 <- 🤤
 `;
 
     /*** Mapping logic ***/
