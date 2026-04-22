@@ -7,6 +7,8 @@
   - [Auto Show Forum Spoilers](#auto-show-forum-spoilers)
   - [Copy URL on Hover](#copy-url-on-hover)
   - [DeTrigger](#detrigger)
+  - [Domain Redirector](#domain-redirector)
+  - [Emoji Replacer](#emoji-replacer)
   - [Gerrit Tweaks](#gerrit-tweaks)
   - [Buhl Finanzblick](#buhl-finanzblick)
   - [Image Search Tweaks](#image-search-tweaks)
@@ -91,6 +93,24 @@ This script is still in its early stages, starting with the following simple fil
 
 - `https://civitai.com`
   - Remove the reaction emojis 😢 and 😂
+
+---
+
+### Domain Redirector
+
+[domain-redirector.user.js](domain-redirector.user.js) redirects domains based on configurable mappings — a single script covering all redirect use cases instead of one script per site.
+
+- Supports simple hostname rules (`reddit.com -> old.reddit.com`) and regex patterns on the full URL.
+- Redirects fire at `document-start` before any content loads.
+- Mappings are edited via a userscript extension (\*monkey menu command); export/import is done by copy-pasting the textarea.
+
+
+### Emoji Replacer
+
+[emoji-replacer.user.js](emoji-replacer.user.js) replaces emojis based on configurable mappings to personalize your browsing experience, or to reduce emotional friction by replacing potentially triggering emojis with more neutral alternatives.
+
+- Supports simple emoji replacement rules (`🙁 <- 💩 🤮 🤬 😡 👿 😠`) based on configurable mappings.
+- Mappings are edited via a userscript extension (\*monkey menu command); export/import is done by copy-pasting the textarea.
 
 ---
 
