@@ -49,11 +49,11 @@
         for (const line of text.split('\n')) {
             const trimmed = line.trim();
             if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('#')) continue;
-            const colonIdx = trimmed.indexOf(':');
-            if (colonIdx === -1) continue;
-            const replacement = trimmed.slice(0, colonIdx).trim();
+            const sepIdx = trimmed.indexOf('<-');
+            if (sepIdx === -1) continue;
+            const replacement = trimmed.slice(0, sepIdx).trim();
             const emojis = trimmed
-                .slice(colonIdx + 1)
+                .slice(sepIdx + 2)
                 .trim()
                 .split(/\s+/)
                 .filter(Boolean);
@@ -143,7 +143,7 @@
         const hint = document.createElement('div');
         hint.innerHTML = `Format, one entry per line:
 <ul style="list-style-position:inside;padding-left:0;margin:4px 0 0 0">
-    <li>Mapping: <code>{replacement emoji}: {emoji 1} {emoji 2} …</code></li>
+    <li>Mapping: <code>{replacement emoji} &lt;- {emoji 1} {emoji 2} …</code></li>
     <li>Comment: Lines starting with <code>#</code> or <code>//</code>, as well as empty lines, are ignored</li>
 </ul>`;
         Object.assign(hint.style, { margin: '0 0 10px', color: '#888', fontSize: '11px' });

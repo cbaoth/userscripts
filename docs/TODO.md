@@ -31,3 +31,8 @@ Scripts that have not had functional updates in 3+ years — verify each still w
 - [ ] `amazon-links.user.js` (2022-01-11)
 - [ ] `search-hotkey.user.js` (2022-07-01)
 - [ ] `streaming-tweaks.user.js` (2022-11-11)
+
+## Script-Specific Ideas
+
+- [ ] `emoji-replacer.user.js`
+  - [ ] Consider adding globale include/exclude list for hosts and or per sule/section conditions (e.g. apply mapping rule(s) only on specific social media websites)
