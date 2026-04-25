@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        Emoji Replacer
+// @name        Universal Emoji Replacer
 // @namespace   https://github.com/cbaoth/userscripts
-// @version     2026-04-21
-// @description Replace emojis with customizable alternatives (e.g. less triggering, more neutral).
+// @version     2026-04-25
+// @description Replace emojis with customizable alternatives (e.g. less triggering, more neutral) on all websites.
 // @author      cbaoth235
 // @license     MIT
 //
@@ -12,8 +12,8 @@
 // @grant       GM.setValue
 // @grant       GM_registerMenuCommand
 //
-// @downloadURL https://github.com/cbaoth/userscripts/raw/master/emoji-replacer.user.js
-// @updateURL   https://github.com/cbaoth/userscripts/raw/master/emoji-replacer.user.js
+// @downloadURL https://github.com/cbaoth/userscripts/raw/master/universal-emoji-replacer.user.js
+// @updateURL   https://github.com/cbaoth/userscripts/raw/master/universal-emoji-replacer.user.js
 // ==/UserScript==
 
 (async function () {
