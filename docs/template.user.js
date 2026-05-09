@@ -1,13 +1,17 @@
 // ==UserScript==
 // @name         {script_title}
+// @description  {concise_description (in active voice)}
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      {today's date in YYYY-MM-DD format}
 // @license      MIT
-// @description  {concise script description in active voice}
+// @version      {last_modified_at_date (in "YYYY-MM-DD" format)}
 // @author       cbaoth235
-// @match        https://{website_location}
+// @exclude      {optional_url_pattern_for_exclusion}
+// @match        {url_pattern_for_inclusion}
+// @require      {optional_url_to_external_library}
+// @grant        {required_permission (else "none")}
 // @icon         https://external-content.duckduckgo.com/ip3/{website_domain}.ico
-// @grant        none
+// @downloadURL  https://github.com/cbaoth/userscripts/raw/master/{script_filename}
+// @updateURL    https://github.com/cbaoth/userscripts/raw/master/{script_filename}
 // ==/UserScript==
 
 (function () {
