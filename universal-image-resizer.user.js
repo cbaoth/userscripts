@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name        Universal Image Resizer
 // @namespace   https://github.com/cbaoth/userscripts
-// @version     2026-05-06
-// @description Resize images on configured sites by CSS selector. Supports per-URL rules with aspect-ratio-preserving modes: %, width, height, longest-edge, shortest-edge.
+// @version     2026-05-07
+// @description Resize images on configured sites by CSS selector. Supports per-URL rules and an element picker for easy rule creation.
 // @author      cbaoth235
 // @license     MIT
 //
@@ -22,6 +22,7 @@
     'use strict';
 
     const STORAGE_KEY = 'imageResizerRules';
+    const PICKER_AUTO_OPEN_KEY = 'imageResizerPickerAutoOpen';
 
     // Format, one rule per line, pipe-separated fields:
     //   url-pattern | css-selector | size [| filter[,filter…]]
@@ -89,14 +90,13 @@
 # Match gallery and album paths via regex; longest edge 400 px; skip small + huge:
 # /https?:\\/\\/(www\\.)?example\\.com\\/(gallery|album)\\//i | img.photo | le:400 | min:50,max:2000
 
-# Constrain oversized preview images to 600 px longest edge (only affects images > 600 px):
+# Constrain oversized previews to 600 px longest edge (only affects images > 600 px):
 # *://example.com/* | img.preview | le:600 | min:601
 `;
 
     /*** Rule parsing ***/
 
     function parseUrlPattern(src) {
-        // Regex rule: /pattern/flags
         if (src.startsWith('/')) {
             const lastSlash = src.lastIndexOf('/');
             if (lastSlash > 0) {
@@ -108,7 +108,6 @@
                 }
             }
         }
-        // Glob rule: escape regex special chars, then * → .*
         try {
             const escaped = src.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
             return { regex: new RegExp('^' + escaped + '$', 'i') };
@@ -181,9 +180,7 @@
                 continue;
             }
 
-            const filters = parseFilters(rawFilter);
-
-            result.push({ urlPattern, selector, size, filters });
+            result.push({ urlPattern, selector, size, filters: parseFilters(rawFilter) });
         }
         return result;
     }
@@ -216,9 +213,8 @@
     function applyResize(img, size) {
         const nw = img.naturalWidth;
         const nh = img.naturalHeight;
-        if (!nw || !nh) return; // image not loaded or broken
+        if (!nw || !nh) return;
 
-        // Remove constraining CSS the page may have applied
         img.style.setProperty('max-width', 'none', 'important');
         img.style.setProperty('max-height', 'none', 'important');
         img.style.setProperty('min-width', '0', 'important');
@@ -279,7 +275,6 @@
         }
     }
 
-    // Process all images in `root` against the active rules
     function processImages(activeRules, root = document) {
         for (const rule of activeRules) {
             let targets;
@@ -290,14 +285,12 @@
                 continue;
             }
             for (const el of targets) {
-                // Selector may target an <img> directly or a wrapper containing one
                 const img = el.tagName === 'IMG' ? el : el.querySelector('img');
                 if (img) scheduleResize(img, rule);
             }
         }
     }
 
-    // Watch for dynamically added images and lazy src changes
     function observeMutations(activeRules) {
         const observer = new MutationObserver((mutations) => {
             for (const mutation of mutations) {
@@ -310,16 +303,15 @@
                                 try {
                                     if (img.matches(rule.selector)) scheduleResize(img, rule);
                                 } catch {
-                                    /* invalid selector already warned during initial pass */
+                                    /* invalid selector already warned */
                                 }
                             }
                         }
                     }
                 }
-                // src set on an already-present img (lazy-loading via JS)
                 if (mutation.type === 'attributes' && mutation.target.tagName === 'IMG') {
                     const img = mutation.target;
-                    applied.delete(img); // allow fresh resize after src change
+                    applied.delete(img);
                     for (const rule of activeRules) {
                         try {
                             if (img.matches(rule.selector)) scheduleResize(img, rule);
@@ -330,7 +322,6 @@
                 }
             }
         });
-
         observer.observe(document.body ?? document.documentElement, {
             childList: true,
             subtree: true,
@@ -339,13 +330,394 @@
         });
     }
 
+    /*** Element picker ***/
+
+    // Classes that are too generic or layout-only to be useful in a selector.
+    // Presence of only these on an element means we skip it and walk further up.
+    const JUNK_CLASS_RE =
+        /^(d-|col-|row$|container$|wrapper$|wrap$|clearfix$|active$|selected$|disabled$|hidden$|show$|hide$|open$|closed$|flex$|grid$|mt-|mb-|ml-|mr-|ms-|me-|pt-|pb-|pl-|pr-|ps-|pe-|p-|px-|py-|mx-|my-|m-|text-|bg-|border-|float-|w-|h-|fs-|fw-|lh-|align-|justify-|overflow-|position-|z-|gap-|g-|gy-|gx-|is-|js-|has-|no-)/i;
+
+    function isUsefulClass(c) {
+        return c.length >= 2 && !JUNK_CLASS_RE.test(c);
+    }
+
+    // Inject the outline preview <style> tag once
+    function ensurePickerStyles() {
+        if (document.getElementById('img-resizer-picker-style')) return;
+        const style = document.createElement('style');
+        style.id = 'img-resizer-picker-style';
+        style.textContent =
+            '[data-irp-preview]{outline:3px solid #f0a500!important;outline-offset:2px!important;border-radius:2px}';
+        (document.head ?? document.documentElement).appendChild(style);
+    }
+
+    function setPreviewOutlines(selector) {
+        clearPreviewOutlines();
+        if (!selector) return;
+        try {
+            for (const el of document.querySelectorAll(selector)) {
+                const img = el.tagName === 'IMG' ? el : el.querySelector('img');
+                if (img) img.setAttribute('data-irp-preview', '1');
+            }
+        } catch {
+            /* invalid selector */
+        }
+    }
+
+    function clearPreviewOutlines() {
+        for (const el of document.querySelectorAll('[data-irp-preview]')) el.removeAttribute('data-irp-preview');
+    }
+
+    // Walk up from the clicked/touched element to find the nearest ancestor
+    // that is an <img> or directly contains at least one <img>.
+    function findPickTarget(x, y) {
+        let el = document.elementFromPoint(x, y);
+        while (el && el !== document.documentElement) {
+            if (el.tagName === 'IMG') return el;
+            if (el.querySelector('img')) return el;
+            el = el.parentElement;
+        }
+        return null;
+    }
+
+    // Generate an ordered list of CSS selector candidates for a picked element.
+    // Returns [{selector, count}], most specific / most useful first.
+    function generateCandidates(el) {
+        const isImg = el.tagName === 'IMG';
+        const results = [];
+
+        // Case: the img itself has useful classes → bare img.class selector
+        if (isImg) {
+            const good = [...el.classList].filter(isUsefulClass);
+            if (good.length > 0) results.push('img.' + good.slice(0, 2).join('.'));
+        }
+
+        // Walk up the tree from the img's parent (or el itself if not img)
+        let node = isImg ? el.parentElement : el;
+        let depth = 0;
+        while (node && node !== document.documentElement && depth < 5) {
+            const tag = node.tagName.toLowerCase();
+
+            // ID-based (most precise)
+            if (node.id && /^[a-zA-Z][a-zA-Z0-9_-]*$/.test(node.id)) results.push(`#${node.id} img`);
+
+            const good = [...node.classList].filter(isUsefulClass);
+            if (good.length > 0) {
+                const c1 = good[0];
+                const c12 = good
+                    .slice(0, 2)
+                    .map((c) => '.' + c)
+                    .join('');
+                if (good.length >= 2) results.push(`${tag}${c12} img`); // tag.c1.c2 img
+                results.push(`${tag}.${c1} img`); // tag.c1 img
+                results.push(`.${c1} img`); // .c1 img (tag-agnostic)
+            }
+
+            node = node.parentElement;
+            depth++;
+        }
+
+        // Always offer bare img as last-resort fallback
+        results.push('img');
+
+        // Deduplicate, annotate with match counts, drop zero-matches
+        const seen = new Set();
+        return results
+            .filter((s) => {
+                if (seen.has(s)) return false;
+                seen.add(s);
+                return true;
+            })
+            .map((selector) => {
+                let count = 0;
+                try {
+                    count = document.querySelectorAll(selector).length;
+                } catch {}
+                return { selector, count };
+            })
+            .filter((c) => c.count > 0)
+            .slice(0, 7);
+    }
+
+    // Build a compact HTML snippet of the picked element for the comment
+    function elSnippet(el) {
+        const tag = el.tagName.toLowerCase();
+        const id = el.id ? ` id="${el.id}"` : '';
+        const cls = el.classList.length ? ` class="${[...el.classList].slice(0, 4).join(' ')}"` : '';
+        return `<${tag}${id}${cls}>`;
+    }
+
+    function startPicker() {
+        // Clean up any leftover picker UI
+        document.getElementById('img-resizer-picker-ui')?.remove();
+        clearPreviewOutlines();
+        ensurePickerStyles();
+
+        // Instruction banner (pointer-events: none so it doesn't block clicks)
+        const banner = document.createElement('div');
+        banner.id = 'img-resizer-picker-ui';
+        Object.assign(banner.style, {
+            position: 'fixed',
+            top: '0',
+            left: '0',
+            right: '0',
+            zIndex: '2147483647',
+            background: 'rgba(14,99,156,0.92)',
+            color: '#fff',
+            padding: '10px 16px',
+            fontFamily: 'sans-serif',
+            fontSize: '14px',
+            textAlign: 'center',
+            pointerEvents: 'none',
+            userSelect: 'none',
+        });
+        banner.textContent = '🎯 Click any thumbnail — Esc to cancel';
+        document.documentElement.appendChild(banner);
+
+        // Hover highlight box
+        const hlBox = document.createElement('div');
+        Object.assign(hlBox.style, {
+            position: 'fixed',
+            zIndex: '2147483646',
+            pointerEvents: 'none',
+            border: '2px solid #4ec9b0',
+            background: 'rgba(78,201,176,0.08)',
+            boxSizing: 'border-box',
+            display: 'none',
+        });
+        document.documentElement.appendChild(hlBox);
+
+        let currentTarget = null;
+
+        function updateHighlight(x, y) {
+            const target = findPickTarget(x, y);
+            if (target === currentTarget) return;
+            currentTarget = target;
+            if (target) {
+                const r = target.getBoundingClientRect();
+                Object.assign(hlBox.style, {
+                    display: 'block',
+                    top: r.top + 'px',
+                    left: r.left + 'px',
+                    width: r.width + 'px',
+                    height: r.height + 'px',
+                });
+            } else {
+                hlBox.style.display = 'none';
+            }
+        }
+
+        function cleanup() {
+            banner.remove();
+            hlBox.remove();
+            document.removeEventListener('mousemove', onMouseMove, true);
+            document.removeEventListener('touchstart', onTouchStart, true);
+            document.removeEventListener('click', onClick, true);
+            document.removeEventListener('keydown', onKey, true);
+        }
+
+        function onMouseMove(e) {
+            updateHighlight(e.clientX, e.clientY);
+        }
+
+        // touchstart sets currentTarget so it's available when click fires
+        function onTouchStart(e) {
+            const t = e.touches[0];
+            if (t) updateHighlight(t.clientX, t.clientY);
+        }
+
+        function onClick(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            cleanup();
+            if (!currentTarget) return;
+            const candidates = generateCandidates(currentTarget);
+            showCandidatePanel(candidates, currentTarget);
+        }
+
+        function onKey(e) {
+            if (e.key === 'Escape') cleanup();
+        }
+
+        document.addEventListener('mousemove', onMouseMove, true);
+        document.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
+        document.addEventListener('click', onClick, true);
+        document.addEventListener('keydown', onKey, true);
+    }
+
+    async function showCandidatePanel(candidates, pickedEl) {
+        if (!candidates.length) {
+            // Shouldn't happen often, but handle gracefully
+            alert(
+                '[Image Resizer] No image-containing elements found at that location. Try clicking directly on a thumbnail.'
+            );
+            return;
+        }
+
+        // Default selection: first candidate whose count falls in a thumbnail-like range
+        let selectedIdx = 0;
+        for (let i = 0; i < candidates.length; i++) {
+            if (candidates[i].count >= 1 && candidates[i].count <= 150) {
+                selectedIdx = i;
+                break;
+            }
+        }
+
+        setPreviewOutlines(candidates[selectedIdx].selector);
+
+        const autoOpen = await GM.getValue(PICKER_AUTO_OPEN_KEY, true);
+
+        const panel = document.createElement('div');
+        panel.id = 'img-resizer-picker-ui';
+        Object.assign(panel.style, {
+            position: 'fixed',
+            bottom: '0',
+            left: '0',
+            right: '0',
+            zIndex: '2147483647',
+            background: '#1e1e1e',
+            color: '#d4d4d4',
+            padding: '14px 16px 16px',
+            fontFamily: 'sans-serif',
+            fontSize: '13px',
+            boxShadow: '0 -4px 24px rgba(0,0,0,0.55)',
+            maxHeight: '55vh',
+            overflowY: 'auto',
+        });
+
+        const ptitle = document.createElement('div');
+        Object.assign(ptitle.style, { fontWeight: 'bold', color: '#fff', marginBottom: '8px', fontSize: '14px' });
+        ptitle.textContent = '🎯 Select a selector — tap to preview outlines';
+
+        // Candidate rows
+        const list = document.createElement('div');
+        Object.assign(list.style, { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' });
+
+        const rows = candidates.map((c, i) => {
+            const row = document.createElement('div');
+            Object.assign(row.style, {
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 10px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                background: i === selectedIdx ? '#0e639c' : '#2d2d2d',
+                border: i === selectedIdx ? '1px solid #4ec9b0' : '1px solid transparent',
+                userSelect: 'none',
+            });
+
+            const code = document.createElement('code');
+            Object.assign(code.style, { flex: '1', fontSize: '12px', wordBreak: 'break-all', color: '#9cdcfe' });
+            code.textContent = c.selector;
+
+            const badge = document.createElement('span');
+            Object.assign(badge.style, {
+                background: '#333',
+                color: '#888',
+                borderRadius: '10px',
+                padding: '2px 8px',
+                fontSize: '11px',
+                whiteSpace: 'nowrap',
+            });
+            badge.textContent = `${c.count} img${c.count !== 1 ? 's' : ''}`;
+
+            row.append(code, badge);
+            row.addEventListener('click', () => {
+                selectedIdx = i;
+                rows.forEach((r, j) =>
+                    Object.assign(r.style, {
+                        background: j === i ? '#0e639c' : '#2d2d2d',
+                        border: j === i ? '1px solid #4ec9b0' : '1px solid transparent',
+                    })
+                );
+                setPreviewOutlines(c.selector);
+            });
+
+            list.appendChild(row);
+            return row;
+        });
+
+        // Picked element context (helps user tweak the selector without DevTools)
+        const hint = document.createElement('div');
+        Object.assign(hint.style, {
+            fontSize: '11px',
+            color: '#666',
+            fontFamily: 'monospace',
+            marginBottom: '8px',
+            wordBreak: 'break-all',
+        });
+        hint.textContent = `Picked: ${elSnippet(pickedEl)}`;
+
+        // Auto-open checkbox
+        const cbLabel = document.createElement('label');
+        Object.assign(cbLabel.style, {
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '12px',
+            color: '#888',
+            cursor: 'pointer',
+            marginBottom: '10px',
+        });
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = autoOpen;
+        cb.addEventListener('change', () => GM.setValue(PICKER_AUTO_OPEN_KEY, cb.checked));
+        cbLabel.append(cb, 'Open settings after adding rule');
+
+        // Buttons
+        const btnRow = document.createElement('div');
+        Object.assign(btnRow.style, { display: 'flex', gap: '8px', justifyContent: 'flex-end' });
+
+        const btnCancel = makeBtn('Cancel', '#333', '#ccc');
+        const btnAdd = makeBtn('Add Rule', '#0e639c');
+
+        btnCancel.addEventListener('click', () => {
+            panel.remove();
+            clearPreviewOutlines();
+        });
+
+        btnAdd.addEventListener('click', async () => {
+            panel.remove();
+            clearPreviewOutlines();
+
+            const chosen = candidates[selectedIdx];
+            const urlPat = `*://${location.hostname}/*`;
+            const altLines = candidates
+                .filter((_, i) => i !== selectedIdx)
+                .map((c) => `# alt: ${c.selector} (${c.count} img${c.count !== 1 ? 's' : ''})`)
+                .join('\n');
+
+            const block = [
+                `# [picker] ${elSnippet(pickedEl)} — ${chosen.count} img${chosen.count !== 1 ? 's' : ''} matched`,
+                altLines,
+                `# Adjust size (le:250 is a placeholder) and URL pattern if needed`,
+                `${urlPat} | ${chosen.selector} | le:250 | min:32`,
+                '',
+            ]
+                .filter((l) => l !== null)
+                .join('\n');
+
+            const stored = await GM.getValue(STORAGE_KEY, null);
+            await GM.setValue(STORAGE_KEY, (stored ?? DEFAULT_RULES).trimEnd() + '\n\n' + block);
+            await loadRules();
+
+            if (cb.checked) openSettings();
+        });
+
+        btnRow.append(btnCancel, btnAdd);
+        panel.append(ptitle, list, hint, cbLabel, btnRow);
+        document.documentElement.appendChild(panel);
+    }
+
     /*** Settings panel ***/
 
     function openSettings() {
-        document.getElementById('image-resizer-panel')?.remove();
+        document.getElementById('image-resizer-settings')?.remove();
 
         const overlay = document.createElement('div');
-        overlay.id = 'image-resizer-panel';
+        overlay.id = 'image-resizer-settings';
         Object.assign(overlay.style, {
             position: 'fixed',
             inset: '0',
@@ -416,6 +788,8 @@
 
         GM.getValue(STORAGE_KEY, null).then((stored) => {
             textarea.value = stored ?? DEFAULT_RULES;
+            // Scroll to bottom so newly picker-added rules are visible
+            textarea.scrollTop = textarea.scrollHeight;
         });
 
         const statusLine = document.createElement('div');
@@ -433,21 +807,6 @@
             marginTop: '10px',
             justifyContent: 'flex-end',
         });
-
-        function makeBtn(label, bg, color = '#fff') {
-            const btn = document.createElement('button');
-            btn.textContent = label;
-            Object.assign(btn.style, {
-                padding: '6px 14px',
-                background: bg,
-                color,
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '13px',
-            });
-            return btn;
-        }
 
         const btnReset = makeBtn('Reset to Default', '#444', '#ccc');
         const btnValidate = makeBtn('Validate', '#3a3a3a', '#9cdcfe');
@@ -499,6 +858,23 @@
         textarea.focus();
     }
 
+    /*** Shared UI helper ***/
+
+    function makeBtn(label, bg, color = '#fff') {
+        const btn = document.createElement('button');
+        btn.textContent = label;
+        Object.assign(btn.style, {
+            padding: '7px 14px',
+            background: bg,
+            color,
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '13px',
+        });
+        return btn;
+    }
+
     /*** Init ***/
 
     await loadRules();
@@ -509,5 +885,6 @@
         observeMutations(activeRules);
     }
 
-    GM_registerMenuCommand('Edit Image Resize Rules', openSettings);
+    GM_registerMenuCommand('🎯 Pick Element', startPicker);
+    GM_registerMenuCommand('⚙️ Edit Resize Rules', openSettings);
 })();
