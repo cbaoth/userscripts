@@ -36,3 +36,6 @@ Scripts that have not had functional updates in 3+ years — verify each still w
 
 - [ ] `emoji-replacer.user.js`
   - [ ] Consider adding globale include/exclude list for hosts and or per sule/section conditions (e.g. apply mapping rule(s) only on specific social media websites)
+
+- [ ] `universal-image-resizer.user.js`
+  - [ ] Picker: add match-count range filter to candidate list — allow user to specify min/max number of matched images (e.g. 80–120) so candidates can be narrowed down when depth is high and many selectors are found. Useful when you know roughly how many images a page section should contain (e.g. a search result grid).
