@@ -38,8 +38,9 @@
 - Format: `YYYY-MM-DD` (e.g. `2025-12-24`)
 - Add time suffix `YYYY-MM-DDTHHmmss` only if multiple releases in one day
 - Version = date of last **functional** change; new scripts use creation date
-- **Functional metadata** (bump version): `@match`, `@include`, `@exclude`, `@grant`, `@require`, `@resource`, `@run-at` — these affect script behavior or permissions
-- **Non-functional metadata** (no bump needed): `@name`, `@description`, `@author`, `@namespace`, `@icon`, `@license`, `@homepage`
+- **Functional metadata** (bump version): `@match`, `@include`, `@exclude`, `@grant`, `@require`, `@resource`, `@run-at`, `@run-in`, `@connect`, `@sandbox`, `@noframes`, `@webRequest`, `@unwrap` — these affect script behavior or permissions
+- **Non-functional metadata** (no bump needed): `@name`, `@description`, `@author`, `@namespace`, `@icon`, `@icon64`, `@license`, `@copyright`, `@homepage`, `@updateURL`, `@downloadURL`, `@supportURL`, `@antifeature`, `@tag`
+- Find online documentation here: https://www.tampermonkey.net/documentation.php
 
 ## Stale Scripts
 
