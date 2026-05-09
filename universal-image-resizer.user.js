@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name        Universal Image Resizer
 // @namespace   https://github.com/cbaoth/userscripts
-// @version     2026-05-07
-// @description Resize images on configured sites by CSS selector. Supports per-URL rules and an element picker for easy rule creation.
+// @version     2026-05-09T120000
+// @description Resize images on configured sites by CSS selector. Supports per-URL rules, hover zoom, container-fix, and an element picker for easy rule creation.
 // @author      cbaoth235
 // @license     MIT
 //
@@ -20,12 +20,19 @@
 
 (async function () {
     'use strict';
+    /* eslint-disable no-console */
 
     const STORAGE_KEY = 'imageResizerRules';
     const PICKER_AUTO_OPEN_KEY = 'imageResizerPickerAutoOpen';
+    const PICKER_DEPTH_KEY = 'imageResizerPickerDepth';
+    const PICKER_DEPTH_DEFAULT = 5;
+    const HOVER_CLASS = 'irr-hover';
 
     // Format, one rule per line, pipe-separated fields:
-    //   url-pattern | css-selector | size [| filter[,filter…]]
+    //   url-pattern | css-selector | size | options | hover-size
+    //
+    // Fields 4 (options) and 5 (hover-size) are optional.
+    // Use '-' for size to skip static resizing (hover-only rule; hover-size is then required).
     //
     // URL pattern:
     //   Glob:   *://example.com/path/*   (* matches any characters incl. /)
@@ -39,22 +46,31 @@
     //     div.post img              images inside div.post
     //     a[href*="/full/"] img     images linked to URLs containing /full/
     //
-    // Size  — aspect ratio is always preserved:
+    // Size  — aspect ratio is always preserved (or '-' to skip static resize):
     //   NNN%    scale to NNN% of the image's natural (intrinsic) size
     //   w:NNN   set display width to NNN px  (height scales automatically)
     //   h:NNN   set display height to NNN px (width scales automatically)
     //   le:NNN  longest edge = NNN px
     //   se:NNN  shortest edge = NNN px
     //
-    // Filter (optional 4th field, comma-separated if multiple):
-    //   min:NNN  skip image if natural longest-edge < NNN px (skip icons/spacers)
-    //   max:NNN  skip image if natural longest-edge > NNN px (skip full-size images)
+    // Options (optional 4th field, comma-separated):
+    //   min:NNN        skip image if natural longest-edge < NNN px (skip icons/spacers)
+    //   max:NNN        skip image if natural longest-edge > NNN px (skip full-size images)
+    //   fix-container  loosen ancestor overflow:hidden clipping (always) and override
+    //                  inline/attribute fixed dimensions on ancestor elements (opt-in)
+    //
+    // Hover-size (optional 5th field) — same syntax as size:
+    //   Zooms matched images on hover; intentional visual overlap, layout stays intact.
+    //   Can be combined with static resize or used alone (size = '-').
     //
     // Comments (# or //) and blank lines are ignored.
     const DEFAULT_RULES = `\
 # Image Resizer — Rules
 # One rule per line, pipe-separated fields:
-#   url-pattern | css-selector | size [| filter[,filter…]]
+#   url-pattern | css-selector | size | options | hover-size
+#
+# Fields 4 (options) and 5 (hover-size) are optional.
+# Use '-' for size to skip static resizing (hover-only; hover-size then required).
 #
 # URL pattern:
 #   Glob:   *://example.com/path/*   (* matches any characters incl. /)
@@ -66,16 +82,21 @@
 #   div.post img              images inside div.post
 #   a[href*="/full/"] img     images whose parent link contains /full/
 #
-# Size  (aspect ratio is always preserved):
+# Size  (aspect ratio always preserved, '-' = skip static resize):
 #   NNN%    scale to NNN% of the image's natural (intrinsic) size
 #   w:NNN   set display width to NNN px
 #   h:NNN   set display height to NNN px
 #   le:NNN  longest edge = NNN px
 #   se:NNN  shortest edge = NNN px
 #
-# Filter (optional 4th field, comma-separate multiple):
-#   min:NNN  skip if natural longest edge < NNN px  (skip icons / spacers)
-#   max:NNN  skip if natural longest edge > NNN px  (skip full-size images)
+# Options (optional 4th field, comma-separate multiple):
+#   min:NNN        skip if natural longest edge < NNN px  (skip icons / spacers)
+#   max:NNN        skip if natural longest edge > NNN px  (skip full-size images)
+#   fix-container  loosen ancestor constraints to prevent clipping / layout breakage
+#
+# Hover-size (optional 5th field) — same syntax as size:
+#   Images zoom to this size on hover; visual overlap is intentional.
+#   Use alone with '-' size, or combine with a static resize.
 #
 # Comments (#, //) and blank lines are ignored.
 
@@ -92,6 +113,15 @@
 
 # Constrain oversized previews to 600 px longest edge (only affects images > 600 px):
 # *://example.com/* | img.preview | le:600 | min:601
+
+# Old HTML table gallery — resize thumbnails and fix container clipping:
+# *://oldsite.example.com/gallery/* | td img | le:200 | min:32,fix-container
+
+# Hover-only zoom — leave page layout intact, zoom in on hover:
+# *://example.com/* | .thumb img | - | min:32 | le:600
+
+# Static resize + further hover zoom:
+# *://example.com/* | .thumb img | le:150 | min:32 | le:700
 `;
 
     /*** Rule parsing ***/
@@ -134,15 +164,19 @@
         return null;
     }
 
-    function parseFilters(s) {
-        if (!s || !s.trim()) return [];
-        return s.split(',').flatMap((token) => {
+    // Parses the options field (field 4): filters + boolean flags.
+    function parseOptions(s) {
+        const result = { filters: [], fixContainer: false };
+        if (!s || !s.trim()) return result;
+        for (const token of s.split(',')) {
             const t = token.trim();
-            if (/^min:\d+$/i.test(t)) return [{ type: 'min', value: parseInt(t.slice(4)) }];
-            if (/^max:\d+$/i.test(t)) return [{ type: 'max', value: parseInt(t.slice(4)) }];
-            console.warn('[image-resizer] Unknown filter token:', t);
-            return [];
-        });
+            if (!t) continue;
+            if (/^min:\d+$/i.test(t)) result.filters.push({ type: 'min', value: parseInt(t.slice(4)) });
+            else if (/^max:\d+$/i.test(t)) result.filters.push({ type: 'max', value: parseInt(t.slice(4)) });
+            else if (t === 'fix-container') result.fixContainer = true;
+            else console.warn('[image-resizer] Unknown option token:', t);
+        }
+        return result;
     }
 
     function parseRules(text) {
@@ -162,7 +196,7 @@
                 continue;
             }
 
-            const [rawPattern, selector, rawSize, rawFilter] = fields;
+            const [rawPattern, selector, rawSize] = fields;
 
             const urlPattern = parseUrlPattern(rawPattern);
             if (!urlPattern) continue;
@@ -172,15 +206,29 @@
                 continue;
             }
 
-            const size = parseSize(rawSize);
-            if (!size) {
+            const isNoop = rawSize === '-';
+            const size = isNoop ? null : parseSize(rawSize);
+            if (!isNoop && !size) {
                 console.warn(
-                    `[image-resizer] Line ${lineNum}: invalid size spec "${rawSize}" — expected e.g. le:250, w:300, 150%`
+                    `[image-resizer] Line ${lineNum}: invalid size "${rawSize}" — expected e.g. le:250, w:300, 150%, or '-'`
                 );
                 continue;
             }
 
-            result.push({ urlPattern, selector, size, filters: parseFilters(rawFilter) });
+            const options = parseOptions(fields[3]);
+
+            const hoverSize = fields[4] ? parseSize(fields[4]) : null;
+            if (fields[4] && !hoverSize) {
+                console.warn(`[image-resizer] Line ${lineNum}: invalid hover-size "${fields[4]}"`);
+                continue;
+            }
+
+            if (!size && !hoverSize) {
+                console.warn(`[image-resizer] Line ${lineNum}: '-' size requires a hover-size in field 5`);
+                continue;
+            }
+
+            result.push({ urlPattern, selector, size, options, hoverSize });
         }
         return result;
     }
@@ -210,11 +258,9 @@
         return true;
     }
 
-    function applyResize(img, size) {
-        const nw = img.naturalWidth;
-        const nh = img.naturalHeight;
-        if (!nw || !nh) return;
-
+    // Set size-related inline styles on img given its natural dimensions.
+    // Clears any site constraints (max-width etc.) first.
+    function applySizeProps(img, nw, nh, size) {
         img.style.setProperty('max-width', 'none', 'important');
         img.style.setProperty('max-height', 'none', 'important');
         img.style.setProperty('min-width', '0', 'important');
@@ -250,8 +296,43 @@
         }
     }
 
+    // Walk up ancestor chain and loosen layout constraints.
+    // Option A (always): clear overflow:hidden so enlarged images aren't clipped.
+    // Option B (fix-container): also override inline/attribute fixed dimensions.
+    function looseAncestors(img, fixContainer) {
+        let node = img.parentElement;
+        let d = 0;
+        while (node && node !== document.documentElement && d < 6) {
+            const cs = window.getComputedStyle(node);
+            if (cs.overflow === 'hidden') node.style.setProperty('overflow', 'visible', 'important');
+            if (cs.overflowX === 'hidden') node.style.setProperty('overflow-x', 'visible', 'important');
+            if (cs.overflowY === 'hidden') node.style.setProperty('overflow-y', 'visible', 'important');
+            if (fixContainer) {
+                // Clear inline styles and HTML attributes that impose fixed dimensions
+                if (node.style.width || node.hasAttribute('width'))
+                    node.style.setProperty('width', 'auto', 'important');
+                if (node.style.height || node.hasAttribute('height'))
+                    node.style.setProperty('height', 'auto', 'important');
+                if (node.style.maxWidth) node.style.setProperty('max-width', 'none', 'important');
+                if (node.style.maxHeight) node.style.setProperty('max-height', 'none', 'important');
+            }
+            node = node.parentElement;
+            d++;
+        }
+    }
+
+    function applyResize(img, size, fixContainer = false) {
+        const nw = img.naturalWidth;
+        const nh = img.naturalHeight;
+        if (!nw || !nh) return;
+        applySizeProps(img, nw, nh, size);
+        looseAncestors(img, fixContainer);
+    }
+
     // WeakMap<img, Set<rule>> — prevents scheduling the same img+rule pair twice
     const applied = new WeakMap();
+    // WeakMap<img, rule[]> — hover rules registered for each img
+    const hoverRules = new WeakMap();
 
     function scheduleResize(img, rule) {
         let ruleSet = applied.get(img);
@@ -262,10 +343,24 @@
         if (ruleSet.has(rule)) return;
         ruleSet.add(rule);
 
+        // Register hover rule immediately (class added before image loads)
+        if (rule.hoverSize) {
+            let list = hoverRules.get(img);
+            if (!list) {
+                list = [];
+                hoverRules.set(img, list);
+            }
+            if (!list.includes(rule)) {
+                list.push(rule);
+                img.classList.add(HOVER_CLASS);
+            }
+        }
+
         const doResize = () => {
             if (!img.naturalWidth || !img.naturalHeight) return;
-            if (!passesFilters(img, rule.filters)) return;
-            applyResize(img, rule.size);
+            if (!passesFilters(img, rule.options.filters)) return;
+            if (rule.size) applyResize(img, rule.size, rule.options.fixContainer);
+            else if (rule.options.fixContainer) looseAncestors(img, true);
         };
 
         if (img.complete && img.naturalWidth > 0) {
@@ -330,6 +425,59 @@
         });
     }
 
+    /*** Hover zoom ***/
+
+    function ensureHoverStyles() {
+        if (document.getElementById('img-resizer-hover-style')) return;
+        const style = document.createElement('style');
+        style.id = 'img-resizer-hover-style';
+        // position:relative establishes a stacking context so z-index works;
+        // transition smooths the resize on mouseover/mouseout.
+        style.textContent = `img.${HOVER_CLASS} { position: relative; transition: width 0.25s ease, height 0.25s ease; }`;
+        (document.head ?? document.documentElement).appendChild(style);
+    }
+
+    function applyHoverResize(img, hoverSize) {
+        const nw = img.naturalWidth,
+            nh = img.naturalHeight;
+        if (!nw || !nh) return;
+        img.dataset.irrPreHover = img.style.cssText; // save for restore
+        applySizeProps(img, nw, nh, hoverSize);
+        img.style.setProperty('z-index', '9999', 'important');
+        img.style.setProperty('position', 'relative', 'important');
+    }
+
+    function restoreHoverResize(img) {
+        if (!('irrPreHover' in img.dataset)) return;
+        img.style.cssText = img.dataset.irrPreHover;
+        delete img.dataset.irrPreHover;
+    }
+
+    function setupHoverDelegation() {
+        ensureHoverStyles();
+        document.addEventListener(
+            'mouseover',
+            (e) => {
+                const img = e.target;
+                if (img.tagName !== 'IMG' || !img.classList.contains(HOVER_CLASS)) return;
+                if ('irrPreHover' in img.dataset) return; // already zoomed
+                const list = hoverRules.get(img);
+                if (!list?.length) return;
+                applyHoverResize(img, list[list.length - 1].hoverSize);
+            },
+            true
+        );
+        document.addEventListener(
+            'mouseout',
+            (e) => {
+                const img = e.target;
+                if (img.tagName !== 'IMG' || !img.classList.contains(HOVER_CLASS)) return;
+                restoreHoverResize(img);
+            },
+            true
+        );
+    }
+
     /*** Element picker ***/
 
     // Classes that are too generic or layout-only to be useful in a selector.
@@ -382,7 +530,7 @@
 
     // Generate an ordered list of CSS selector candidates for a picked element.
     // Returns [{selector, count}], most specific / most useful first.
-    function generateCandidates(el) {
+    function generateCandidates(el, depth = PICKER_DEPTH_DEFAULT) {
         const isImg = el.tagName === 'IMG';
         const results = [];
 
@@ -394,8 +542,8 @@
 
         // Walk up the tree from the img's parent (or el itself if not img)
         let node = isImg ? el.parentElement : el;
-        let depth = 0;
-        while (node && node !== document.documentElement && depth < 5) {
+        let d = 0;
+        while (node && node !== document.documentElement && d < depth) {
             const tag = node.tagName.toLowerCase();
 
             // ID-based (most precise)
@@ -414,7 +562,7 @@
             }
 
             node = node.parentElement;
-            depth++;
+            d++;
         }
 
         // Always offer bare img as last-resort fallback
@@ -435,8 +583,7 @@
                 } catch {}
                 return { selector, count };
             })
-            .filter((c) => c.count > 0)
-            .slice(0, 7);
+            .filter((c) => c.count > 0);
     }
 
     // Build a compact HTML snippet of the picked element for the comment
@@ -531,8 +678,7 @@
             e.stopPropagation();
             cleanup();
             if (!currentTarget) return;
-            const candidates = generateCandidates(currentTarget);
-            showCandidatePanel(candidates, currentTarget);
+            showCandidatePanel(currentTarget);
         }
 
         function onKey(e) {
@@ -545,27 +691,16 @@
         document.addEventListener('keydown', onKey, true);
     }
 
-    async function showCandidatePanel(candidates, pickedEl) {
-        if (!candidates.length) {
-            // Shouldn't happen often, but handle gracefully
-            alert(
-                '[Image Resizer] No image-containing elements found at that location. Try clicking directly on a thumbnail.'
-            );
-            return;
-        }
+    async function showCandidatePanel(pickedEl) {
+        const [autoOpen, savedDepth] = await Promise.all([
+            GM.getValue(PICKER_AUTO_OPEN_KEY, true),
+            GM.getValue(PICKER_DEPTH_KEY, PICKER_DEPTH_DEFAULT),
+        ]);
 
-        // Default selection: first candidate whose count falls in a thumbnail-like range
+        let currentDepth = savedDepth;
+        let candidates = generateCandidates(pickedEl, currentDepth);
         let selectedIdx = 0;
-        for (let i = 0; i < candidates.length; i++) {
-            if (candidates[i].count >= 1 && candidates[i].count <= 150) {
-                selectedIdx = i;
-                break;
-            }
-        }
-
-        setPreviewOutlines(candidates[selectedIdx].selector);
-
-        const autoOpen = await GM.getValue(PICKER_AUTO_OPEN_KEY, true);
+        let rows = [];
 
         const panel = document.createElement('div');
         panel.id = 'img-resizer-picker-ui';
@@ -581,62 +716,94 @@
             fontFamily: 'sans-serif',
             fontSize: '13px',
             boxShadow: '0 -4px 24px rgba(0,0,0,0.55)',
-            maxHeight: '55vh',
-            overflowY: 'auto',
         });
 
         const ptitle = document.createElement('div');
         Object.assign(ptitle.style, { fontWeight: 'bold', color: '#fff', marginBottom: '8px', fontSize: '14px' });
         ptitle.textContent = '🎯 Select a selector — tap to preview outlines';
 
-        // Candidate rows
+        // Scrollable candidate list
         const list = document.createElement('div');
-        Object.assign(list.style, { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' });
-
-        const rows = candidates.map((c, i) => {
-            const row = document.createElement('div');
-            Object.assign(row.style, {
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '8px 10px',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                background: i === selectedIdx ? '#0e639c' : '#2d2d2d',
-                border: i === selectedIdx ? '1px solid #4ec9b0' : '1px solid transparent',
-                userSelect: 'none',
-            });
-
-            const code = document.createElement('code');
-            Object.assign(code.style, { flex: '1', fontSize: '12px', wordBreak: 'break-all', color: '#9cdcfe' });
-            code.textContent = c.selector;
-
-            const badge = document.createElement('span');
-            Object.assign(badge.style, {
-                background: '#333',
-                color: '#888',
-                borderRadius: '10px',
-                padding: '2px 8px',
-                fontSize: '11px',
-                whiteSpace: 'nowrap',
-            });
-            badge.textContent = `${c.count} img${c.count !== 1 ? 's' : ''}`;
-
-            row.append(code, badge);
-            row.addEventListener('click', () => {
-                selectedIdx = i;
-                rows.forEach((r, j) =>
-                    Object.assign(r.style, {
-                        background: j === i ? '#0e639c' : '#2d2d2d',
-                        border: j === i ? '1px solid #4ec9b0' : '1px solid transparent',
-                    })
-                );
-                setPreviewOutlines(c.selector);
-            });
-
-            list.appendChild(row);
-            return row;
+        Object.assign(list.style, {
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+            marginBottom: '8px',
+            maxHeight: 'min(240px, 35vh)',
+            overflowY: 'auto',
         });
+
+        function renderList(newCandidates) {
+            candidates = newCandidates;
+            // Default selection: first candidate in a thumbnail-like count range
+            selectedIdx = 0;
+            for (let i = 0; i < candidates.length; i++) {
+                if (candidates[i].count >= 1 && candidates[i].count <= 150) {
+                    selectedIdx = i;
+                    break;
+                }
+            }
+
+            list.innerHTML = '';
+
+            if (!candidates.length) {
+                const empty = document.createElement('div');
+                Object.assign(empty.style, { color: '#888', fontSize: '12px', padding: '6px 2px' });
+                empty.textContent = 'No matching selectors found — try increasing depth.';
+                list.appendChild(empty);
+                clearPreviewOutlines();
+                return;
+            }
+
+            rows = candidates.map((c, i) => {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 10px',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    background: i === selectedIdx ? '#0e639c' : '#2d2d2d',
+                    border: i === selectedIdx ? '1px solid #4ec9b0' : '1px solid transparent',
+                    userSelect: 'none',
+                });
+
+                const code = document.createElement('code');
+                Object.assign(code.style, { flex: '1', fontSize: '12px', wordBreak: 'break-all', color: '#9cdcfe' });
+                code.textContent = c.selector;
+
+                const badge = document.createElement('span');
+                Object.assign(badge.style, {
+                    background: '#333',
+                    color: '#888',
+                    borderRadius: '10px',
+                    padding: '2px 8px',
+                    fontSize: '11px',
+                    whiteSpace: 'nowrap',
+                });
+                badge.textContent = `${c.count} img${c.count !== 1 ? 's' : ''}`;
+
+                row.append(code, badge);
+                row.addEventListener('click', () => {
+                    selectedIdx = i;
+                    rows.forEach((r, j) =>
+                        Object.assign(r.style, {
+                            background: j === i ? '#0e639c' : '#2d2d2d',
+                            border: j === i ? '1px solid #4ec9b0' : '1px solid transparent',
+                        })
+                    );
+                    setPreviewOutlines(c.selector);
+                });
+
+                list.appendChild(row);
+                return row;
+            });
+
+            setPreviewOutlines(candidates[selectedIdx].selector);
+        }
+
+        renderList(candidates);
 
         // Picked element context (helps user tweak the selector without DevTools)
         const hint = document.createElement('div');
@@ -649,7 +816,57 @@
         });
         hint.textContent = `Picked: ${elSnippet(pickedEl)}`;
 
-        // Auto-open checkbox
+        // Controls row: depth spinner + auto-open checkbox
+        const controlsRow = document.createElement('div');
+        Object.assign(controlsRow.style, {
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            marginBottom: '10px',
+            flexWrap: 'wrap',
+        });
+
+        const depthLabel = document.createElement('span');
+        depthLabel.textContent = 'Depth:';
+        depthLabel.title =
+            'How many ancestor elements to walk up when generating CSS selector candidates. ' +
+            'Increase if no suitable selector appears at the default depth (e.g. class is on a parent table or container).';
+        Object.assign(depthLabel.style, { fontSize: '12px', color: '#888', cursor: 'help' });
+
+        const depthDec = makeBtn('−', '#2d2d2d', '#ccc');
+        Object.assign(depthDec.style, { padding: '3px 9px', fontSize: '13px' });
+
+        const depthInput = document.createElement('input');
+        depthInput.type = 'number';
+        depthInput.min = 1;
+        depthInput.max = 20;
+        depthInput.value = currentDepth;
+        Object.assign(depthInput.style, {
+            width: '42px',
+            background: '#2d2d2d',
+            color: '#d4d4d4',
+            border: '1px solid #444',
+            borderRadius: '3px',
+            padding: '3px 4px',
+            fontSize: '12px',
+            textAlign: 'center',
+        });
+
+        const depthInc = makeBtn('+', '#2d2d2d', '#ccc');
+        Object.assign(depthInc.style, { padding: '3px 9px', fontSize: '13px' });
+
+        function applyDepth(newDepth) {
+            currentDepth = Math.max(1, Math.min(20, newDepth));
+            depthInput.value = currentDepth;
+            renderList(generateCandidates(pickedEl, currentDepth));
+            GM.setValue(PICKER_DEPTH_KEY, currentDepth);
+        }
+
+        depthDec.addEventListener('click', () => applyDepth(currentDepth - 1));
+        depthInc.addEventListener('click', () => applyDepth(currentDepth + 1));
+        depthInput.addEventListener('change', () => applyDepth(parseInt(depthInput.value, 10) || PICKER_DEPTH_DEFAULT));
+
+        // Auto-open checkbox (pushed to the right)
         const cbLabel = document.createElement('label');
         Object.assign(cbLabel.style, {
             display: 'flex',
@@ -658,13 +875,15 @@
             fontSize: '12px',
             color: '#888',
             cursor: 'pointer',
-            marginBottom: '10px',
+            marginLeft: 'auto',
         });
         const cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.checked = autoOpen;
         cb.addEventListener('change', () => GM.setValue(PICKER_AUTO_OPEN_KEY, cb.checked));
         cbLabel.append(cb, 'Open settings after adding rule');
+
+        controlsRow.append(depthLabel, depthDec, depthInput, depthInc, cbLabel);
 
         // Buttons
         const btnRow = document.createElement('div');
@@ -683,6 +902,7 @@
             clearPreviewOutlines();
 
             const chosen = candidates[selectedIdx];
+            if (!chosen) return;
             const urlPat = `*://${location.hostname}/*`;
             const altLines = candidates
                 .filter((_, i) => i !== selectedIdx)
@@ -692,7 +912,7 @@
             const block = [
                 `# [picker] ${elSnippet(pickedEl)} — ${chosen.count} img${chosen.count !== 1 ? 's' : ''} matched`,
                 altLines,
-                `# Adjust size (le:250 is a placeholder) and URL pattern if needed`,
+                `# Adjust size, options (min/max/fix-container), and hover-size as needed`,
                 `${urlPat} | ${chosen.selector} | le:250 | min:32`,
                 '',
             ]
@@ -707,7 +927,7 @@
         });
 
         btnRow.append(btnCancel, btnAdd);
-        panel.append(ptitle, list, hint, cbLabel, btnRow);
+        panel.append(ptitle, list, hint, controlsRow, btnRow);
         document.documentElement.appendChild(panel);
     }
 
@@ -749,7 +969,7 @@
 
         const hint = document.createElement('div');
         hint.innerHTML = `Format, one rule per line, pipe-separated fields:
-<br><code style="font-size:11px;color:#9cdcfe">url-pattern | css-selector | size [| filter[,filter…]]</code>
+<br><code style="font-size:11px;color:#9cdcfe">url-pattern | css-selector | size | options | hover-size</code>
 <table style="border-collapse:collapse;width:100%;font-size:11px;color:#aaa;margin-top:6px">
   <tr>
     <td style="padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top"><b style="color:#ccc">URL pattern</b></td>
@@ -761,11 +981,15 @@
   </tr>
   <tr>
     <td style="padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top"><b style="color:#ccc">Size</b></td>
-    <td><code>NNN%</code> · <code>w:NNN</code> · <code>h:NNN</code> · <code>le:NNN</code> (longest edge) · <code>se:NNN</code> (shortest edge) — aspect ratio always preserved</td>
+    <td><code>NNN%</code> · <code>w:NNN</code> · <code>h:NNN</code> · <code>le:NNN</code> (longest edge) · <code>se:NNN</code> (shortest edge) · <code>-</code> (skip, use with hover-size)</td>
   </tr>
   <tr>
-    <td style="padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top"><b style="color:#ccc">Filter</b></td>
-    <td>Optional. <code>min:NNN</code> skip if natural longest edge &lt; NNN px · <code>max:NNN</code> skip if &gt; NNN px · comma-separate multiple</td>
+    <td style="padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top"><b style="color:#ccc">Options</b></td>
+    <td>Optional. <code>min:NNN</code> skip if longest edge &lt; NNN px · <code>max:NNN</code> skip if &gt; NNN px · <code>fix-container</code> loosen ancestor overflow/dimensions · comma-separate multiple</td>
+  </tr>
+  <tr>
+    <td style="padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top"><b style="color:#ccc">Hover-size</b></td>
+    <td>Optional. Same syntax as size. Images zoom to this size on hover (intentional overlap, layout intact). Combine with static size or use alone (<code>-</code>).</td>
   </tr>
 </table>`;
         Object.assign(hint.style, { margin: '0 0 10px', color: '#888', fontSize: '11px' });
@@ -786,11 +1010,19 @@
             lineHeight: '1.6',
         });
 
+        let savedValue = '';
         GM.getValue(STORAGE_KEY, null).then((stored) => {
-            textarea.value = stored ?? DEFAULT_RULES;
+            savedValue = stored ?? DEFAULT_RULES;
+            textarea.value = savedValue;
             // Scroll to bottom so newly picker-added rules are visible
             textarea.scrollTop = textarea.scrollHeight;
         });
+
+        const isDirty = () => textarea.value !== savedValue;
+        const confirmClose = () => {
+            if (isDirty() && !confirm('Discard unsaved changes to resize rules?')) return;
+            overlay.remove();
+        };
 
         const statusLine = document.createElement('div');
         Object.assign(statusLine.style, {
@@ -834,7 +1066,7 @@
                       `${active} match${active !== 1 ? '' : 'es'} the current URL (${location.hostname}).`;
         });
 
-        btnCancel.addEventListener('click', () => overlay.remove());
+        btnCancel.addEventListener('click', confirmClose);
 
         btnSave.addEventListener('click', async () => {
             await GM.setValue(STORAGE_KEY, textarea.value);
@@ -848,7 +1080,10 @@
         });
 
         overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) overlay.remove();
+            if (e.target === overlay) confirmClose();
+        });
+        overlay.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') confirmClose();
         });
 
         btnRow.append(btnReset, btnValidate, btnCancel, btnSave, btnSaveReload);
@@ -884,6 +1119,7 @@
         processImages(activeRules);
         observeMutations(activeRules);
     }
+    if (activeRules.some((r) => r.hoverSize)) setupHoverDelegation();
 
     GM_registerMenuCommand('🎯 Pick Element', startPicker);
     GM_registerMenuCommand('⚙️ Edit Resize Rules', openSettings);
