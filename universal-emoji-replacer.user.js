@@ -2,7 +2,7 @@
 // @name        Universal Emoji Replacer
 // @namespace   https://github.com/cbaoth/userscripts
 // @version     2026-04-25
-// @description Replace emojis with customizable alternatives (e.g. less triggering, more neutral) on all websites.
+// @description Replace emojis with customizable alternatives on all websites, e.g. to reduce emotional impact or just for fun.
 // @author      cbaoth235
 // @license     MIT
 //
