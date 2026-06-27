@@ -1,5 +1,7 @@
 # Claude Code — Project Guidelines
 
+Commit message conventions: @.github/instructions/cb-commit-messages.instructions.md
+
 ## Project Overview
 
 - Personal browser userscripts (Tampermonkey/Greasemonkey), public repo
