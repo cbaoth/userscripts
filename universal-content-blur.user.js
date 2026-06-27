@@ -755,8 +755,10 @@
     function scanAttributes(root, attrRules) {
         if (!attrRules.length) return;
         // Gather candidate elements once; cheaper than per-rule querySelectorAll.
-        const els =
-            root.querySelectorAll === undefined ? [] : root.querySelectorAll('a[href], img[src], [alt], [title]');
+        // Also include root itself — querySelectorAll only searches descendants.
+        const sel = 'a[href], img[src], [alt], [title]';
+        const descendants = root.querySelectorAll === undefined ? [] : root.querySelectorAll(sel);
+        const els = root.matches?.(sel) ? [root, ...descendants] : descendants;
         for (const el of els) {
             const href = el.getAttribute && (el.getAttribute('href') || el.getAttribute('src'));
             const alt = el.getAttribute && el.getAttribute('alt');
@@ -794,16 +796,26 @@
 
     let observer = null;
     let debounceTimer = null;
+    const pendingRoots = new Set();
 
     function startObserver() {
         if (observer || !document.body) return;
-        observer = new MutationObserver(() => {
+        observer = new MutationObserver((records) => {
             if (isCloudflareChallenge()) {
                 observer.disconnect();
                 return;
             }
+            for (const r of records)
+                for (const n of r.addedNodes)
+                    if (n.nodeType === Node.ELEMENT_NODE) pendingRoots.add(n);
+                    else if (n.nodeType === Node.TEXT_NODE && n.parentElement) pendingRoots.add(n.parentElement);
             if (debounceTimer) clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => scan(document.body), SCAN_DEBOUNCE_MS);
+            debounceTimer = setTimeout(() => {
+                const roots = [...pendingRoots];
+                pendingRoots.clear();
+                for (const root of roots)
+                    if (root.isConnected) scan(root);
+            }, SCAN_DEBOUNCE_MS);
         });
         observer.observe(document.body, { childList: true, subtree: true });
     }
