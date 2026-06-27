@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Universal Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-06-24
+// @version      2026-06-27
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -69,7 +69,14 @@
 # Two kinds of sections:
 #
 #   [list:NAME]   reusable pattern list — one regex per line (case-insensitive).
-#                 Reference it from a rule as @NAME.
+#                 Reference it from a rule as @NAME. A list line may itself be
+#                 @OTHER to include another list (nesting up to 5 levels deep;
+#                 reference loops and self-references are silently dropped).
+#                 Wildcards (* / ?) are supported in list names: @text_* expands
+#                 to every list whose name matches that glob. This works both in
+#                 rule patterns and in list entries.
+#                 A line starting with @ is always a list reference — to match a
+#                 literal "@foo" use a regex, e.g. /^@foo$/ or /@foo/.
 #
 #   [rules]       one rule per line, pipe-separated:
 #                     url-pattern | source | patterns | action | scope | options
@@ -124,7 +131,7 @@
 #
 # ── Examples (remove the leading # to enable) ───────────────────────────────
 #
-# [list:dark]
+# [list:words_violent]
 # gore                     (literal, whole word)
 # murder*                  (literal + wildcard: words starting with "murder")
 # /blood(y)?/              (regex, substring — also matches inside words)
@@ -137,13 +144,22 @@
 # /^another_user$/         (regex, exact username)
 # *troll*                  (literal + wildcard: any text containing "troll", incl. "controller")
 #
+# [list:all-bad]           (compose lists explicitly)
+# @words_*                 (wildcard: includes every list whose name starts with "words_")
+# @users
+# spoiler                  (lists may mix @refs and plain patterns)
+#
+# [list:everything]        (wildcard: every defined list — self-ref text_everything ignored)
+# @*
+#
 # [rules]
-# # blur any visible text containing a @dark word, anywhere, reveal on hover:
-# *://*/*          | text      | @dark        | blur | self       | hover
 # # blur the whole table row of a flagged username on one site:
-# *://site.com/*   | user      | @users       | blur | row        | hover
-# # blur image + caption when alt/title or filename matches, on all sites:
-# *://*/*          | alt,title,url | @dark    | blur | up:1       | hover
+# *://site.com/*   | user          | @users             | blur | row        | hover
+# # blur any visible text containing a @words_violent word, anywhere, reveal on hover:
+# *://*/*          | text          | @words_violent     | blur | self       | hover
+# # blur image + caption when alt/title or filename matches, on all sites,
+# # using a wildcard directly in the rule's patterns field:
+# *://*/*          | alt,title,url | @words_*           | blur | up:1       | hover
 
 [rules]
 `;
@@ -156,15 +172,32 @@
         return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
+    // Report a config problem: always log it, and push a structured record when an
+    // `issues` collector is provided (used by the settings dialog to gate saving).
+    // severity: 'error' (blocks save) | 'warning' (shown, allowed).
+    function reportIssue(issues, lineNum, severity, message) {
+        console.warn(LOG_PREFIX, lineNum ? `Line ${lineNum}: ${message}` : message);
+        if (issues) issues.push({ line: lineNum, severity, message });
+    }
+
+    // Convert a list-name glob (with * and ?) into a RegExp anchored to the full name.
+    function listNameGlobToRegex(glob) {
+        const escaped = glob
+            .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+            .replace(/\*/g, '.*')
+            .replace(/\?/g, '.');
+        return new RegExp('^' + escaped + '$', 'i');
+    }
+
     // Glob (with *) or /regex/flags → { regex }. Mirrors universal-image-resizer.
-    function parseUrlPattern(src) {
+    function parseUrlPattern(src, issues, lineNum) {
         if (src.startsWith('/')) {
             const lastSlash = src.lastIndexOf('/');
             if (lastSlash > 0) {
                 try {
                     return { regex: new RegExp(src.slice(1, lastSlash), src.slice(lastSlash + 1) || 'i') };
                 } catch (e) {
-                    console.warn(LOG_PREFIX, 'Invalid regex URL pattern:', src, e.message);
+                    reportIssue(issues, lineNum, 'error', `invalid regex URL pattern "${src}": ${e.message}`);
                     return null;
                 }
             }
@@ -173,7 +206,7 @@
             const escaped = src.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
             return { regex: new RegExp('^' + escaped + '$', 'i') };
         } catch (e) {
-            console.warn(LOG_PREFIX, 'Invalid glob URL pattern:', src, e.message);
+            reportIssue(issues, lineNum, 'error', `invalid glob URL pattern "${src}": ${e.message}`);
             return null;
         }
     }
@@ -227,7 +260,7 @@
 
     // Combine regex fragments into one case-insensitive RegExp. Each fragment
     // already carries its own boundaries (literal terms are whole-word).
-    function buildCombinedRegex(fragments) {
+    function buildCombinedRegex(fragments, issues, lineNum) {
         const valid = [];
         for (const frag of fragments) {
             if (!frag) continue;
@@ -235,21 +268,27 @@
                 new RegExp(frag); // validate in isolation
                 valid.push(frag);
             } catch (e) {
-                console.warn(LOG_PREFIX, 'Skipping invalid pattern:', frag, e.message);
+                reportIssue(issues, lineNum, 'warning', `skipping invalid pattern "${frag}": ${e.message}`);
             }
         }
         if (!valid.length) return null;
         try {
             return new RegExp('(?:' + valid.join('|') + ')', 'i');
         } catch (e) {
-            console.warn(LOG_PREFIX, 'Could not build combined regex:', valid.join('|'), e.message);
+            reportIssue(
+                issues,
+                lineNum,
+                'error',
+                `could not build combined regex from "${valid.join('|')}": ${e.message}`
+            );
             return null;
         }
     }
 
     const VALID_SOURCES = ['text', 'alt', 'title', 'url', 'user'];
+    const MAX_LIST_DEPTH = 5; // max nested [list:…] reference levels before giving up
 
-    function parseSource(field) {
+    function parseSource(field, issues, lineNum) {
         const parts = field
             .split(',')
             .map((s) => s.trim().toLowerCase())
@@ -258,12 +297,12 @@
         const out = [];
         for (const p of parts) {
             if (VALID_SOURCES.includes(p)) out.push(p);
-            else console.warn(LOG_PREFIX, 'Unknown source:', p);
+            else reportIssue(issues, lineNum, 'warning', `unknown source "${p}"`);
         }
         return out;
     }
 
-    function parseScope(field) {
+    function parseScope(field, issues, lineNum) {
         const t = (field || 'self').trim();
         if (!t || t === 'self') return { kind: 'self' };
         if (t === 'row') return { kind: 'closest', selector: 'tr' };
@@ -272,11 +311,11 @@
             const selector = t.slice(8).trim();
             if (selector) return { kind: 'closest', selector };
         }
-        console.warn(LOG_PREFIX, 'Unknown scope, using self:', t);
+        reportIssue(issues, lineNum, 'warning', `unknown scope "${t}", using self`);
         return { kind: 'self' };
     }
 
-    function parseOptions(field) {
+    function parseOptions(field, issues, lineNum) {
         const opts = { hover: true, freeze: false };
         if (!field) return opts;
         for (const raw of field.split(',')) {
@@ -285,15 +324,75 @@
             if (t === 'hover') opts.hover = true;
             else if (t === 'no-hover') opts.hover = false;
             else if (t === 'freeze') opts.freeze = true;
-            else console.warn(LOG_PREFIX, 'Unknown option:', t);
+            else reportIssue(issues, lineNum, 'warning', `unknown option "${t}"`);
         }
         return opts;
     }
 
-    // Parse the whole config into { lists: Map<name, fragments[]>, rules: [] }.
+    // Flatten a [list:NAME] into regex fragments, following nested @refs (including
+    // wildcards such as @text_* or @*). seenFragments deduplicates pattern strings
+    // across all lists; visited guards against reference loops; depth caps nesting.
+    function expandListFragments(name, lists, out, seenFragments, visited, depth, issues, lineNum) {
+        // Wildcard: resolve horizontally to all matching list names at the same depth.
+        // This means @text_* inside a rule and @text_* inside a list both expand each
+        // match at the caller's depth — the wildcard itself is not a nesting level.
+        if (name.includes('*') || name.includes('?')) {
+            const re = listNameGlobToRegex(name);
+            let anyMatch = false;
+            for (const listName of lists.keys()) {
+                if (re.test(listName)) {
+                    anyMatch = true;
+                    expandListFragments(listName, lists, out, seenFragments, visited, depth, issues, lineNum);
+                }
+            }
+            if (!anyMatch) reportIssue(issues, lineNum, 'warning', `wildcard @${name} matched no lists`);
+            return;
+        }
+        if (!lists.has(name)) {
+            reportIssue(issues, lineNum, 'error', `unknown list @${name}`);
+            return;
+        }
+        // Self-ref and cycles are silently dropped (warnings only — rules remain valid,
+        // those refs are just skipped). This is especially expected with wildcards: e.g.
+        // @text_* inside [list:text_all] naturally matches text_all itself.
+        if (visited.has(name)) {
+            reportIssue(issues, lineNum, 'warning', `skipping already-visited list @${name} (self-reference or cycle)`);
+            return;
+        }
+        if (depth > MAX_LIST_DEPTH) {
+            reportIssue(issues, lineNum, 'warning', `list nesting too deep (>${MAX_LIST_DEPTH}) at @${name}, stopping`);
+            return;
+        }
+        visited.add(name);
+        for (const listLine of lists.get(name)) {
+            const t = listLine.trim();
+            if (t.startsWith('@')) {
+                expandListFragments(
+                    t.slice(1).toLowerCase(),
+                    lists,
+                    out,
+                    seenFragments,
+                    visited,
+                    depth + 1,
+                    issues,
+                    lineNum
+                );
+            } else {
+                const frag = patternTokenToFragment(t);
+                if (frag !== null && !seenFragments.has(frag)) {
+                    seenFragments.add(frag);
+                    out.push(frag);
+                }
+            }
+        }
+    }
+
+    // Parse the whole config into { lists, rules, issues }. `issues` collects
+    // structured problems (errors block save; warnings are advisory).
     function parseConfig(text) {
         const lists = new Map();
         const rules = [];
+        const issues = [];
         let section = null; // { type:'list', name } | { type:'rules' }
         let lineNum = 0;
 
@@ -321,65 +420,77 @@
 
             // Anything with pipes is a rule (allow rules even before a [rules] header).
             if (line.includes('|') || (section && section.type === 'rules')) {
-                const rule = parseRuleLine(line, lineNum, lists);
+                const rule = parseRuleLine(line, lineNum, lists, issues);
                 if (rule) rules.push(rule);
                 continue;
             }
 
-            console.warn(LOG_PREFIX, `Line ${lineNum}: ignored (not in a section, no pipes):`, line);
+            reportIssue(issues, lineNum, 'warning', `ignored (not in a section, no pipes): ${line}`);
         }
 
-        return { lists, rules };
+        return { lists, rules, issues };
     }
 
-    function parseRuleLine(line, lineNum, lists) {
+    function parseRuleLine(line, lineNum, lists, issues) {
         const fields = line.split('|').map((f) => f.trim());
         if (fields.length < 4) {
-            console.warn(LOG_PREFIX, `Line ${lineNum}: expected at least 4 fields (url|source|patterns|action):`, line);
+            reportIssue(issues, lineNum, 'error', `expected at least 4 fields (url|source|patterns|action): ${line}`);
             return null;
         }
         const [rawUrl, rawSource, rawPatterns, rawAction, rawScope, rawOptions] = fields;
 
-        const urlPattern = parseUrlPattern(rawUrl);
+        const urlPattern = parseUrlPattern(rawUrl, issues, lineNum);
         if (!urlPattern) return null;
 
-        const sources = parseSource(rawSource);
+        const sources = parseSource(rawSource, issues, lineNum);
         if (!sources.length) {
-            console.warn(LOG_PREFIX, `Line ${lineNum}: no valid source`, rawSource);
+            reportIssue(issues, lineNum, 'error', `no valid source: ${rawSource}`);
             return null;
         }
 
         const action = (rawAction || 'blur').trim().toLowerCase();
         if (action !== 'blur') {
-            console.warn(LOG_PREFIX, `Line ${lineNum}: action "${action}" not implemented (v1 = blur), skipping`);
+            reportIssue(issues, lineNum, 'error', `action "${action}" not implemented (v1 = blur)`);
             return null;
         }
 
-        const options = parseOptions(rawOptions);
+        const options = parseOptions(rawOptions, issues, lineNum);
 
-        // Resolve patterns: @ref → list fragments, else inline token.
+        // Resolve patterns: @ref → (possibly nested/wildcard) list fragments, else
+        // inline token. seenFragments deduplicates across all refs + inline tokens so
+        // overlapping lists (e.g. @dark and @text_* both yielding "gore") produce only
+        // one regex branch — unique by fragment string, not semantic equivalence.
         const fragments = [];
+        const seenFragments = new Set();
         for (const tok of rawPatterns.split(',')) {
             const t = tok.trim();
             if (!t) continue;
             if (t.startsWith('@')) {
-                const name = t.slice(1).toLowerCase();
-                if (!lists.has(name)) {
-                    console.warn(LOG_PREFIX, `Line ${lineNum}: unknown list @${name}`);
-                    continue;
-                }
-                for (const listLine of lists.get(name)) fragments.push(patternTokenToFragment(listLine));
+                expandListFragments(
+                    t.slice(1).toLowerCase(),
+                    lists,
+                    fragments,
+                    seenFragments,
+                    new Set(),
+                    1,
+                    issues,
+                    lineNum
+                );
             } else {
-                fragments.push(patternTokenToFragment(t));
+                const frag = patternTokenToFragment(t);
+                if (frag !== null && !seenFragments.has(frag)) {
+                    seenFragments.add(frag);
+                    fragments.push(frag);
+                }
             }
         }
-        const regex = buildCombinedRegex(fragments);
+        const regex = buildCombinedRegex(fragments, issues, lineNum);
         if (!regex) {
-            console.warn(LOG_PREFIX, `Line ${lineNum}: no valid patterns`, rawPatterns);
+            reportIssue(issues, lineNum, 'error', `no valid patterns: ${rawPatterns}`);
             return null;
         }
 
-        const scope = parseScope(rawScope);
+        const scope = parseScope(rawScope, issues, lineNum);
         return { urlPattern, sources, regex, action, scope, options };
     }
 
@@ -1097,7 +1208,9 @@
             'One rule per line: ' +
             '<code style="color:#9cdcfe">url-pattern | source | patterns | action | scope | options</code>. ' +
             'Define reusable lists with <code style="color:#9cdcfe">[list:NAME]</code> and reference them as ' +
-            '<code style="color:#9cdcfe">@NAME</code>. Sources: text, alt, title, url, user. Scope: self, up:N, ' +
+            '<code style="color:#9cdcfe">@NAME</code> or <code style="color:#9cdcfe">@glob*</code> — lists ' +
+            'may reference other lists (including wildcards) to compose categories. ' +
+            'Sources: text, alt, title, url, user. Scope: self, up:N, ' +
             'closest:SEL, row. See the comments in the default config for full docs.';
         Object.assign(hint.style, { margin: '0 0 10px', color: '#888', fontSize: '11px', lineHeight: '1.5' });
 
@@ -1150,27 +1263,39 @@
             statusLine.textContent = '';
         });
 
-        btnValidate.addEventListener('click', () => {
-            const parsed = parseConfig(textarea.value);
+        // Parse the textarea, render a summary + first issues into the status line,
+        // and return the number of error-severity issues. Shared by Validate + Save
+        // so a faulty config is never persisted.
+        const validateInto = (parsed = parseConfig(textarea.value)) => {
+            const errs = parsed.issues.filter((i) => i.severity === 'error');
+            const warns = parsed.issues.filter((i) => i.severity === 'warning');
             const count = parsed.rules.length;
             const active = parsed.rules.filter((r) => r.urlPattern.regex.test(location.href)).length;
-            statusLine.style.color = count === 0 ? '#f14c4c' : '#4ec9b0';
+            const summary =
+                `${count} rule${count !== 1 ? 's' : ''}, ${parsed.lists.size} list${parsed.lists.size !== 1 ? 's' : ''}, ` +
+                `${active} match${active !== 1 ? '' : 'es'} the current URL (${location.hostname})`;
+            const shown = (errs.length ? errs : warns).slice(0, 2);
+            const detail = shown.map((i) => (i.line ? `line ${i.line}: ` : '') + i.message).join('  •  ');
+            statusLine.style.color = errs.length ? '#f14c4c' : warns.length ? '#d7ba7d' : '#4ec9b0';
             statusLine.textContent =
-                count === 0
-                    ? 'No valid rules found (check the console for warnings).'
-                    : `${count} rule${count !== 1 ? 's' : ''}, ${parsed.lists.size} list${parsed.lists.size !== 1 ? 's' : ''} — ` +
-                      `${active} match${active !== 1 ? '' : 'es'} the current URL (${location.hostname}).`;
-        });
+                `${errs.length} error${errs.length !== 1 ? 's' : ''}, ${warns.length} warning${warns.length !== 1 ? 's' : ''} — ${summary}.` +
+                (detail ? `  (${detail}${(errs.length || warns.length) > 2 ? ', …' : ''})` : '');
+            return errs.length;
+        };
+
+        btnValidate.addEventListener('click', () => validateInto());
 
         btnCancel.addEventListener('click', confirmClose);
 
         btnSave.addEventListener('click', async () => {
+            if (validateInto() > 0) return; // errors → stay in the dialog, do not persist
             await GM.setValue(STORAGE_KEY, textarea.value);
             overlay.remove();
             await loadRules();
         });
 
         btnSaveReload.addEventListener('click', async () => {
+            if (validateInto() > 0) return; // errors → stay in the dialog, do not persist
             await GM.setValue(STORAGE_KEY, textarea.value);
             location.reload();
         });

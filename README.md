@@ -102,21 +102,21 @@ See [Deprecated & Legacy Scripts](#deprecated--legacy-scripts) for older scripts
 - A single plain-text config (one rule per line, edited in one textarea — no fiddly multi-tab GUI, no JSON export/import):
 
   ```
-  [list:dark]
+[list:words_violent]
   gore
   /blood(y)?/
   /murder|kill(ed|ing)?/
 
   [rules]
   # url-pattern | source | patterns | action | scope | options
-  *://*/*        | text | @dark   | blur | self | hover
-  *://site.com/* | user | @users  | blur | row  | hover
+  *://*/*        | text | @words_* | blur | self | hover
+  *://site.com/* | user | @users   | blur | row  | hover
   ```
 
 - **Per-rule URL patterns** (glob `*://host/*` or `/regex/flags`) — rules only run where you configure them, not globally.
 - **Sources:** visible `text`, image `alt`/`title`, link/image `url`, or `user` (username extracted from profile-style URLs).
 - **Pattern syntax:** bare words match **whole-word and literally** (`test` ≠ `tested`), with simple `*`/`?` wildcards (`\*`/`\?` for literals). Wrap in `/…/` for full regex — note `/…/` matches as a **substring** (also inside words), so add `\b…\b` for whole-word or `^…$` for an exact full-value match.
-- **Reusable pattern lists** (`[list:NAME]`, referenced as `@NAME`) shared across rules. Lists are the place for complex regex with alternation (e.g. `/kill(ed|ing)?/`) — inside a rule line `|` is the field separator, so inline `/regex/` tokens use commas for alternatives instead.
+- **Reusable pattern lists** (`[list:NAME]`, referenced as `@NAME` or `@glob*`) shared across rules. Lists can **reference other lists** by name or by glob wildcard (`@text_*` expands to every list whose name matches), and wildcards also work directly in a rule's patterns field. Duplicate fragments across overlapping lists are deduplicated automatically. Nesting up to 5 levels deep; self-references and cycles are silently skipped. Lists are the place for complex regex with alternation (e.g. `/kill(ed|ing)?/`) — inside a rule line `|` is the field separator, so inline `/regex/` tokens use commas for alternatives instead.
 - **Scope:** blur the matched element (`self`), an ancestor (`up:N`), a `closest:SELECTOR`, or the whole table `row` — handy for old table-based layouts.
 - **Stop motion** (`freeze` option): pauses videos + CSS animations and snapshots animated images (GIF/WebP/APNG) to a still frame, so a blurred animation can't leak context through movement. With hover-reveal, motion resumes while you peek and re-freezes when you leave.
 - **Keyboard quick-add:** select text or hover a link, then _(shortcuts are configurable constants at the top of the script)_:
