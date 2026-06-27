@@ -19,6 +19,7 @@
   - [Search Hotkey](#search-hotkey)
   - [Streaming Tweaks](#streaming-tweaks)
   - [TradingView](#tradingview)
+  - [Universal Content Blur](#universal-content-blur)
 - [Libs & Resources](#libs--resources)
 - [Q & A](#q--a)
 
@@ -444,6 +445,53 @@ Improvements to [TradingView](https://tradingview.com):
 | Alt-f        | Toggle footer pane (_Pine Editor_, _Strategy Tester_, etc.) |
 | Alt-Shift-f  | Toggle footer pane maximization |
 | Alt-w        | Toggle _Watch List_ (right pane) |
+
+---
+
+### Universal Content Blur
+
+[universal-content-blur.user.js](universal-content-blur.user.js) blurs disturbing or unwanted content on any site by configurable rules, with reveal-on-hover so you can decide whether to peek. A more general, config-file-driven take on the idea behind [DeTrigger](#detrigger).
+
+- A single plain-text config (one rule per line, edited in one textarea — no fiddly multi-tab GUI, no JSON export/import):
+
+  ```
+  [list:dark]
+  gore
+  murder*
+  /bloody?/
+  /kill(ed|ing)?/
+
+  [list:users]
+  /^some_user_name$/
+  /^another_user$/
+  *troll*
+
+
+  [rules]
+  # blur any visible text containing a @dark word, anywhere, reveal on hover:
+  *://*/*          | text      | @dark        | blur | self       | hover
+  # blur the whole table row of a flagged username on one site:
+  *://site.com/*   | user      | @users       | blur | row        | hover
+  # blur image + caption when alt/title or filename matches, on all sites:
+  *://*/*          | alt,title,url | @dark    | blur | up:1       | hover
+  ```
+
+- **Per-rule URL patterns** (glob `*://host/*` or `/regex/flags`) — rules only run where you configure them, not globally.
+- **Sources:** visible `text`, image `alt`/`title`, link/image `url`, or `user` (username extracted from profile-style URLs).
+- **Pattern syntax:** bare words match **whole-word and literally** (`test` ≠ `tested`), with simple `*`/`?` wildcards (`\*`/`\?` for literals). Wrap in `/…/` for full regex — note `/…/` matches as a **substring** (also inside words), so add `\b…\b` for whole-word or `^…$` for an exact full-value match.
+- **Reusable pattern lists** (`[list:NAME]`, referenced as `@NAME`) shared across rules. Lists are the place for complex regex with alternation (e.g. `/kill(ed|ing)?/`) — inside a rule line `|` is the field separator, so inline `/regex/` tokens use commas for alternatives instead.
+- **Scope:** blur the matched element (`self`), an ancestor (`up:N`), a `closest:SELECTOR`, or the whole table `row` — handy for old table-based layouts.
+- **Stop motion** (`freeze` option): pauses videos + CSS animations and snapshots animated images (GIF/WebP/APNG) to a still frame, so a blurred animation can't leak context through movement. With hover-reveal, motion resumes while you peek and re-freezes when you leave.
+- **Keyboard quick-add:** select text or hover a link, then _(shortcuts are configurable constants at the top of the script)_:
+
+  | Keys          | Action |
+  |---------------|--------|
+  | Alt-R         | Quick-add a blur rule from the selection/hovered link (applies immediately) |
+  | Alt-Shift-R   | Quick-add via a small panel (choose source, scope, hover) |
+  | Alt-A         | Quick-block: fold the selection/username into the first matching rule's list (or create a new rule if none matches) — one-keypress user blocking. Usernames are anchored as `/^name$/` so similar names aren't caught |
+  | Alt-Shift-S   | Open the rules settings (edit/validate/bulk-edit) |
+
+- **Cloudflare-safe:** runs at `document-idle`, stays completely inert on pages with no matching rule, and bails on Cloudflare challenge pages (unlike some similar scripts that break the "are you human" check).
 
 ---
 
