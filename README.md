@@ -118,6 +118,7 @@ See [Deprecated & Legacy Scripts](#deprecated--legacy-scripts) for older scripts
 - **Pattern syntax:** bare words match **whole-word and literally** (`test` ≠ `tested`), with simple `*`/`?` wildcards (`\*`/`\?` for literals). Wrap in `/…/` for full regex — note `/…/` matches as a **substring** (also inside words), so add `\b…\b` for whole-word or `^…$` for an exact full-value match.
 - **Reusable pattern lists** (`[list:NAME]`, referenced as `@NAME` or `@glob*`) shared across rules. Lists can **reference other lists** by name or by glob wildcard (`@text_*` expands to every list whose name matches), and wildcards also work directly in a rule's patterns field. Duplicate fragments across overlapping lists are deduplicated automatically. Nesting up to 5 levels deep; self-references and cycles are silently skipped. Lists are the place for complex regex with alternation (e.g. `/kill(ed|ing)?/`) — inside a rule line `|` is the field separator, so inline `/regex/` tokens use commas for alternatives instead.
 - **Scope:** blur the matched element (`self`), an ancestor (`up:N`), a `closest:SELECTOR`, or the whole table `row` — handy for old table-based layouts.
+- **Actions:** the built-in `blur` (strength tweakable as `blur:20`), plus your own effects — add a `[css]` section, define `.ucb-NAME` classes (darken, grayscale, hide, resize, … anything CSS can do) and use `NAME` as the action. Combine several (`blur, dim:0.1`); a `NAME:VALUE` action exposes `--ucb-NAME` so a rule can parameterize your CSS. For reveal-on-hover on custom actions, add a `.ucb-NAME.ucb-hover:hover` rule (the script adds `.ucb-hover` when the rule uses the `hover` option).
 - **Stop motion** (`freeze` option): pauses videos + CSS animations and snapshots animated images (GIF/WebP/APNG) to a still frame, so a blurred animation can't leak context through movement. With hover-reveal, motion resumes while you peek and re-freezes when you leave.
 - **Keyboard quick-add:** select text or hover a link, then _(shortcuts are configurable constants at the top of the script)_:
 
@@ -127,6 +128,7 @@ See [Deprecated & Legacy Scripts](#deprecated--legacy-scripts) for older scripts
   | Alt-Shift-R   | Quick-add via a small panel (choose source, scope, hover) |
   | Alt-A         | Quick-block: fold the selection/username into the first matching rule's list (or create a new rule if none matches) — one-keypress user blocking. Usernames are anchored as `/^name$/` so similar names aren't caught |
   | Alt-Shift-S   | Open the rules settings (edit/validate/bulk-edit) |
+  | Hold Shift / Alt | **Peek:** temporarily suspend all effects to see the page as-is (reveal blurred content, drop highlights); restores on release. Configurable as hold-to-peek or tap-to-toggle, with a hold delay so it ignores Shift-for-capitals; ignored while typing in a field |
 
 - **Cloudflare-safe:** runs at `document-idle`, stays completely inert on pages with no matching rule, and bails on Cloudflare challenge pages (unlike some similar scripts that break the "are you human" check).
 

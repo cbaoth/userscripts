@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Universal Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-06-27
+// @version      2026-06-27T221014
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -43,16 +43,29 @@
         openSettings: { alt: true, shift: true, ctrl: false, meta: false, key: 's' },
     };
 
+    // "Peek": hold (or tap) a bare modifier to temporarily suspend ALL effects so
+    // you can see the page as-is — reveal blurred content, drop highlights, etc.
+    // Non-destructive (classes are removed then restored). Set enabled:false to
+    // disable. The keys are bare modifiers (KeyboardEvent.key); any one triggers.
+    const PEEK = {
+        enabled: true,
+        mode: 'hold', // 'hold' = active only while held; 'toggle' = tap to flip on/off
+        keys: ['Shift', 'Alt'], // bare modifier keys that trigger (either one, not combined)
+        holdDelayMs: 250, // hold mode: ignore presses shorter than this (e.g. Shift for capitals)
+        tapMaxMs: 300, // toggle mode: max press duration still counted as a deliberate tap
+    };
+
     // -----------------------------------------------------------------------
-    //  DEFERRED IDEAS (not implemented in v1 — revisit if blur is insufficient)
+    //  DEFERRED IDEAS (revisit if the built-in blur + [css] actions fall short)
     // -----------------------------------------------------------------------
-    //  Additional actions (currently only `blur` is implemented):
-    //    hide        — display:none (hard hide, removes from layout)
-    //    dim         — low opacity (keeps layout, gentler than blur)
-    //    pixelate    — stronger obscuring for images (canvas/SVG filter)
+    //  Most "extra actions" (hide, dim, grayscale, darken, resize, …) are now
+    //  user-definable via the [css] section: write a .ucb-NAME class and use NAME
+    //  in a rule's action field. The only obscuring effect plain CSS can't do:
+    //    pixelate    — true pixelation needs a canvas/SVG filter, not CSS
     //  Other ideas:
-    //    pointer-events:none on blurred content to block accidental clicks
-    //      (opt-in only — it contributed to breakage in the script this replaces)
+    //    pointer-events:none on blurred content to block accidental clicks (opt-in;
+    //      it contributed to breakage in the script this replaces — trivially a
+    //      [css] class now, e.g. .ucb-noclick { pointer-events: none })
     //    Cross-row blur: when a result spans several sibling rows (old <table>
     //      galleries), blur both the title row AND the username row if either
     //      triggers. Needs a "neighbor"/sibling-group scope; too complex for v1.
@@ -65,7 +78,7 @@
     const DEFAULT_RULES = `\
 # Universal Content Blur — configuration
 #
-# Two kinds of sections:
+# Three kinds of sections:
 #
 #   [list:NAME]   reusable pattern list — one regex per line (case-insensitive).
 #                 Reference it from a rule as @NAME. A list line may itself be
@@ -77,10 +90,19 @@
 #                 A line starting with @ is always a list reference — to match a
 #                 literal "@foo" use a regex, e.g. /^@foo$/ or /@foo/.
 #
+#   [css]         raw CSS, injected verbatim into the page. Define your own effect
+#                 classes named .ucb-NAME and use NAME as a rule action (see
+#                 "action" below) to get effects beyond the built-in blur —
+#                 darken, grayscale, hide, resize, etc. — with plain CSS. For
+#                 reveal-on-hover add your own .ucb-NAME.ucb-hover:hover rule (the
+#                 script adds .ucb-hover to elements whose rule has the hover
+#                 option). Inside [css], # and // are NOT comments (so #id
+#                 selectors work); use /* … */ for CSS comments.
+#
 #   [rules]       one rule per line, pipe-separated:
 #                     url-pattern | source | patterns | action | scope | options
 #
-# Lines starting with # or // and blank lines are ignored.
+# Outside [css], lines starting with # or // and blank lines are ignored.
 #
 # ── Fields ────────────────────────────────────────────────────────────────
 #
@@ -110,7 +132,19 @@
 #               token must NOT contain | . For alternatives use commas (foo,bar)
 #               or put a full regex (incl. |) in a [list:NAME] block.
 #
-# action        blur   (only action implemented in v1)
+# action        Comma list of effects applied to the scoped element. Each effect
+#               is a CSS class — the script adds class .ucb-NAME:
+#                 blur            built-in filter blur (reveals on hover). Tune
+#                                 strength as blur:N px, e.g. blur:20 — bare
+#                                 "blur" uses the default BLUR_STRENGTH_PX.
+#                 NAME            any .ucb-NAME class you defined in a [css] block,
+#                                 e.g. "dark" applies your .ucb-dark rule. Writing
+#                                 the full "ucb-dark" works too (the prefix is
+#                                 added for you and a leading one is stripped).
+#                 NAME:VALUE      also sets CSS var --ucb-NAME to VALUE on the
+#                                 element, so [css] can read it: dim:0.1 pairs with
+#                                 .ucb-dim { opacity: var(--ucb-dim, 0.3) }
+#               Empty defaults to blur. Combine freely: "blur:6, dark".
 #
 # scope         Which element gets blurred, relative to the match:
 #                 self            the matched element (text → its parent element)
@@ -151,14 +185,42 @@
 # [list:everything]        (wildcard: every defined list — self-ref text_everything ignored)
 # @*
 #
+# [list:friends]           (people to EMPHASIZE, not hide — see the .ucb-hl rule)
+# /^my_user_name$/
+# /^a_friend$/
+# John Doe                 (your real name in article text, whole-word)
+#
+# [css]                    (custom effect classes — used via their NAME as an action)
+# /* darken instead of blur; reveal on hover */
+# .ucb-dark { filter: brightness(0.12) !important; transition: filter 0.2s ease; }
+# .ucb-dark.ucb-hover:hover { filter: none !important; }
+# /* opacity dim whose strength a rule can override via dim:N */
+# .ucb-dim { opacity: var(--ucb-dim, 0.25) !important; transition: opacity 0.2s ease; }
+# .ucb-dim.ucb-hover:hover { opacity: 1 !important; }
+# /* hard hide — no hover reveal once removed from layout */
+# .ucb-hide { display: none !important; }
+# /* HIGHLIGHT (emphasize instead of hide): a theme-proof ring that pops on any
+#    background — black + white + colored layers, no layout shift. Actions aren't
+#    only for obfuscating; any CSS works. Use the no-hover option so it stays. */
+# .ucb-hl { outline: 2px solid #ff8c00 !important; outline-offset: -1px !important;
+#           box-shadow: 0 0 0 1px #000, 0 0 0 3px #fff, 0 0 6px 3px rgba(255,140,0,.7) !important; }
+#
 # [rules]
 # # blur the whole table row of a flagged username on one site:
-# *://site.com/*   | user          | @users             | blur | row        | hover
+# *://site.com/*   | user          | @users             | blur       | row   | hover
 # # blur any visible text containing a @words_violent word, anywhere, reveal on hover:
-# *://*/*          | text          | @words_violent     | blur | self       | hover
+# *://*/*          | text          | @words_violent     | blur       | self  | hover
 # # blur image + caption when alt/title or filename matches, on all sites,
 # # using a wildcard directly in the rule's patterns field:
-# *://*/*          | alt,title,url | @words_*           | blur | up:1       | hover
+# *://*/*          | alt,title,url | @words_*           | blur       | up:1  | hover
+# # stronger blur (20px) on flagged text:
+# *://*/*          | text          | @words_violent     | blur:20    | self  | hover
+# # darken (custom [css] action) image + caption instead of blurring:
+# *://*/*          | alt,title,url | @words_*           | dark       | up:1  | hover
+# # blur AND dim together, overriding the dim level for this rule:
+# *://*/*          | text          | @words_violent     | blur, dim:0.1 | self | hover
+# # HIGHLIGHT your own name + friends' usernames (the opposite of blurring):
+# *://*/*          | text,user     | @friends           | hl         | up:1  | no-hover
 
 [rules]
 `;
@@ -314,6 +376,47 @@
         return { kind: 'self' };
     }
 
+    // Class names the script uses internally — a custom action may not reuse them.
+    const RESERVED_ACTIONS = new Set(['hover', 'freeze', 'frozen']);
+
+    // Parse the action field into a list of { name, value } effects. Each becomes a
+    // CSS class .ucb-<name> on the scoped element; an optional :value is exposed as
+    // the CSS custom property --ucb-<name> so [css] rules can read it via var().
+    // "blur" is the only built-in (styled by the script); any other name refers to
+    // a class the user defines in a [css] block. Empty field defaults to blur.
+    function parseAction(field, issues, lineNum) {
+        const out = [];
+        const seen = new Set();
+        for (const raw of (field || 'blur').split(',')) {
+            const t = raw.trim();
+            if (!t) continue;
+            const ci = t.indexOf(':');
+            // Accept both the bare name (hide) and the full class (ucb-hide) — the
+            // script adds the ucb- prefix itself, so strip a leading one if present.
+            const name = (ci === -1 ? t : t.slice(0, ci)).trim().toLowerCase().replace(/^ucb-/, '');
+            const value = ci === -1 ? '' : t.slice(ci + 1).trim();
+            if (!/^[a-z][a-z0-9_-]*$/.test(name)) {
+                reportIssue(issues, lineNum, 'warning', `invalid action name "${name}", skipping`);
+                continue;
+            }
+            if (RESERVED_ACTIONS.has(name)) {
+                reportIssue(issues, lineNum, 'warning', `action "${name}" is reserved, skipping`);
+                continue;
+            }
+            if (ci !== -1 && !value) {
+                reportIssue(issues, lineNum, 'warning', `action "${name}" has an empty value, ignoring it`);
+            }
+            if (seen.has(name)) continue;
+            seen.add(name);
+            out.push({ name, value: value || null });
+        }
+        if (!out.length) {
+            reportIssue(issues, lineNum, 'error', `no valid action: ${field}`);
+            return null;
+        }
+        return out;
+    }
+
     function parseOptions(field, issues, lineNum) {
         const opts = { hover: true, freeze: false };
         if (!field) return opts;
@@ -386,31 +489,49 @@
         }
     }
 
-    // Parse the whole config into { lists, rules, issues }. `issues` collects
-    // structured problems (errors block save; warnings are advisory).
+    // Parse the whole config into { lists, rules, css, issues }. `issues` collects
+    // structured problems (errors block save; warnings are advisory). `css` is the
+    // raw text of the [css] section, injected verbatim into the page.
     function parseConfig(text) {
         const lists = new Map();
         const rules = [];
+        const cssLines = [];
         const issues = [];
-        let section = null; // { type:'list', name } | { type:'rules' }
+        let section = null; // { type:'list', name } | { type:'rules' } | { type:'css' }
         let lineNum = 0;
 
         for (const rawLine of text.split('\n')) {
             lineNum++;
-            const line = rawLine.trim();
-            if (!line || line.startsWith('#') || line.startsWith('//')) continue;
+            const trimmed = rawLine.trim();
 
-            const listHeader = line.match(/^\[list:([^\]]+)\]$/i);
+            // Section headers are detected before comment filtering so we can switch
+            // into/out of [css] — where # is a CSS id selector, not a comment.
+            const listHeader = trimmed.match(/^\[list:([^\]]+)\]$/i);
             if (listHeader) {
                 const name = listHeader[1].trim().toLowerCase();
                 if (!lists.has(name)) lists.set(name, []);
                 section = { type: 'list', name };
                 continue;
             }
-            if (/^\[rules\]$/i.test(line)) {
+            if (/^\[rules\]$/i.test(trimmed)) {
                 section = { type: 'rules' };
                 continue;
             }
+            if (/^\[css\]$/i.test(trimmed)) {
+                section = { type: 'css' };
+                continue;
+            }
+
+            // Inside [css]: capture verbatim (skip only blank lines). # and // stay
+            // literal so #id selectors and CSS work; use /* … */ for CSS comments.
+            if (section && section.type === 'css') {
+                if (trimmed) cssLines.push(rawLine);
+                continue;
+            }
+
+            // Everywhere else: # and // are comments, blank lines are ignored.
+            const line = trimmed;
+            if (!line || line.startsWith('#') || line.startsWith('//')) continue;
 
             if (section && section.type === 'list') {
                 lists.get(section.name).push(line);
@@ -427,7 +548,7 @@
             reportIssue(issues, lineNum, 'warning', `ignored (not in a section, no pipes): ${line}`);
         }
 
-        return { lists, rules, issues };
+        return { lists, rules, css: cssLines.join('\n'), issues };
     }
 
     function parseRuleLine(line, lineNum, lists, issues) {
@@ -447,11 +568,8 @@
             return null;
         }
 
-        const action = (rawAction || 'blur').trim().toLowerCase();
-        if (action !== 'blur') {
-            reportIssue(issues, lineNum, 'error', `action "${action}" not implemented (v1 = blur)`);
-            return null;
-        }
+        const actions = parseAction(rawAction, issues, lineNum);
+        if (!actions) return null;
 
         const options = parseOptions(rawOptions, issues, lineNum);
 
@@ -490,7 +608,7 @@
         }
 
         const scope = parseScope(rawScope, issues, lineNum);
-        return { urlPattern, sources, regex, action, scope, options };
+        return { urlPattern, sources, regex, actions, scope, options };
     }
 
     // -----------------------------------------------------------------------
@@ -499,10 +617,13 @@
 
     let rules = [];
     let activeRules = [];
+    let customCss = ''; // raw [css] section, injected by ensureStyles()
 
     async function loadRules() {
         const stored = await GM.getValue(STORAGE_KEY, null);
-        rules = parseConfig(stored ?? DEFAULT_RULES).rules;
+        const parsed = parseConfig(stored ?? DEFAULT_RULES);
+        rules = parsed.rules;
+        customCss = parsed.css;
         activeRules = rules.filter((r) => r.urlPattern.regex.test(location.href));
         return activeRules;
     }
@@ -549,11 +670,14 @@
         if (document.getElementById('ucb-style')) return;
         const style = document.createElement('style');
         style.id = 'ucb-style';
+        // Built-in blur strength is a bare number in --ucb-blur (set per-element by
+        // a "blur:N" action), multiplied to px here so the default falls back cleanly.
         style.textContent = `
-.${BLUR_CLASS} { filter: blur(${BLUR_STRENGTH_PX}px) !important; transition: filter 0.2s ease; }
+.${BLUR_CLASS} { filter: blur(calc(var(--ucb-blur, ${BLUR_STRENGTH_PX}) * 1px)) !important; transition: filter 0.2s ease; }
 .${BLUR_CLASS}.${HOVER_CLASS}:hover { filter: none !important; }
 .${FREEZE_CLASS}, .${FREEZE_CLASS} * { animation-play-state: paused !important; }
 .${FREEZE_CLASS}.${HOVER_CLASS}:hover, .${FREEZE_CLASS}.${HOVER_CLASS}:hover * { animation-play-state: running !important; }
+${customCss || ''}
 `;
         (document.head ?? document.documentElement).appendChild(style);
     }
@@ -577,15 +701,21 @@
         return matchedEl;
     }
 
-    function blurTarget(matchedEl, rule) {
+    function applyActions(matchedEl, rule) {
         const target = resolveTarget(matchedEl, rule.scope);
         if (!target || processed.has(target)) return;
-        // Never blur structural roots.
+        // Never touch structural roots.
         if (target === document.body || target === document.documentElement) return;
         processed.add(target);
-        target.classList.add(BLUR_CLASS);
+        touched.add(target); // remembered so a "peek" can suspend/restore its effects
+        for (const act of rule.actions) {
+            target.classList.add('ucb-' + act.name); // built-in .ucb-blur or a user [css] class
+            if (act.value != null) target.style.setProperty('--ucb-' + act.name, act.value);
+        }
         if (rule.options.hover) target.classList.add(HOVER_CLASS);
         if (rule.options.freeze) freezeMedia(target);
+        // If a peek is currently active, keep newly-matched content revealed too.
+        if (suspended) suspendEl(target);
     }
 
     // -----------------------------------------------------------------------
@@ -727,6 +857,47 @@
     }
 
     // -----------------------------------------------------------------------
+    //  PEEK / SUSPEND (temporarily reveal everything — see PEEK config)
+    // -----------------------------------------------------------------------
+
+    let suspended = false;
+    const touched = new Set(); // elements we've applied effect classes to
+    const NON_EFFECT_CLASSES = new Set([HOVER_CLASS, FREEZE_CLASS, FROZEN_CLASS]);
+
+    // Suspend an element: stash its ucb-* effect classes in a data attribute and
+    // remove them, so the cascade restores the element's original look exactly.
+    // This works for any effect (built-in or user [css]), unlike a global "off".
+    function suspendEl(el) {
+        if (el.dataset.ucbOff != null) return;
+        const eff = [...el.classList].filter((c) => c.startsWith('ucb-') && !NON_EFFECT_CLASSES.has(c));
+        if (!eff.length) return;
+        el.dataset.ucbOff = eff.join(' ');
+        el.classList.remove(...eff);
+        if (el.classList.contains(FREEZE_CLASS)) setMotion(el, true); // let motion play while revealed
+    }
+
+    function resumeEl(el) {
+        const eff = el.dataset.ucbOff;
+        if (eff == null) return;
+        el.classList.add(...eff.split(' ').filter(Boolean));
+        delete el.dataset.ucbOff;
+        if (el.classList.contains(FREEZE_CLASS)) setMotion(el, false);
+    }
+
+    function setSuspended(on) {
+        if (on === suspended) return;
+        suspended = on;
+        for (const el of [...touched]) {
+            if (!el.isConnected) {
+                touched.delete(el);
+                continue;
+            }
+            if (on) suspendEl(el);
+            else resumeEl(el);
+        }
+    }
+
+    // -----------------------------------------------------------------------
     //  SCANNING
     // -----------------------------------------------------------------------
 
@@ -747,7 +918,7 @@
             const text = node.nodeValue;
             const el = node.parentElement;
             for (const rule of textRules) {
-                if (rule.regex.test(text)) blurTarget(el, rule);
+                if (rule.regex.test(text)) applyActions(el, rule);
             }
         }
     }
@@ -773,7 +944,7 @@
                     else if (source === 'title' && title) hit = rule.regex.test(title);
                     else if (source === 'user' && usernames) hit = usernames.some((u) => rule.regex.test(u));
                     if (hit) {
-                        blurTarget(el, rule);
+                        applyActions(el, rule);
                         break;
                     }
                 }
@@ -813,8 +984,7 @@
             debounceTimer = setTimeout(() => {
                 const roots = [...pendingRoots];
                 pendingRoots.clear();
-                for (const root of roots)
-                    if (root.isConnected) scan(root);
+                for (const root of roots) if (root.isConnected) scan(root);
             }, SCAN_DEBOUNCE_MS);
         });
         observer.observe(document.body, { childList: true, subtree: true });
@@ -1222,7 +1392,10 @@
             '<code style="color:#9cdcfe">@NAME</code> or <code style="color:#9cdcfe">@glob*</code> — lists ' +
             'may reference other lists (including wildcards) to compose categories. ' +
             'Sources: text, alt, title, url, user. Scope: self, up:N, ' +
-            'closest:SEL, row. See the comments in the default config for full docs.';
+            'closest:SEL, row. Actions: blur (or blur:N), plus any ' +
+            '<code style="color:#9cdcfe">.ucb-NAME</code> class you define in a ' +
+            '<code style="color:#9cdcfe">[css]</code> block. ' +
+            'See the comments in the default config for full docs.';
         Object.assign(hint.style, { margin: '0 0 10px', color: '#888', fontSize: '11px', lineHeight: '1.5' });
 
         const textarea = document.createElement('textarea');
@@ -1367,6 +1540,82 @@
         }
     });
 
+    // ---- Peek: bare-modifier hold/toggle to suspend effects (see PEEK config) ----
+
+    let holdTimer = null; // pending hold-delay timer (hold mode)
+    let tapStart = 0; // press timestamp of a candidate tap (toggle mode)
+    let tapCandidate = false; // a bare peek modifier is down with no other key since
+
+    const isPeekKey = (e) => PEEK.keys.includes(e.key);
+
+    // True only for a single, bare peek modifier (no second modifier held), so the
+    // existing Alt/Shift combos (Alt+R, Alt+Shift+S, …) never trigger a peek.
+    function isBarePeekModifier(e) {
+        if (e.key === 'Shift') return !e.ctrlKey && !e.altKey && !e.metaKey;
+        if (e.key === 'Alt') return !e.ctrlKey && !e.shiftKey && !e.metaKey;
+        return true; // a non-modifier key configured as a peek key: accept as-is
+    }
+
+    document.addEventListener(
+        'keydown',
+        (e) => {
+            if (!PEEK.enabled) return;
+            if (!isPeekKey(e)) {
+                // Any other key cancels a pending/candidate peek (e.g. Alt then R).
+                if (holdTimer) {
+                    clearTimeout(holdTimer);
+                    holdTimer = null;
+                }
+                tapCandidate = false;
+                return;
+            }
+            if (e.repeat || isEditableTarget(e.target)) return;
+            if (!isBarePeekModifier(e)) return;
+            if (e.key === 'Alt') e.preventDefault(); // suppress Firefox menu-bar focus
+            if (PEEK.mode === 'hold') {
+                if (holdTimer || suspended) return;
+                holdTimer = setTimeout(() => {
+                    holdTimer = null;
+                    setSuspended(true);
+                }, PEEK.holdDelayMs);
+            } else {
+                tapCandidate = true;
+                tapStart = performance.now();
+            }
+        },
+        true
+    );
+
+    document.addEventListener(
+        'keyup',
+        (e) => {
+            if (!PEEK.enabled || !isPeekKey(e)) return;
+            if (e.key === 'Alt') e.preventDefault();
+            if (PEEK.mode === 'hold') {
+                if (holdTimer) {
+                    clearTimeout(holdTimer);
+                    holdTimer = null;
+                }
+                setSuspended(false);
+            } else if (tapCandidate && performance.now() - tapStart <= PEEK.tapMaxMs) {
+                tapCandidate = false;
+                setSuspended(!suspended);
+                toast('Content Blur: effects ' + (suspended ? 'suspended (revealed)' : 'active'));
+            }
+        },
+        true
+    );
+
+    // Losing focus mid-hold drops the keyup — don't get stuck revealed.
+    window.addEventListener('blur', () => {
+        if (holdTimer) {
+            clearTimeout(holdTimer);
+            holdTimer = null;
+        }
+        tapCandidate = false;
+        if (PEEK.mode === 'hold') setSuspended(false);
+    });
+
     // -----------------------------------------------------------------------
     //  INIT
     // -----------------------------------------------------------------------
@@ -1377,6 +1626,11 @@
         quickAddPanel
     );
     GM_registerMenuCommand(`⛔ Quick-block into matching rule (${keyLabel(KEYS.quickBlock)})`, quickBlock);
+    if (PEEK.enabled) {
+        GM_registerMenuCommand(`👁️ Toggle reveal all — suspend effects (or hold ${PEEK.keys.join('/')})`, () =>
+            setSuspended(!suspended)
+        );
+    }
 
     await loadRules();
 
