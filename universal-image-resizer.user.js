@@ -15,7 +15,6 @@
 // @run-at      document-idle
 //
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/universal-image-resizer.user.js
-// @updateURL   https://github.com/cbaoth/userscripts/raw/master/universal-image-resizer.user.js
 // ==/UserScript==
 
 (async function () {

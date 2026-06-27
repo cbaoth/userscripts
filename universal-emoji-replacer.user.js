@@ -13,7 +13,6 @@
 // @grant       GM_registerMenuCommand
 //
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/universal-emoji-replacer.user.js
-// @updateURL   https://github.com/cbaoth/userscripts/raw/master/universal-emoji-replacer.user.js
 // ==/UserScript==
 
 (async function () {

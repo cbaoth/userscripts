@@ -15,7 +15,6 @@
 // @run-at      document-start
 //
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/universal-redirector.user.js
-// @updateURL   https://github.com/cbaoth/userscripts/raw/master/universal-redirector.user.js
 // ==/UserScript==
 
 (async function () {

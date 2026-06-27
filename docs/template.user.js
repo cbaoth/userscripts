@@ -15,7 +15,6 @@
 // @require      {optional_url_to_external_library}
 // @icon         {optional_url_to_icon (https://external-content.duckduckgo.com/ip3/{website_domain}.ico)}
 // @downloadURL  https://github.com/cbaoth/userscripts/raw/master/{script_filename}
-// @updateURL    https://github.com/cbaoth/userscripts/raw/master/{script_filename}
 // ==/UserScript==
 
 (function () {
