@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Universal Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-06-27T221014
+// @version      2026-07-02T185259
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -26,6 +26,7 @@
     // -----------------------------------------------------------------------
 
     const STORAGE_KEY = 'contentBlurRules';
+    const PANEL_STATE_KEY = 'contentBlurPanelState'; // remembered quick-add destination
     const BLUR_CLASS = 'ucb-blur';
     const HOVER_CLASS = 'ucb-hover';
     const FREEZE_CLASS = 'ucb-freeze'; // pauses CSS animations inside a frozen target
@@ -1119,18 +1120,15 @@ ${customCss || ''}
         toast('Content Blur: ' + res.message);
     }
 
-    // Returns { text, changed, message } when a matching rule was found (text is the
-    // updated config), or null when no rule matches (caller creates a new one).
-    function addPatternToMatchingRule(text, ctx) {
-        const lines = text.split('\n');
+    // Scan raw config lines once into an index of list blocks + rule lines, so the
+    // quick-add panel and quick-block can insert into a chosen destination and edit
+    // the raw text in place. Mirrors the section handling in parseConfig().
+    function indexConfigRaw(lines) {
         const listBlocks = new Map(); // name -> { headerIdx, lastEntryIdx }
+        const ruleEntries = []; // { idx, fields } for each rule line
         let section = null;
-        let matchIdx = -1;
-        let matchFields = null;
-
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
-            if (!line || line.startsWith('#') || line.startsWith('//')) continue;
 
             const listHeader = line.match(/^\[list:([^\]]+)\]$/i);
             if (listHeader) {
@@ -1143,64 +1141,74 @@ ${customCss || ''}
                 section = { type: 'rules' };
                 continue;
             }
+            if (/^\[css\]$/i.test(line)) {
+                section = { type: 'css' };
+                continue;
+            }
+            if (section && section.type === 'css') continue; // never touch raw CSS
+            if (!line || line.startsWith('#') || line.startsWith('//')) continue;
+
             if (section && section.type === 'list') {
                 listBlocks.get(section.name).lastEntryIdx = i;
                 continue;
             }
-            // Rule candidate — remember the first one matching source type + URL.
-            if (matchIdx === -1 && (line.includes('|') || (section && section.type === 'rules'))) {
+            if (line.includes('|') || (section && section.type === 'rules')) {
                 const fields = line.split('|').map((f) => f.trim());
-                if (fields.length >= 4) {
-                    const up = parseUrlPattern(fields[0]);
-                    if (up && up.regex.test(location.href) && parseSource(fields[1]).includes(ctx.source)) {
-                        matchIdx = i;
-                        matchFields = fields;
-                    }
-                }
+                if (fields.length >= 4) ruleEntries.push({ idx: i, fields });
             }
         }
+        return { listBlocks, ruleEntries };
+    }
 
-        if (matchIdx === -1) return null;
+    // Insert an entry into a [list:NAME] block (dedup). Mutates `lines` in place.
+    function insertListEntry(lines, block, name, entry, label) {
+        for (let i = block.headerIdx + 1; i <= block.lastEntryIdx; i++) {
+            if (lines[i].trim() === entry) {
+                return { changed: false, message: `"${truncate(label, 40)}" already in list @${name}` };
+            }
+        }
+        lines.splice(block.lastEntryIdx + 1, 0, entry);
+        return { changed: true, message: `added "${truncate(label, 40)}" to list @${name}` };
+    }
 
-        const newEntry = listEntry(ctx); // usernames anchored as /^name$/, others bare
-        const tokens = matchFields[2]
+    // Append a token to a rule's patterns field (dedup). Mutates `lines` in place.
+    function insertRulePattern(lines, entry, token, label) {
+        const tokens = entry.fields[2]
             .split(',')
             .map((t) => t.trim())
             .filter(Boolean);
-        const listRef = tokens.find((t) => t.startsWith('@'));
-
-        // Prefer adding to the first referenced list (clean + reusable).
-        if (listRef) {
-            const name = listRef.slice(1).toLowerCase();
-            const block = listBlocks.get(name);
-            if (block) {
-                for (let i = block.headerIdx + 1; i <= block.lastEntryIdx; i++) {
-                    if (lines[i].trim() === newEntry) {
-                        return { changed: false, message: `"${truncate(ctx.label, 40)}" already in list @${name}` };
-                    }
-                }
-                lines.splice(block.lastEntryIdx + 1, 0, newEntry);
-                return {
-                    text: lines.join('\n'),
-                    changed: true,
-                    message: `added "${truncate(ctx.label, 40)}" to list @${name}`,
-                };
-            }
-            // referenced list is not defined anywhere — fall through to inline append
-        }
-
-        // No usable list — append inline as a comma token to the patterns field.
-        const token = patternToken(ctx);
         if (tokens.includes(token)) {
-            return { changed: false, message: `"${truncate(ctx.label, 40)}" already in the matching rule` };
+            return { changed: false, message: `"${truncate(label, 40)}" already in the rule` };
         }
-        matchFields[2] = matchFields[2] + ', ' + token;
-        lines[matchIdx] = matchFields.join(' | ');
-        return {
-            text: lines.join('\n'),
-            changed: true,
-            message: `added "${truncate(ctx.label, 40)}" to the matching rule`,
-        };
+        entry.fields[2] = entry.fields[2] + ', ' + token;
+        lines[entry.idx] = entry.fields.join(' | ');
+        return { changed: true, message: `added "${truncate(label, 40)}" to the rule` };
+    }
+
+    // Quick-block target: the FIRST rule matching the current URL + captured source.
+    // Prefer its first referenced [list:NAME]; else append inline to its patterns.
+    // Returns { text, changed, message } (text only when changed), or null.
+    function addPatternToMatchingRule(text, ctx) {
+        const lines = text.split('\n');
+        const { listBlocks, ruleEntries } = indexConfigRaw(lines);
+        const match = ruleEntries.find((e) => {
+            const up = parseUrlPattern(e.fields[0]);
+            return up && up.regex.test(location.href) && parseSource(e.fields[1]).includes(ctx.source);
+        });
+        if (!match) return null;
+
+        const listRef = match.fields[2]
+            .split(',')
+            .map((t) => t.trim())
+            .find((t) => t.startsWith('@'));
+        let res;
+        if (listRef && listBlocks.has(listRef.slice(1).toLowerCase())) {
+            const name = listRef.slice(1).toLowerCase();
+            res = insertListEntry(lines, listBlocks.get(name), name, listEntry(ctx), ctx.label);
+        } else {
+            res = insertRulePattern(lines, match, patternToken(ctx), ctx.label);
+        }
+        return { ...res, text: res.changed ? lines.join('\n') : undefined };
     }
 
     function truncate(s, n) {
@@ -1211,13 +1219,29 @@ ${customCss || ''}
     //  QUICK-ADD PANEL (KEYS.quickAddPanel)
     // -----------------------------------------------------------------------
 
-    function quickAddPanel() {
+    const PANEL_MODES = [
+        { value: 'new', label: 'New rule' },
+        { value: 'rule', label: '+ Existing rule' },
+        { value: 'list', label: '+ Existing list' },
+    ];
+
+    // The captured value can go to a new rule (full form), an existing rule's
+    // patterns field, or an existing list. The chosen mode + destination are
+    // remembered in GM storage (PANEL_STATE_KEY) so repeated adds need no reselect.
+    async function quickAddPanel() {
         const ctx = captureContext();
         if (!ctx) {
             toast('Content Blur: select text or hover a link first', false);
             return;
         }
         document.getElementById('ucb-quick-panel')?.remove();
+
+        // Load config (to enumerate destinations) + remembered panel state.
+        const stored = (await GM.getValue(STORAGE_KEY, null)) ?? DEFAULT_RULES;
+        const lines = stored.split('\n');
+        const { listBlocks, ruleEntries } = indexConfigRaw(lines);
+        const listNames = [...listBlocks.keys()];
+        const savedState = (await GM.getValue(PANEL_STATE_KEY, null)) || {};
 
         const panel = document.createElement('div');
         panel.id = 'ucb-quick-panel';
@@ -1261,44 +1285,116 @@ ${customCss || ''}
             fontSize: '13px',
             fontFamily: 'monospace',
         };
+        const mkSelect = () => {
+            const s = document.createElement('select');
+            Object.assign(s.style, inputStyle);
+            return s;
+        };
+
+        // --- persistent controls: mode combobox, pattern input, buttons ---
+        const modeSel = mkSelect();
+        for (const m of PANEL_MODES) {
+            const o = document.createElement('option');
+            o.value = m.value;
+            o.textContent = m.label;
+            if (m.value === 'rule' && !ruleEntries.length) o.disabled = true;
+            if (m.value === 'list' && !listNames.length) o.disabled = true;
+            modeSel.appendChild(o);
+        }
 
         const patternInput = document.createElement('input');
         patternInput.type = 'text';
         patternInput.value = ctx.pattern;
         Object.assign(patternInput.style, inputStyle, { minWidth: '240px', flex: '1' });
 
-        const sourceSel = document.createElement('select');
-        for (const s of VALID_SOURCES) {
-            const o = document.createElement('option');
-            o.value = o.textContent = s;
-            if (s === ctx.source) o.selected = true;
-            sourceSel.appendChild(o);
-        }
-        Object.assign(sourceSel.style, inputStyle);
-
-        const scopeSel = document.createElement('select');
-        for (const s of ['self', 'up:1', 'up:2', 'up:3', 'row', 'closest:.comment', 'closest:article']) {
-            const o = document.createElement('option');
-            o.value = o.textContent = s;
-            scopeSel.appendChild(o);
-        }
-        Object.assign(scopeSel.style, inputStyle);
-
-        const hoverCb = document.createElement('input');
-        hoverCb.type = 'checkbox';
-        hoverCb.checked = true;
-        const hoverLabel = document.createElement('label');
-        Object.assign(hoverLabel.style, {
-            display: 'flex',
-            alignItems: 'center',
-            gap: '5px',
-            fontSize: '12px',
-            color: '#999',
-        });
-        hoverLabel.append(hoverCb, 'reveal on hover');
-
         const addBtn = makeBtn('Add & apply', '#0e639c');
         const cancelBtn = makeBtn('Cancel', '#333', '#ccc');
+
+        // --- swappable middle region (mode-specific fields) ---
+        const midWrap = document.createElement('div');
+        Object.assign(midWrap.style, { display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' });
+        const mid = {}; // current mode-specific controls
+
+        const renderMid = (mode) => {
+            midWrap.replaceChildren();
+            for (const k of Object.keys(mid)) delete mid[k];
+            if (mode === 'new') {
+                const sourceSel = mkSelect();
+                for (const s of VALID_SOURCES) {
+                    const o = document.createElement('option');
+                    o.value = o.textContent = s;
+                    if (s === ctx.source) o.selected = true;
+                    sourceSel.appendChild(o);
+                }
+                const scopeSel = mkSelect();
+                for (const s of ['self', 'up:1', 'up:2', 'up:3', 'row', 'closest:.comment', 'closest:article']) {
+                    const o = document.createElement('option');
+                    o.value = o.textContent = s;
+                    scopeSel.appendChild(o);
+                }
+                const hoverCb = document.createElement('input');
+                hoverCb.type = 'checkbox';
+                hoverCb.checked = true;
+                const hoverLabel = document.createElement('label');
+                Object.assign(hoverLabel.style, {
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    fontSize: '12px',
+                    color: '#999',
+                });
+                hoverLabel.append(hoverCb, 'reveal on hover');
+                Object.assign(mid, { sourceSel, scopeSel, hoverCb });
+                midWrap.append(field('source', sourceSel), field('scope', scopeSel), hoverLabel);
+            } else if (mode === 'rule') {
+                const ruleSel = mkSelect();
+                Object.assign(ruleSel.style, { maxWidth: '440px' });
+                ruleEntries.forEach((e, i) => {
+                    const o = document.createElement('option');
+                    o.value = String(i);
+                    o.textContent = truncate(lines[e.idx].trim(), 70);
+                    if (lines[e.idx].trim() === savedState.ruleKey) o.selected = true;
+                    ruleSel.appendChild(o);
+                });
+                mid.ruleSel = ruleSel;
+                midWrap.append(field('target rule', ruleSel));
+            } else {
+                const listSel = mkSelect();
+                for (const name of listNames) {
+                    const o = document.createElement('option');
+                    o.value = o.textContent = name;
+                    if (name === savedState.listName) o.selected = true;
+                    listSel.appendChild(o);
+                }
+                mid.listSel = listSel;
+                midWrap.append(field('target list', listSel));
+            }
+        };
+
+        // Initial mode: remembered, if still available; else new.
+        let initialMode = savedState.mode || 'new';
+        if (initialMode === 'rule' && !ruleEntries.length) initialMode = 'new';
+        if (initialMode === 'list' && !listNames.length) initialMode = 'new';
+        modeSel.value = initialMode;
+        renderMid(initialMode);
+        modeSel.addEventListener('change', () => renderMid(modeSel.value));
+
+        // --- apply helpers ---
+        // Effective context uses the (possibly edited) pattern; source drives token
+        // anchoring (usernames → /^name$/) and stays the captured source in rule/list
+        // modes, where no source picker is shown.
+        const effCtx = () => ({ source: ctx.source, pattern: patternInput.value.trim(), label: ctx.label });
+        const saveState = async (patch) => {
+            const cur = (await GM.getValue(PANEL_STATE_KEY, null)) || {};
+            await GM.setValue(PANEL_STATE_KEY, { ...cur, ...patch });
+        };
+        const applyEdits = async (changed) => {
+            if (!changed) return;
+            await GM.setValue(STORAGE_KEY, lines.join('\n'));
+            await loadRules();
+            scan(document.body);
+            if (activeRules.length > 0) startObserver();
+        };
 
         cancelBtn.addEventListener('click', () => panel.remove());
         addBtn.addEventListener('click', async () => {
@@ -1307,25 +1403,35 @@ ${customCss || ''}
                 toast('Content Blur: pattern is empty', false);
                 return;
             }
+            const mode = modeSel.value;
+            if (mode === 'new') {
+                const line = buildRuleLine(
+                    { source: mid.sourceSel.value, pattern },
+                    mid.scopeSel.value,
+                    mid.hoverCb.checked ? ['hover'] : ['no-hover']
+                );
+                await appendRuleLine(line);
+                scan(document.body);
+                if (activeRules.length > 0) startObserver();
+                await saveState({ mode });
+                toast('Content Blur: rule added');
+            } else if (mode === 'rule') {
+                const entry = ruleEntries[Number(mid.ruleSel.value)];
+                const res = insertRulePattern(lines, entry, patternToken(effCtx()), ctx.label);
+                await applyEdits(res.changed);
+                await saveState({ mode, ruleKey: lines[entry.idx].trim() });
+                toast('Content Blur: ' + res.message);
+            } else {
+                const name = mid.listSel.value;
+                const res = insertListEntry(lines, listBlocks.get(name), name, listEntry(effCtx()), ctx.label);
+                await applyEdits(res.changed);
+                await saveState({ mode, listName: name });
+                toast('Content Blur: ' + res.message);
+            }
             panel.remove();
-            const line = buildRuleLine(
-                { source: sourceSel.value, pattern },
-                scopeSel.value,
-                hoverCb.checked ? ['hover'] : ['no-hover']
-            );
-            await appendRuleLine(line);
-            scan(document.body);
-            toast('Content Blur: rule added');
         });
 
-        panel.append(
-            field('pattern (regex)', patternInput),
-            field('source', sourceSel),
-            field('scope', scopeSel),
-            hoverLabel,
-            addBtn,
-            cancelBtn
-        );
+        panel.append(field('add to', modeSel), field('pattern (regex)', patternInput), midWrap, addBtn, cancelBtn);
         document.documentElement.appendChild(panel);
         patternInput.focus();
         patternInput.select();
@@ -1375,6 +1481,7 @@ ${customCss || ''}
             maxWidth: '96vw',
             maxHeight: '92vh',
             overflowY: 'auto',
+            overscrollBehavior: 'contain', // scrolling the dialog never chains to the page behind it
             boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
             fontFamily: 'sans-serif',
             fontSize: '13px',
@@ -1409,6 +1516,7 @@ ${customCss || ''}
             padding: '8px',
             boxSizing: 'border-box',
             resize: 'vertical',
+            overscrollBehavior: 'contain', // wheel scroll stays in the textarea, never chains to the page
             fontFamily: 'monospace',
             fontSize: '12px',
             lineHeight: '1.6',
@@ -1484,8 +1592,28 @@ ${customCss || ''}
             location.reload();
         });
 
+        // Close on backdrop click only when the press STARTED on the backdrop and
+        // outside a small dead zone around the panel — so selecting text and
+        // releasing just outside the textarea (or a near-miss click) doesn't discard
+        // the dialog. Only a deliberate press+release on the backdrop closes it.
+        const CLOSE_DEADZONE_PX = 12;
+        let pressedOnBackdrop = false;
+        overlay.addEventListener('pointerdown', (e) => {
+            if (e.target !== overlay) {
+                pressedOnBackdrop = false;
+                return;
+            }
+            const r = panel.getBoundingClientRect();
+            const nearPanel =
+                e.clientX >= r.left - CLOSE_DEADZONE_PX &&
+                e.clientX <= r.right + CLOSE_DEADZONE_PX &&
+                e.clientY >= r.top - CLOSE_DEADZONE_PX &&
+                e.clientY <= r.bottom + CLOSE_DEADZONE_PX;
+            pressedOnBackdrop = !nearPanel;
+        });
         overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) confirmClose();
+            if (e.target === overlay && pressedOnBackdrop) confirmClose();
+            pressedOnBackdrop = false;
         });
         overlay.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') confirmClose();
