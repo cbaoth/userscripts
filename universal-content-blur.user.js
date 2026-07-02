@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Universal Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-07-02T185259
+// @version      2026-07-02T203656
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -52,7 +52,7 @@
         enabled: true,
         mode: 'hold', // 'hold' = active only while held; 'toggle' = tap to flip on/off
         keys: ['Shift', 'Alt'], // bare modifier keys that trigger (either one, not combined)
-        holdDelayMs: 250, // hold mode: ignore presses shorter than this (e.g. Shift for capitals)
+        holdDelayMs: 1000, // hold mode: ignore presses shorter than this — long enough that pressing a hotkey combo (Alt+R/…) never trips a peek; also ignores Shift-for-capitals
         tapMaxMs: 300, // toggle mode: max press duration still counted as a deliberate tap
     };
 
@@ -996,8 +996,12 @@ ${customCss || ''}
     // -----------------------------------------------------------------------
 
     let lastHoveredLink = null;
+    // Track the hovered link via mousemove, NOT mouseover: mouseover also fires when
+    // content reflows under a stationary cursor (e.g. when a peek reveals hidden rows
+    // and the layout shifts), which would silently capture the wrong link. mousemove
+    // only fires on real pointer motion, so the last link stays what you last pointed at.
     document.addEventListener(
-        'mouseover',
+        'mousemove',
         (e) => {
             const a = e.target.closest && e.target.closest('a[href]');
             if (a) lastHoveredLink = a;
@@ -1229,12 +1233,22 @@ ${customCss || ''}
     // patterns field, or an existing list. The chosen mode + destination are
     // remembered in GM storage (PANEL_STATE_KEY) so repeated adds need no reselect.
     async function quickAddPanel() {
-        const ctx = captureContext();
-        if (!ctx) {
+        const captured = captureContext();
+        if (!captured) {
             toast('Content Blur: select text or hover a link first', false);
             return;
         }
-        document.getElementById('ucb-quick-panel')?.remove();
+        // If the bar is already open, refresh it in place from the fresh capture
+        // (keeping the chosen destination) instead of tearing it down and rebuilding.
+        // This is what makes "hold Alt+Shift, hover different links, tap R to
+        // re-capture" update the pattern smoothly, with no focus/async churn.
+        const existing = document.getElementById('ucb-quick-panel');
+        if (existing && typeof existing._ucbRefresh === 'function') {
+            existing._ucbRefresh(captured);
+            return;
+        }
+        existing?.remove();
+        let ctx = captured;
 
         // Load config (to enumerate destinations) + remembered panel state.
         const stored = (await GM.getValue(STORAGE_KEY, null)) ?? DEFAULT_RULES;
@@ -1430,6 +1444,17 @@ ${customCss || ''}
             }
             panel.remove();
         });
+
+        // In-place refresh for a re-pressed hotkey: update the pattern (and source,
+        // in New-rule mode) from a fresh capture without rebuilding, keeping the
+        // chosen destination. Stored on the element so a re-open can find it.
+        panel._ucbRefresh = (newCtx) => {
+            ctx = newCtx;
+            patternInput.value = ctx.pattern;
+            if (mid.sourceSel) mid.sourceSel.value = ctx.source;
+            patternInput.focus();
+            patternInput.select();
+        };
 
         panel.append(field('add to', modeSel), field('pattern (regex)', patternInput), midWrap, addBtn, cancelBtn);
         document.documentElement.appendChild(panel);
@@ -1652,7 +1677,10 @@ ${customCss || ''}
     }
 
     document.addEventListener('keydown', (e) => {
-        if (isEditableTarget(e.target)) return;
+        // Ignore hotkeys while typing in page inputs, but still allow them inside our
+        // own bottom bar so re-pressing the hotkey (while hovering a new link) rebuilds
+        // it with the freshly-captured value instead of doing nothing.
+        if (isEditableTarget(e.target) && !e.target.closest?.('#ucb-quick-panel')) return;
         if (matchesKey(e, KEYS.openSettings)) {
             e.preventDefault();
             openSettings();
