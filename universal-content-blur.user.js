@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Universal Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-07-02T203656
+// @version      2026-07-02T210813
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -1049,13 +1049,31 @@ ${customCss || ''}
         return `${urlPat} | ${ctx.source} | ${patternToken(ctx)} | blur | ${scope} | ${opt}`;
     }
 
+    // Normalize a rule line for duplicate detection: trim whitespace around the |
+    // field separators (so hand-aligned "ASCII table" rules still compare equal)
+    // without touching whitespace inside fields (e.g. within the patterns list).
+    function normalizeRuleLine(line) {
+        return line
+            .split('|')
+            .map((f) => f.trim())
+            .join(' | ');
+    }
+
+    // Append a rule line, unless a semantically-identical rule already exists.
+    // Returns { changed } so callers can report added-vs-already-present.
     async function appendRuleLine(ruleLine) {
         const stored = (await GM.getValue(STORAGE_KEY, null)) ?? DEFAULT_RULES;
+        const { ruleEntries } = indexConfigRaw(stored.split('\n'));
+        const newNorm = normalizeRuleLine(ruleLine);
+        if (ruleEntries.some((e) => e.fields.join(' | ') === newNorm)) {
+            return { changed: false };
+        }
         let next = stored.trimEnd();
         if (!/\[rules\]/i.test(next)) next += '\n\n[rules]';
         next += '\n' + ruleLine + '\n';
         await GM.setValue(STORAGE_KEY, next);
         await loadRules();
+        return { changed: true };
     }
 
     function toast(msg, ok = true) {
@@ -1082,9 +1100,12 @@ ${customCss || ''}
 
     // Append a brand-new rule built from the captured context, then apply it.
     async function addNewRuleFromContext(ctx) {
-        await appendRuleLine(buildRuleLine(ctx, 'self', ['hover']));
-        scan(document.body);
-        if (activeRules.length > 0) startObserver(); // apply immediately on this page
+        const res = await appendRuleLine(buildRuleLine(ctx, 'self', ['hover']));
+        if (res.changed) {
+            scan(document.body);
+            if (activeRules.length > 0) startObserver(); // apply immediately on this page
+        }
+        return res;
     }
 
     async function quickAddSilent() {
@@ -1093,8 +1114,12 @@ ${customCss || ''}
             toast('Content Blur: select text or hover a link first', false);
             return;
         }
-        await addNewRuleFromContext(ctx);
-        toast(`Content Blur: added rule for "${truncate(ctx.label, 40)}"`);
+        const res = await addNewRuleFromContext(ctx);
+        toast(
+            res.changed
+                ? `Content Blur: added rule for "${truncate(ctx.label, 40)}"`
+                : `Content Blur: rule for "${truncate(ctx.label, 40)}" already exists`
+        );
     }
 
     // Quick-block: add the captured pattern to the FIRST existing rule whose source
@@ -1111,8 +1136,12 @@ ${customCss || ''}
         const stored = (await GM.getValue(STORAGE_KEY, null)) ?? DEFAULT_RULES;
         const res = addPatternToMatchingRule(stored, ctx);
         if (!res) {
-            await addNewRuleFromContext(ctx);
-            toast(`Content Blur: no matching rule — created one for "${truncate(ctx.label, 40)}"`);
+            const added = await addNewRuleFromContext(ctx);
+            toast(
+                added.changed
+                    ? `Content Blur: no matching rule — created one for "${truncate(ctx.label, 40)}"`
+                    : `Content Blur: rule for "${truncate(ctx.label, 40)}" already exists`
+            );
             return;
         }
         if (res.changed) {
@@ -1424,11 +1453,13 @@ ${customCss || ''}
                     mid.scopeSel.value,
                     mid.hoverCb.checked ? ['hover'] : ['no-hover']
                 );
-                await appendRuleLine(line);
-                scan(document.body);
-                if (activeRules.length > 0) startObserver();
+                const res = await appendRuleLine(line);
+                if (res.changed) {
+                    scan(document.body);
+                    if (activeRules.length > 0) startObserver();
+                }
                 await saveState({ mode });
-                toast('Content Blur: rule added');
+                toast('Content Blur: ' + (res.changed ? 'rule added' : 'rule already exists'));
             } else if (mode === 'rule') {
                 const entry = ruleEntries[Number(mid.ruleSel.value)];
                 const res = insertRulePattern(lines, entry, patternToken(effCtx()), ctx.label);
