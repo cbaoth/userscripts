@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Universal Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-07-03T162505
+// @version      2026-07-03T172300
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -64,12 +64,6 @@
     //  in a rule's action field. The only obscuring effect plain CSS can't do:
     //    pixelate    — true pixelation needs a canvas/SVG filter, not CSS
     //  Other ideas:
-    //    pointer-events:none on blurred content to block accidental clicks (opt-in;
-    //      it contributed to breakage in the script this replaces — trivially a
-    //      [css] class now, e.g. .ucb-noclick { pointer-events: none })
-    //    Cross-row blur: when a result spans several sibling rows (old <table>
-    //      galleries), blur both the title row AND the username row if either
-    //      triggers. Needs a "neighbor"/sibling-group scope; too complex for v1.
     //    Match commented-out HTML (e.g. <!-- ... alt="..." -->) — niche; skipped.
 
     // -----------------------------------------------------------------------
@@ -154,6 +148,14 @@
 #                 up:N            climb N ancestor elements (e.g. up:2)
 #                 closest:SEL     nearest ancestor matching CSS selector SEL
 #                 row             alias for closest:tr (old table layouts)
+#               Optional modifiers, space-separated after the base scope:
+#                 prev:N next:N   also apply the effect to the N sibling elements
+#                                 before/after the scoped target — for layouts where
+#                                 one logical item spans several siblings, e.g. old
+#                                 <table> galleries with the image and the username
+#                                 in separate rows. With hover, pointing at ANY
+#                                 member reveals the whole group at once.
+#                                 Example: row prev:1 next:1
 #
 # options       Comma list (optional):
 #                 hover           reveal on mouse-over (default: ON)
@@ -202,15 +204,26 @@
 # .ucb-dim.ucb-hover:hover { opacity: 1 !important; }
 # /* hard hide — no hover reveal once removed from layout */
 # .ucb-hide { display: none !important; }
+# /* recipe: block accidental clicks on blurred content. NOTE pointer-events:none
+#    also disables the element's own :hover reveal — pair it with no-hover, or
+#    reveal via peek (hold Shift/Alt) or a prev/next group hover instead. */
+# .ucb-noclick { pointer-events: none !important; }
 # /* HIGHLIGHT (emphasize instead of hide): a theme-proof ring that pops on any
 #    background — black + white + colored layers, no layout shift. Actions aren't
 #    only for obfuscating; any CSS works. Use the no-hover option so it stays. */
 # .ucb-hl { outline: 2px solid #ff8c00 !important; outline-offset: -1px !important;
 #           box-shadow: 0 0 0 1px #000, 0 0 0 3px #fff, 0 0 6px 3px rgba(255,140,0,.7) !important; }
+# /* parent wins: no second ring on nested matches inside an already-highlighted
+#    element (e.g. a matched row AND a matched link within it). The same one-line
+#    pattern works for any effect: .ucb-dim .ucb-dim { opacity: 1 !important; } */
+# .ucb-hl .ucb-hl { outline: none !important; box-shadow: none !important; }
 #
 # [rules]
 # # blur the whole table row of a flagged username on one site:
 # *://site.com/*   | user          | @users             | blur       | row   | hover
+# # one gallery item spans two <tr> rows (image row above the username row):
+# # blur BOTH rows when the username matches; hovering either reveals the pair:
+# *://site.com/*   | user          | @users             | blur       | row prev:1 | hover
 # # blur any visible text containing a @words_violent word, anywhere, reveal on hover:
 # *://*/*          | text          | @words_violent     | blur       | self  | hover
 # # blur image + caption when alt/title or filename matches, on all sites,
@@ -408,17 +421,31 @@
         return out;
     }
 
+    // Scope = base (self | up:N | closest:SEL | row) plus optional space-separated
+    // sibling modifiers prev:N / next:N. Modifiers are pulled off the tail so a
+    // closest:SEL selector containing spaces stays intact (a valid CSS selector
+    // can never end in prev:N / next:N).
     function parseScope(field, issues, lineNum) {
-        const t = (field || 'self').trim();
-        if (!t || t === 'self') return { kind: 'self' };
-        if (t === 'row') return { kind: 'closest', selector: 'tr' };
-        if (/^up:\d+$/i.test(t)) return { kind: 'up', n: parseInt(t.slice(3), 10) };
-        if (/^closest:/i.test(t)) {
-            const selector = t.slice(8).trim();
-            if (selector) return { kind: 'closest', selector };
+        let t = (field || 'self').trim();
+        const mods = { prev: 0, next: 0 };
+        let m;
+        while ((m = t.match(/(?:^|\s+)(prev|next):(\d+)$/i))) {
+            mods[m[1].toLowerCase()] = parseInt(m[2], 10);
+            t = t.slice(0, m.index).trim();
         }
-        reportIssue(issues, lineNum, 'warning', `unknown scope "${t}", using self`);
-        return { kind: 'self' };
+        let base = null;
+        if (!t || t === 'self') base = { kind: 'self' };
+        else if (t === 'row') base = { kind: 'closest', selector: 'tr' };
+        else if (/^up:\d+$/i.test(t)) base = { kind: 'up', n: parseInt(t.slice(3), 10) };
+        else if (/^closest:/i.test(t)) {
+            const selector = t.slice(8).trim();
+            if (selector) base = { kind: 'closest', selector };
+        }
+        if (!base) {
+            reportIssue(issues, lineNum, 'warning', `unknown scope "${t}", using self`);
+            base = { kind: 'self' };
+        }
+        return { ...base, ...mods };
     }
 
     // Class names the script uses internally — a custom action may not reuse them.
@@ -746,21 +773,38 @@ ${customCss || ''}
         return matchedEl;
     }
 
+    // Base target plus the prev:N / next:N sibling elements from the rule's scope
+    // modifiers; clamped at the parent's edges.
+    function expandScopeGroup(target, scope) {
+        if (!scope.prev && !scope.next) return [target];
+        const group = [target];
+        let el = target;
+        for (let i = 0; i < scope.prev && el.previousElementSibling; i++) group.unshift((el = el.previousElementSibling));
+        el = target;
+        for (let i = 0; i < scope.next && el.nextElementSibling; i++) group.push((el = el.nextElementSibling));
+        return group;
+    }
+
     function applyActions(matchedEl, rule) {
-        const target = resolveTarget(matchedEl, rule.scope);
-        if (!target || processed.has(target)) return;
-        // Never touch structural roots.
-        if (target === document.body || target === document.documentElement) return;
-        processed.add(target);
-        touched.add(target); // remembered so a "peek" can suspend/restore its effects
-        for (const act of rule.actions) {
-            target.classList.add('ucb-' + act.name); // built-in .ucb-blur or a user [css] class
-            if (act.value != null) target.style.setProperty('--ucb-' + act.name, act.value);
+        const base = resolveTarget(matchedEl, rule.scope);
+        if (!base || processed.has(base)) return;
+        const group = expandScopeGroup(base, rule.scope);
+        for (const target of group) {
+            if (processed.has(target)) continue;
+            // Never touch structural roots.
+            if (target === document.body || target === document.documentElement) continue;
+            processed.add(target);
+            touched.add(target); // remembered so a "peek" can suspend/restore its effects
+            for (const act of rule.actions) {
+                target.classList.add('ucb-' + act.name); // built-in .ucb-blur or a user [css] class
+                if (act.value != null) target.style.setProperty('--ucb-' + act.name, act.value);
+            }
+            if (rule.options.hover) target.classList.add(HOVER_CLASS);
+            if (rule.options.freeze) freezeMedia(target);
+            // If a peek is currently active, keep newly-matched content revealed too.
+            if (suspended) suspendEl(target);
         }
-        if (rule.options.hover) target.classList.add(HOVER_CLASS);
-        if (rule.options.freeze) freezeMedia(target);
-        // If a peek is currently active, keep newly-matched content revealed too.
-        if (suspended) suspendEl(target);
+        if (group.length > 1 && rule.options.hover) linkHoverGroup(group);
     }
 
     // -----------------------------------------------------------------------
@@ -938,8 +982,64 @@ ${customCss || ''}
                 continue;
             }
             if (on) suspendEl(el);
-            else resumeEl(el);
+            // Members of a currently-hovered group stay revealed when a peek ends.
+            else if (!hoveredGroup || !hoveredGroup.includes(el)) resumeEl(el);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    //  HOVER-LINKED GROUPS (scope modifiers prev:N / next:N)
+    // -----------------------------------------------------------------------
+
+    // A multi-element scope group reveals as one unit: hovering ANY member
+    // suspends the effects of ALL members and restores them when the pointer
+    // leaves the group. Reusing the peek suspend/resume machinery makes this
+    // work for every effect — built-in blur and user [css] classes alike —
+    // without any extra CSS.
+
+    const groupOf = new WeakMap(); // member element -> its group (array of members)
+    let hoveredGroup = null; // group currently revealed by the pointer
+
+    function linkHoverGroup(group) {
+        for (const el of group) {
+            if (!groupOf.has(el)) {
+                groupOf.set(el, group); // first group wins if rules overlap
+                el.dataset.ucbGroup = '1'; // marker for the delegated closest() lookup
+            }
+        }
+        ensureGroupHoverDelegation();
+    }
+
+    let groupHoverBound = false;
+    function ensureGroupHoverDelegation() {
+        if (groupHoverBound) return;
+        groupHoverBound = true;
+        document.addEventListener(
+            'mouseover',
+            (e) => {
+                const member = e.target.closest?.('[data-ucb-group]');
+                const group = member && groupOf.get(member);
+                if (!group || group === hoveredGroup) return;
+                // A stale hovered group (e.g. its members were re-rendered away, so
+                // no mouseout fired) is restored before revealing the new one.
+                if (hoveredGroup && !suspended) for (const el of hoveredGroup) resumeEl(el);
+                hoveredGroup = group;
+                if (!suspended) for (const el of group) suspendEl(el);
+            },
+            true
+        );
+        document.addEventListener(
+            'mouseout',
+            (e) => {
+                const member = e.target.closest?.('[data-ucb-group]');
+                const group = member && groupOf.get(member);
+                if (!group || group !== hoveredGroup) return;
+                if (e.relatedTarget && group.some((el) => el.contains(e.relatedTarget))) return; // still inside
+                hoveredGroup = null;
+                if (!suspended) for (const el of group) resumeEl(el);
+            },
+            true
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1489,6 +1589,13 @@ ${customCss || ''}
         };
 
         cancelBtn.addEventListener('click', () => panel.remove());
+        // Escape closes the bar (same as Cancel) — parity with the settings dialog.
+        panel.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                e.stopPropagation();
+                panel.remove();
+            }
+        });
         addBtn.addEventListener('click', async () => {
             const token = patternInput.value.trim();
             if (!token) {
@@ -1593,9 +1700,28 @@ ${customCss || ''}
             fontSize: '13px',
         });
 
+        const header = document.createElement('div');
+        Object.assign(header.style, { display: 'flex', alignItems: 'center', margin: '0 0 6px' });
         const title = document.createElement('h3');
         title.textContent = 'Universal Content Blur — Rules';
-        Object.assign(title.style, { margin: '0 0 6px', color: '#fff', fontSize: '15px' });
+        Object.assign(title.style, { margin: '0', color: '#fff', fontSize: '15px', flex: '1' });
+        const btnClose = document.createElement('button');
+        btnClose.textContent = '✕';
+        btnClose.title = 'Close (Esc)';
+        btnClose.setAttribute('aria-label', 'Close');
+        Object.assign(btnClose.style, {
+            background: 'none',
+            border: 'none',
+            color: '#888',
+            cursor: 'pointer',
+            fontSize: '16px',
+            lineHeight: '1',
+            padding: '2px 4px',
+        });
+        btnClose.addEventListener('mouseenter', () => (btnClose.style.color = '#fff'));
+        btnClose.addEventListener('mouseleave', () => (btnClose.style.color = '#888'));
+        btnClose.addEventListener('click', () => confirmClose());
+        header.append(title, btnClose);
 
         const hint = document.createElement('div');
         hint.innerHTML =
@@ -1607,7 +1733,8 @@ ${customCss || ''}
             'Patterns: <code style="color:#9cdcfe">word</code> (whole-word), ' +
             '<code style="color:#9cdcfe">"exact"</code>, <code style="color:#9cdcfe">/regex/</code>. ' +
             'Sources: text, alt, title, url, user. Scope: self, up:N, ' +
-            'closest:SEL, row. Actions: blur (or blur:N), plus any ' +
+            'closest:SEL, row — append prev:N / next:N to extend the effect to sibling ' +
+            'elements (hover reveals the whole group). Actions: blur (or blur:N), plus any ' +
             '<code style="color:#9cdcfe">.ucb-NAME</code> class you define in a ' +
             '<code style="color:#9cdcfe">[css]</code> block. ' +
             'See the comments in the default config for full docs.';
@@ -1728,7 +1855,7 @@ ${customCss || ''}
         });
 
         btnRow.append(btnReset, btnValidate, btnCancel, btnSave, btnSaveReload);
-        panel.append(title, hint, textarea, statusLine, btnRow);
+        panel.append(header, hint, textarea, statusLine, btnRow);
         overlay.append(panel);
         (document.body ?? document.documentElement).append(overlay);
         textarea.focus();
