@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Universal Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-07-03T231831
+// @version      2026-07-04
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -42,6 +42,16 @@
         quickAddPanel: { alt: true, shift: true, ctrl: false, meta: false, key: 'r' },
         quickBlock: { alt: true, shift: false, ctrl: false, meta: false, key: 'a' },
         openSettings: { alt: true, shift: true, ctrl: false, meta: false, key: 's' },
+    };
+
+    // Quick-add bar placement. Desktop browsers draw the link-target status bubble
+    // in the viewport's bottom-left corner, exactly where a flush bottom bar sits —
+    // the offset floats the bar above the bubble so hovering links while the bar is
+    // open never hides its fields. Set position 'top' to avoid the corner entirely.
+    const QUICK_BAR = {
+        position: 'bottom', // 'top' | 'bottom' — viewport edge the bar docks to
+        offset: 40, // px distance from that edge (at 'bottom': clears the status bubble)
+        margin: 12, // px side margins
     };
 
     // "Peek": hold (or tap) a bare modifier to temporarily suspend ALL effects so
@@ -1452,16 +1462,17 @@ ${customCss || ''}
         panel.id = 'ucb-quick-panel';
         Object.assign(panel.style, {
             position: 'fixed',
-            bottom: '0',
-            left: '0',
-            right: '0',
+            [QUICK_BAR.position === 'top' ? 'top' : 'bottom']: QUICK_BAR.offset + 'px',
+            left: QUICK_BAR.margin + 'px',
+            right: QUICK_BAR.margin + 'px',
             zIndex: '2147483647',
             background: '#1e1e1e',
             color: '#d4d4d4',
             padding: '14px 16px',
+            borderRadius: '10px',
             fontFamily: 'sans-serif',
             fontSize: '13px',
-            boxShadow: '0 -4px 24px rgba(0,0,0,0.55)',
+            boxShadow: `0 ${QUICK_BAR.position === 'top' ? '' : '-'}4px 24px rgba(0,0,0,0.55)`,
             display: 'flex',
             flexWrap: 'wrap',
             gap: '10px',
