@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Universal Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-07-02T210813
+// @version      2026-07-03T162505
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -121,17 +121,19 @@
 #
 # patterns      Comma list of:
 #                 @NAME       reference a [list:NAME] block
-#                 word        literal, WHOLE-WORD match (auto-escaped): "test"
-#                             matches "test" but not "tested". Spaces allowed
-#                             ("foo bar"). Wildcards: * = any run, ? = one char;
-#                             write \\* or \\? for a literal * or ?.
-#                 /regex/i    raw regex (flags optional); matches as a SUBSTRING
-#                             (also inside words). Add \\b...\\b for whole-word,
-#                             or ^...$ for a full-value match. Use for alternation
-#                             etc. (For a plain word, bare text is simpler.)
-#               NOTE: inside a rule line, | is the field separator, so a /regex/
-#               token must NOT contain | . For alternatives use commas (foo,bar)
-#               or put a full regex (incl. |) in a [list:NAME] block.
+#                 word        literal, WHOLE-WORD match (auto-escaped): test
+#                             matches the word "test" but not "tested". Spaces are
+#                             literal (foo bar). Wildcards: * = any run, ? = one
+#                             char; write \\* \\? for a literal * or ?.
+#                 "text"      EXACT full-value match (^...$): "mike" matches only
+#                             the whole value "mike", not "mike2". Wildcards still
+#                             work inside; \\" is a literal quote.
+#                 /regex/i    raw regex (flags optional); matches as a SUBSTRING.
+#                             Add \\b...\\b for whole-word or ^...$ for full value.
+#               A , or | inside "..." is literal (not a separator). Inside a raw
+#               /regex/ they still split, so for a regex that needs | use a
+#               [list:NAME] line (list entries are one per line, so | and , are
+#               literal there).
 #
 # action        Comma list of effects applied to the scoped element. Each effect
 #               is a CSS class — the script adds class .ucb-NAME:
@@ -234,6 +236,38 @@
         return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
+    // Split on a top-level single-char delimiter, treating "…" as a literal group so
+    // a delimiter inside double quotes (\" = literal quote) is NOT a separator. A raw
+    // /regex/ is NOT protected — a | or , inside a regex still splits (use "…" for a
+    // literal, or a [list:…] line for a regex that needs |). Whitespace is not trimmed.
+    function splitTopLevel(str, delim) {
+        const out = [];
+        let cur = '';
+        let inQuote = false;
+        for (let i = 0; i < str.length; i++) {
+            const c = str[i];
+            if (inQuote) {
+                if (c === '\\' && str[i + 1] === '"') {
+                    cur += '\\"';
+                    i++;
+                } else {
+                    cur += c;
+                    if (c === '"') inQuote = false;
+                }
+            } else if (c === '"') {
+                inQuote = true;
+                cur += c;
+            } else if (c === delim) {
+                out.push(cur);
+                cur = '';
+            } else {
+                cur += c;
+            }
+        }
+        out.push(cur);
+        return out;
+    }
+
     // Report a config problem: always log it, and push a structured record when an
     // `issues` collector is provided (used by the settings dialog to gate saving).
     // severity: 'error' (blocks save) | 'warning' (shown, allowed).
@@ -281,16 +315,15 @@
         return /\w/.test(c);
     }
 
-    // Convert literal text to a regex fragment: escape regex specials, support
-    // simplified wildcards (* = any run, ? = one char; \* \? \\ are literals), and
-    // add \b word boundaries where an edge is a word char. So "test" matches only
-    // the whole word "test", "foo bar" matches that phrase, "te*st" is wildcarded.
-    function literalToFragment(text) {
+    // Body of a literal pattern (no anchors/boundaries): escape regex specials,
+    // expand the simplified wildcards (* = any run, ? = one char), and honor
+    // \* \? \\ \" \/ as the literal characters. The caller decides anchoring.
+    function literalBody(text) {
         let body = '';
         for (let i = 0; i < text.length; i++) {
             const c = text[i];
-            if (c === '\\' && (text[i + 1] === '*' || text[i + 1] === '?' || text[i + 1] === '\\')) {
-                body += escapeRegExp(text[i + 1]); // literal *, ?, or \
+            if (c === '\\' && '*?\\"/'.includes(text[i + 1])) {
+                body += escapeRegExp(text[i + 1]); // literal *, ?, \, ", or /
                 i++;
             } else if (c === '*') {
                 body += '.*';
@@ -300,7 +333,13 @@
                 body += escapeRegExp(c);
             }
         }
-        // Boundary only where the matched edge is a literal word char (not a wildcard).
+        return body;
+    }
+
+    // A bare literal token → whole-word match: \b…\b where the matched edge is a
+    // literal word char (not a wildcard). So "test" matches only the whole word.
+    function literalToFragment(text) {
+        const body = literalBody(text);
         const first = text[0];
         const last = text[text.length - 1];
         const lead = first !== '*' && first !== '?' && first !== '\\' && isWordChar(first) ? '\\b' : '';
@@ -308,11 +347,16 @@
         return lead + body + tail;
     }
 
-    // A single regex *fragment* from one pattern token (@ref expanded by the
-    // caller). /regex/ is used verbatim; anything else is literal whole-word text.
+    // A single regex *fragment* from one pattern token (@ref expanded by the caller):
+    //   "exact"   → ^…$ full-value match (wildcards active inside; \" is a literal ")
+    //   /regex/   → used verbatim (delimiters + flags dropped)
+    //   bare word → whole-word literal (see literalToFragment)
     function patternTokenToFragment(token) {
         const t = token.trim();
         if (!t) return null;
+        if (t.length >= 2 && t.startsWith('"') && t.endsWith('"')) {
+            return '^' + literalBody(t.slice(1, -1)) + '$';
+        }
         if (t.startsWith('/')) {
             const lastSlash = t.lastIndexOf('/');
             if (lastSlash > 0) return t.slice(1, lastSlash); // raw regex (drop delimiters + flags)
@@ -553,7 +597,7 @@
     }
 
     function parseRuleLine(line, lineNum, lists, issues) {
-        const fields = line.split('|').map((f) => f.trim());
+        const fields = splitTopLevel(line, '|').map((f) => f.trim());
         if (fields.length < 4) {
             reportIssue(issues, lineNum, 'error', `expected at least 4 fields (url|source|patterns|action): ${line}`);
             return null;
@@ -580,7 +624,7 @@
         // one regex branch — unique by fragment string, not semantic equivalence.
         const fragments = [];
         const seenFragments = new Set();
-        for (const tok of rawPatterns.split(',')) {
+        for (const tok of splitTopLevel(rawPatterns, ',')) {
             const t = tok.trim();
             if (!t) continue;
             if (t.startsWith('@')) {
@@ -1015,46 +1059,53 @@ ${customCss || ''}
         return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable;
     }
 
-    // Figure out what to capture: selected text wins, else hovered link.
+    // Figure out what to capture: selected text wins, else hovered link. `pattern`
+    // is the RAW captured value; defaultToken() turns it into a config-syntax token.
     function captureContext() {
         const sel = window.getSelection ? String(window.getSelection()).trim() : '';
         if (sel) {
-            return { source: 'text', pattern: escapeRegExp(sel), label: sel };
+            return { source: 'text', pattern: sel, label: sel };
         }
         if (lastHoveredLink) {
             const href = lastHoveredLink.getAttribute('href') || '';
             const abs = lastHoveredLink.href || href;
             const users = extractUsernames(abs);
             if (users.length) {
-                return { source: 'user', pattern: escapeRegExp(users[0]), label: users[0] };
+                return { source: 'user', pattern: users[0], label: users[0] };
             }
-            return { source: 'url', pattern: escapeRegExp(href), label: href };
+            return { source: 'url', pattern: href, label: href };
         }
         return null;
     }
 
-    // Canonical written forms for a captured pattern. Usernames are anchored
-    // (/^name$/) so e.g. "bob" doesn't also blur "bobby"; other sources stay
-    // substring matches (you usually want a word found anywhere in the text).
-    function patternToken(ctx) {
-        return ctx.source === 'user' ? `/^${ctx.pattern}$/` : `/${ctx.pattern}/`;
-    }
-    function listEntry(ctx) {
-        return ctx.source === 'user' ? `/^${ctx.pattern}$/` : ctx.pattern;
+    // Escape raw captured text into a faithful *literal* token: neutralize the
+    // literal-syntax specials (\ * ? ") and a leading / (which would otherwise be
+    // read as the start of a /regex/). Interior characters need no escaping.
+    function escapeLiteral(s) {
+        const out = s.replace(/([\\*?"])/g, '\\$1');
+        return out.startsWith('/') ? '\\' + out : out;
     }
 
-    function buildRuleLine(ctx, scope, options) {
+    // The config-syntax token quick-add pre-fills / writes for a captured value:
+    //   user → "name"  (exact, so it can't also match a longer username)
+    //   else → literal (whole-word for text, literal substring for a url href)
+    // Fully editable in the bottom bar — what you see is what gets written.
+    function defaultToken(ctx) {
+        const lit = escapeLiteral(ctx.pattern);
+        return ctx.source === 'user' ? `"${lit}"` : lit;
+    }
+
+    function buildRuleLine(source, token, scope, options) {
         const urlPat = `*://${location.hostname}/*`;
         const opt = options.length ? options.join(',') : 'hover';
-        return `${urlPat} | ${ctx.source} | ${patternToken(ctx)} | blur | ${scope} | ${opt}`;
+        return `${urlPat} | ${source} | ${token} | blur | ${scope} | ${opt}`;
     }
 
     // Normalize a rule line for duplicate detection: trim whitespace around the |
     // field separators (so hand-aligned "ASCII table" rules still compare equal)
     // without touching whitespace inside fields (e.g. within the patterns list).
     function normalizeRuleLine(line) {
-        return line
-            .split('|')
+        return splitTopLevel(line, '|')
             .map((f) => f.trim())
             .join(' | ');
     }
@@ -1100,7 +1151,7 @@ ${customCss || ''}
 
     // Append a brand-new rule built from the captured context, then apply it.
     async function addNewRuleFromContext(ctx) {
-        const res = await appendRuleLine(buildRuleLine(ctx, 'self', ['hover']));
+        const res = await appendRuleLine(buildRuleLine(ctx.source, defaultToken(ctx), 'self', ['hover']));
         if (res.changed) {
             scan(document.body);
             if (activeRules.length > 0) startObserver(); // apply immediately on this page
@@ -1186,7 +1237,7 @@ ${customCss || ''}
                 continue;
             }
             if (line.includes('|') || (section && section.type === 'rules')) {
-                const fields = line.split('|').map((f) => f.trim());
+                const fields = splitTopLevel(line, '|').map((f) => f.trim());
                 if (fields.length >= 4) ruleEntries.push({ idx: i, fields });
             }
         }
@@ -1206,8 +1257,7 @@ ${customCss || ''}
 
     // Append a token to a rule's patterns field (dedup). Mutates `lines` in place.
     function insertRulePattern(lines, entry, token, label) {
-        const tokens = entry.fields[2]
-            .split(',')
+        const tokens = splitTopLevel(entry.fields[2], ',')
             .map((t) => t.trim())
             .filter(Boolean);
         if (tokens.includes(token)) {
@@ -1230,16 +1280,16 @@ ${customCss || ''}
         });
         if (!match) return null;
 
-        const listRef = match.fields[2]
-            .split(',')
+        const listRef = splitTopLevel(match.fields[2], ',')
             .map((t) => t.trim())
             .find((t) => t.startsWith('@'));
+        const token = defaultToken(ctx);
         let res;
         if (listRef && listBlocks.has(listRef.slice(1).toLowerCase())) {
             const name = listRef.slice(1).toLowerCase();
-            res = insertListEntry(lines, listBlocks.get(name), name, listEntry(ctx), ctx.label);
+            res = insertListEntry(lines, listBlocks.get(name), name, token, ctx.label);
         } else {
-            res = insertRulePattern(lines, match, patternToken(ctx), ctx.label);
+            res = insertRulePattern(lines, match, token, ctx.label);
         }
         return { ...res, text: res.changed ? lines.join('\n') : undefined };
     }
@@ -1347,7 +1397,8 @@ ${customCss || ''}
 
         const patternInput = document.createElement('input');
         patternInput.type = 'text';
-        patternInput.value = ctx.pattern;
+        patternInput.value = defaultToken(ctx);
+        patternInput.title = 'word = whole-word literal · "text" = exact · /regex/ = regex · * ? = wildcards';
         Object.assign(patternInput.style, inputStyle, { minWidth: '240px', flex: '1' });
 
         const addBtn = makeBtn('Add & apply', '#0e639c');
@@ -1423,10 +1474,8 @@ ${customCss || ''}
         modeSel.addEventListener('change', () => renderMid(modeSel.value));
 
         // --- apply helpers ---
-        // Effective context uses the (possibly edited) pattern; source drives token
-        // anchoring (usernames → /^name$/) and stays the captured source in rule/list
-        // modes, where no source picker is shown.
-        const effCtx = () => ({ source: ctx.source, pattern: patternInput.value.trim(), label: ctx.label });
+        // The pattern field holds the config-syntax token verbatim (WYSIWYG), so an
+        // add uses its value as-is — no re-wrapping.
         const saveState = async (patch) => {
             const cur = (await GM.getValue(PANEL_STATE_KEY, null)) || {};
             await GM.setValue(PANEL_STATE_KEY, { ...cur, ...patch });
@@ -1441,15 +1490,16 @@ ${customCss || ''}
 
         cancelBtn.addEventListener('click', () => panel.remove());
         addBtn.addEventListener('click', async () => {
-            const pattern = patternInput.value.trim();
-            if (!pattern) {
+            const token = patternInput.value.trim();
+            if (!token) {
                 toast('Content Blur: pattern is empty', false);
                 return;
             }
             const mode = modeSel.value;
             if (mode === 'new') {
                 const line = buildRuleLine(
-                    { source: mid.sourceSel.value, pattern },
+                    mid.sourceSel.value,
+                    token,
                     mid.scopeSel.value,
                     mid.hoverCb.checked ? ['hover'] : ['no-hover']
                 );
@@ -1462,13 +1512,13 @@ ${customCss || ''}
                 toast('Content Blur: ' + (res.changed ? 'rule added' : 'rule already exists'));
             } else if (mode === 'rule') {
                 const entry = ruleEntries[Number(mid.ruleSel.value)];
-                const res = insertRulePattern(lines, entry, patternToken(effCtx()), ctx.label);
+                const res = insertRulePattern(lines, entry, token, ctx.label);
                 await applyEdits(res.changed);
                 await saveState({ mode, ruleKey: lines[entry.idx].trim() });
                 toast('Content Blur: ' + res.message);
             } else {
                 const name = mid.listSel.value;
-                const res = insertListEntry(lines, listBlocks.get(name), name, listEntry(effCtx()), ctx.label);
+                const res = insertListEntry(lines, listBlocks.get(name), name, token, ctx.label);
                 await applyEdits(res.changed);
                 await saveState({ mode, listName: name });
                 toast('Content Blur: ' + res.message);
@@ -1481,13 +1531,13 @@ ${customCss || ''}
         // chosen destination. Stored on the element so a re-open can find it.
         panel._ucbRefresh = (newCtx) => {
             ctx = newCtx;
-            patternInput.value = ctx.pattern;
+            patternInput.value = defaultToken(ctx);
             if (mid.sourceSel) mid.sourceSel.value = ctx.source;
             patternInput.focus();
             patternInput.select();
         };
 
-        panel.append(field('add to', modeSel), field('pattern (regex)', patternInput), midWrap, addBtn, cancelBtn);
+        panel.append(field('add to', modeSel), field('pattern', patternInput), midWrap, addBtn, cancelBtn);
         document.documentElement.appendChild(panel);
         patternInput.focus();
         patternInput.select();
@@ -1554,6 +1604,8 @@ ${customCss || ''}
             'Define reusable lists with <code style="color:#9cdcfe">[list:NAME]</code> and reference them as ' +
             '<code style="color:#9cdcfe">@NAME</code> or <code style="color:#9cdcfe">@glob*</code> — lists ' +
             'may reference other lists (including wildcards) to compose categories. ' +
+            'Patterns: <code style="color:#9cdcfe">word</code> (whole-word), ' +
+            '<code style="color:#9cdcfe">"exact"</code>, <code style="color:#9cdcfe">/regex/</code>. ' +
             'Sources: text, alt, title, url, user. Scope: self, up:N, ' +
             'closest:SEL, row. Actions: blur (or blur:N), plus any ' +
             '<code style="color:#9cdcfe">.ucb-NAME</code> class you define in a ' +
