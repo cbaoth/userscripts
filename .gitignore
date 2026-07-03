@@ -17,6 +17,25 @@ _*
 # shell
 .zcompdump
 
+# Track only own cb-*.md files; everything else in .github/ stays local
+# (unreviewed/unlicensed content from awesome-copilot, future extension-managed files, etc.)
+.github/*
+!.github/cb-*.md
+!.github/instructions/
+!.github/agents/
+!.github/skills/
+.github/instructions/*
+.github/agents/*
+.github/skills/*
+!.github/instructions/cb-*.md
+!.github/agents/cb-*.md
+!.github/skills/cb-*.md
+
+# local: configuratins and variables, may contain sensitive info (e.g., API keys)
+.claude/settings.local.json
+.claude/memory/
+.claude/plans/
+
 # local
 /#*/
 /_local/
