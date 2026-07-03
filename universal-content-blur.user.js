@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Universal Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-07-03T172300
+// @version      2026-07-03T231831
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -1159,11 +1159,23 @@ ${customCss || ''}
         return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable;
     }
 
+    // A selection inside the script's own UI must never count as page content:
+    // Firefox exposes text selected in input fields via window.getSelection(), so
+    // the auto-selected token in the quick-add bar would otherwise be re-captured
+    // (and re-escaped) on every hotkey re-press. Checked via both the selection
+    // anchor and the focused element — for text controls the anchor may point at
+    // anonymous content while focus reliably sits on the input itself.
+    function isOwnUiNode(node) {
+        const el = node instanceof Element ? node : node?.parentElement;
+        return !!el?.closest?.('#ucb-quick-panel, #ucb-settings');
+    }
+
     // Figure out what to capture: selected text wins, else hovered link. `pattern`
     // is the RAW captured value; defaultToken() turns it into a config-syntax token.
     function captureContext() {
-        const sel = window.getSelection ? String(window.getSelection()).trim() : '';
-        if (sel) {
+        const selection = window.getSelection ? window.getSelection() : null;
+        const sel = selection ? String(selection).trim() : '';
+        if (sel && !isOwnUiNode(selection.anchorNode) && !isOwnUiNode(document.activeElement)) {
             return { source: 'text', pattern: sel, label: sel };
         }
         if (lastHoveredLink) {
