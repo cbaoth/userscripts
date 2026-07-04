@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Universal Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-07-04
+// @version      2026-07-04T020803
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -48,10 +48,13 @@
     // in the viewport's bottom-left corner, exactly where a flush bottom bar sits —
     // the offset floats the bar above the bubble so hovering links while the bar is
     // open never hides its fields. Set position 'top' to avoid the corner entirely.
+    // The bar is shrink-to-fit; controls have fixed/min widths, so fields and
+    // buttons keep stable on-screen positions within a given destination mode.
     const QUICK_BAR = {
         position: 'bottom', // 'top' | 'bottom' — viewport edge the bar docks to
-        offset: 40, // px distance from that edge (at 'bottom': clears the status bubble)
-        margin: 12, // px side margins
+        align: 'left', // 'left' | 'center' | 'right' — horizontal placement
+        offset: 40, // px distance from the docked edge (at 'bottom': clears the status bubble)
+        margin: 12, // px minimum gap to the side edges
     };
 
     // "Peek": hold (or tap) a bare modifier to temporarily suspend ALL effects so
@@ -789,7 +792,8 @@ ${customCss || ''}
         if (!scope.prev && !scope.next) return [target];
         const group = [target];
         let el = target;
-        for (let i = 0; i < scope.prev && el.previousElementSibling; i++) group.unshift((el = el.previousElementSibling));
+        for (let i = 0; i < scope.prev && el.previousElementSibling; i++)
+            group.unshift((el = el.previousElementSibling));
         el = target;
         for (let i = 0; i < scope.next && el.nextElementSibling; i++) group.push((el = el.nextElementSibling));
         return group;
@@ -1463,8 +1467,8 @@ ${customCss || ''}
         Object.assign(panel.style, {
             position: 'fixed',
             [QUICK_BAR.position === 'top' ? 'top' : 'bottom']: QUICK_BAR.offset + 'px',
-            left: QUICK_BAR.margin + 'px',
-            right: QUICK_BAR.margin + 'px',
+            width: 'max-content',
+            maxWidth: `calc(100vw - ${2 * QUICK_BAR.margin}px)`,
             zIndex: '2147483647',
             background: '#1e1e1e',
             color: '#d4d4d4',
@@ -1478,6 +1482,11 @@ ${customCss || ''}
             gap: '10px',
             alignItems: 'flex-end',
         });
+        if (QUICK_BAR.align === 'right') panel.style.right = QUICK_BAR.margin + 'px';
+        else if (QUICK_BAR.align === 'center') {
+            panel.style.left = '50%';
+            panel.style.transform = 'translateX(-50%)';
+        } else panel.style.left = QUICK_BAR.margin + 'px';
 
         const field = (labelText, control) => {
             const wrap = document.createElement('label');
