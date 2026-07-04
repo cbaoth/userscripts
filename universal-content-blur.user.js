@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Universal Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-07-04T020803
+// @version      2026-07-04T024058
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -52,7 +52,7 @@
     // buttons keep stable on-screen positions within a given destination mode.
     const QUICK_BAR = {
         position: 'bottom', // 'top' | 'bottom' — viewport edge the bar docks to
-        align: 'left', // 'left' | 'center' | 'right' — horizontal placement
+        align: 'center', // 'left' | 'center' | 'right' — horizontal placement
         offset: 40, // px distance from the docked edge (at 'bottom': clears the status bubble)
         margin: 12, // px minimum gap to the side edges
     };
@@ -1626,6 +1626,15 @@ ${customCss || ''}
             if (e.key === 'Escape') {
                 e.stopPropagation();
                 panel.remove();
+            }
+        });
+        // Enter in the (auto-focused) pattern field commits right away — the common
+        // flow is "hotkey, glance at the pre-filled values, Enter".
+        patternInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                addBtn.click();
             }
         });
         addBtn.addEventListener('click', async () => {
