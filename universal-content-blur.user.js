@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Universal Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-07-04T024058
+// @version      2026-07-04T030213
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -55,6 +55,21 @@
         align: 'center', // 'left' | 'center' | 'right' — horizontal placement
         offset: 40, // px distance from the docked edge (at 'bottom': clears the status bubble)
         margin: 12, // px minimum gap to the side edges
+    };
+
+    // Commit-tap: rapidly tap a bare modifier (default: double-tap Alt) while the
+    // quick-add bar is open to trigger "Add & apply" without moving either hand —
+    // the left hand is already on Alt from the open-hotkey and the right hand can
+    // stay on the mouse. Layout-independent (modifiers sit in the same place on
+    // QWERTY/Colemak/…). Coexists with PEEK: hold-peek needs a ≥holdDelayMs press
+    // (taps are far shorter), and in toggle mode peek ignores taps of this key
+    // while the bar is open.
+    const COMMIT_TAP = {
+        enabled: true,
+        key: 'Alt', // bare key (KeyboardEvent.key) to tap
+        taps: 2, // rapid taps needed to commit
+        tapMaxMs: 250, // max press duration of a single tap
+        windowMs: 400, // max pause between consecutive taps (release → release)
     };
 
     // "Peek": hold (or tap) a bare modifier to temporarily suspend ALL effects so
@@ -1684,6 +1699,7 @@ ${customCss || ''}
             patternInput.focus();
             patternInput.select();
         };
+        panel._ucbCommit = () => addBtn.click(); // used by the COMMIT_TAP double-tap
 
         panel.append(field('add to', modeSel), field('pattern', patternInput), midWrap, addBtn, cancelBtn);
         document.documentElement.appendChild(panel);
@@ -1955,9 +1971,10 @@ ${customCss || ''}
 
     const isPeekKey = (e) => PEEK.keys.includes(e.key);
 
-    // True only for a single, bare peek modifier (no second modifier held), so the
-    // existing Alt/Shift combos (Alt+R, Alt+Shift+S, …) never trigger a peek.
-    function isBarePeekModifier(e) {
+    // True only for a single, bare modifier (no second modifier held), so the
+    // existing Alt/Shift combos (Alt+R, Alt+Shift+S, …) never count as a bare
+    // peek or commit tap.
+    function isBareModifier(e) {
         if (e.key === 'Shift') return !e.ctrlKey && !e.altKey && !e.metaKey;
         if (e.key === 'Alt') return !e.ctrlKey && !e.shiftKey && !e.metaKey;
         return true; // a non-modifier key configured as a peek key: accept as-is
@@ -1977,7 +1994,7 @@ ${customCss || ''}
                 return;
             }
             if (e.repeat || isEditableTarget(e.target)) return;
-            if (!isBarePeekModifier(e)) return;
+            if (!isBareModifier(e)) return;
             if (e.key === 'Alt') e.preventDefault(); // suppress Firefox menu-bar focus
             if (PEEK.mode === 'hold') {
                 if (holdTimer || suspended) return;
@@ -2006,6 +2023,10 @@ ${customCss || ''}
                 setSuspended(false);
             } else if (tapCandidate && performance.now() - tapStart <= PEEK.tapMaxMs) {
                 tapCandidate = false;
+                // While the quick-add bar is open, bare taps of the commit key belong
+                // to COMMIT_TAP — don't also toggle a peek on each tap.
+                if (COMMIT_TAP.enabled && e.key === COMMIT_TAP.key && document.getElementById('ucb-quick-panel'))
+                    return;
                 setSuspended(!suspended);
                 toast('Content Blur: effects ' + (suspended ? 'suspended (revealed)' : 'active'));
             }
@@ -2021,6 +2042,60 @@ ${customCss || ''}
         }
         tapCandidate = false;
         if (PEEK.mode === 'hold') setSuspended(false);
+    });
+
+    // ---- Commit-tap: rapid bare-modifier taps commit the quick-add bar ----
+
+    let ctDownAt = 0; // keydown timestamp of a candidate tap (0 = none pending)
+    let ctTaps = 0; // completed taps in the current sequence
+    let ctLastUp = 0; // keyup timestamp of the last completed tap
+
+    document.addEventListener(
+        'keydown',
+        (e) => {
+            if (!COMMIT_TAP.enabled) return;
+            if (e.key !== COMMIT_TAP.key) {
+                // Any other key (incl. a second modifier, e.g. Alt+Shift+R) breaks the tap sequence.
+                ctDownAt = 0;
+                ctTaps = 0;
+                return;
+            }
+            if (e.repeat) return;
+            if (!isBareModifier(e) || !document.getElementById('ucb-quick-panel')) {
+                ctDownAt = 0;
+                ctTaps = 0;
+                return;
+            }
+            ctDownAt = performance.now();
+        },
+        true
+    );
+
+    document.addEventListener(
+        'keyup',
+        (e) => {
+            if (!COMMIT_TAP.enabled || e.key !== COMMIT_TAP.key || !ctDownAt) return;
+            const now = performance.now();
+            const isTap = now - ctDownAt <= COMMIT_TAP.tapMaxMs;
+            ctDownAt = 0;
+            if (!isTap) {
+                ctTaps = 0;
+                return;
+            }
+            if (ctTaps && now - ctLastUp > COMMIT_TAP.windowMs) ctTaps = 0; // stale sequence
+            ctTaps++;
+            ctLastUp = now;
+            if (ctTaps >= COMMIT_TAP.taps) {
+                ctTaps = 0;
+                document.getElementById('ucb-quick-panel')?._ucbCommit?.();
+            }
+        },
+        true
+    );
+
+    window.addEventListener('blur', () => {
+        ctDownAt = 0;
+        ctTaps = 0;
     });
 
     // -----------------------------------------------------------------------
