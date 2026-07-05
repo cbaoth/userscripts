@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Universal Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-07-05
+// @version      2026-07-05T212335
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -152,7 +152,14 @@
 #                 url     link href + image src attributes
 #                 user    username extracted from profile-style URLs, e.g.
 #                         /profile/<name>, /user/<name>, /u/<name>, ?user=<name>
-#                 *       all of the above
+#                 class   CSS class names — patterns are tested against EACH
+#                         class on an element individually, so "exact" matches
+#                         one whole class name (e.g. "icon-interest-x") and a
+#                         bare word matches inside hyphenated names too. Handy
+#                         when a marker class (interest/genre/status icon) says
+#                         more than the visible content does.
+#                 *       all of the above EXCEPT class — class matching scans
+#                         every classed element, so it stays explicit opt-in
 #
 # patterns      Comma list of:
 #                 @NAME       reference a [list:NAME] block
@@ -279,6 +286,10 @@
 # *://*/*          | text          | @words_violent     | blur, dim:0.1 | self | hover
 # # HIGHLIGHT your own name + friends' usernames (the opposite of blurring):
 # *://*/*          | text,user     | @friends           | hl         | up:1  | no-hover
+# # hide gallery items whose interest/genre icon carries a marker class — the
+# # class says what the content is even when text/alt/url don't; scope climbs
+# # from the icon div to the whole item:
+# *://site.com/*   | class         | "icon-interest-x"  | hide       | up:2  | no-hover
 
 [rules]
 `;
@@ -446,7 +457,7 @@
         }
     }
 
-    const VALID_SOURCES = ['text', 'alt', 'title', 'url', 'user'];
+    const VALID_SOURCES = ['text', 'alt', 'title', 'url', 'user', 'class'];
     const MAX_LIST_DEPTH = 5; // max nested [list:…] reference levels before giving up
 
     function parseSource(field, issues, lineNum) {
@@ -454,10 +465,14 @@
             .split(',')
             .map((s) => s.trim().toLowerCase())
             .filter(Boolean);
-        if (parts.includes('*')) return [...VALID_SOURCES];
         const out = [];
+        const add = (s) => out.includes(s) || out.push(s);
         for (const p of parts) {
-            if (VALID_SOURCES.includes(p)) out.push(p);
+            // '*' excludes class: class rules scan every [class] element, so that
+            // cost (and the surprise of text words matching class names) stays
+            // explicit opt-in — write "*, class" to really mean everything.
+            if (p === '*') VALID_SOURCES.filter((s) => s !== 'class').forEach(add);
+            else if (VALID_SOURCES.includes(p)) add(p);
             else reportIssue(issues, lineNum, 'warning', `unknown source "${p}"`);
         }
         return out;
@@ -1216,7 +1231,10 @@ ${customCss || ''}
         if (!attrRules.length) return;
         // Gather candidate elements once; cheaper than per-rule querySelectorAll.
         // Also include root itself — querySelectorAll only searches descendants.
-        const sel = 'a[href], img[src], [alt], [title]';
+        // [class] matches far more elements than the attribute selectors, so it is
+        // only added when a class rule is active on this page.
+        const needClass = attrRules.some((r) => r.sources.includes('class'));
+        const sel = 'a[href], img[src], [alt], [title]' + (needClass ? ', [class]' : '');
         const descendants = root.querySelectorAll === undefined ? [] : root.querySelectorAll(sel);
         const els = root.matches?.(sel) ? [root, ...descendants] : descendants;
         for (const el of els) {
@@ -1224,6 +1242,7 @@ ${customCss || ''}
             const alt = el.getAttribute && el.getAttribute('alt');
             const title = el.getAttribute && el.getAttribute('title');
             const usernames = href ? extractUsernames(href) : null;
+            const classes = needClass && el.classList?.length ? [...el.classList] : null;
 
             for (const rule of attrRules) {
                 for (const source of rule.sources) {
@@ -1232,6 +1251,7 @@ ${customCss || ''}
                     else if (source === 'alt' && alt) hit = rule.regex.test(alt);
                     else if (source === 'title' && title) hit = rule.regex.test(title);
                     else if (source === 'user' && usernames) hit = usernames.some((u) => rule.regex.test(u));
+                    else if (source === 'class' && classes) hit = classes.some((c) => rule.regex.test(c));
                     if (hit) {
                         applyActions(el, rule);
                         break;
@@ -1904,7 +1924,7 @@ ${customCss || ''}
             'may reference other lists (including wildcards) to compose categories. ' +
             'Patterns: <code style="color:#9cdcfe">word</code> (whole-word), ' +
             '<code style="color:#9cdcfe">"exact"</code>, <code style="color:#9cdcfe">/regex/</code>. ' +
-            'Sources: text, alt, title, url, user. Scope: self, up:N, ' +
+            'Sources: text, alt, title, url, user, class (matched per class name). Scope: self, up:N, ' +
             'closest:SEL, row — append prev:N / next:N to extend the effect to sibling ' +
             'elements (hover reveals the whole group). Actions: blur (or blur:N), plus any ' +
             '<code style="color:#9cdcfe">.ucb-NAME</code> class you define in a ' +
