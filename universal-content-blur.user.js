@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Universal Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-07-04T030213
+// @version      2026-07-05
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -42,6 +42,7 @@
         quickAddPanel: { alt: true, shift: true, ctrl: false, meta: false, key: 'r' },
         quickBlock: { alt: true, shift: false, ctrl: false, meta: false, key: 'a' },
         openSettings: { alt: true, shift: true, ctrl: false, meta: false, key: 's' },
+        toggleStyles: { alt: true, shift: false, ctrl: false, meta: false, key: 'z' }, // ALL effects on/off (persistent until re-toggled or reload)
     };
 
     // Quick-add bar placement. Desktop browsers draw the link-target status bubble
@@ -72,8 +73,14 @@
         windowMs: 400, // max pause between consecutive taps (release → release)
     };
 
-    // "Peek": hold (or tap) a bare modifier to temporarily suspend ALL effects so
-    // you can see the page as-is — reveal blurred content, drop highlights, etc.
+    // "Peek": hold (or tap) a bare modifier to temporarily suspend effects so you
+    // can see the page as-is — reveal blurred content, drop highlights, etc.
+    // Peek deliberately SKIPS effects that change layout (display/size/position —
+    // e.g. a [css] hide or resize): revealing those makes content jump/scroll
+    // under the cursor, which is disorienting mid-hold. Layout effects are
+    // detected best-effort from the [css] section; override per class with
+    // --ucb-peek: on|off inside it. To reveal those too, use the persistent
+    // all-effects toggle (KEYS.toggleStyles, Alt+Z).
     // Non-destructive (classes are removed then restored). Set enabled:false to
     // disable. The keys are bare modifiers (KeyboardEvent.key); any one triggers.
     const PEEK = {
@@ -121,6 +128,12 @@
 #                 script adds .ucb-hover to elements whose rule has the hover
 #                 option). Inside [css], # and // are NOT comments (so #id
 #                 selectors work); use /* … */ for CSS comments.
+#                 Peek (hold Shift/Alt) skips classes that change LAYOUT
+#                 (display, size, margins, position, … — detected best-effort)
+#                 so revealing them can't make the page jump/scroll mid-peek;
+#                 the all-effects toggle (Alt+Z) reveals those too. Override the
+#                 detection per class by declaring --ucb-peek: off (never peek)
+#                 or --ucb-peek: on (always peek) inside the class body.
 #
 #   [rules]       one rule per line, pipe-separated:
 #                     url-pattern | source | patterns | action | scope | options
@@ -230,7 +243,8 @@
 # /* opacity dim whose strength a rule can override via dim:N */
 # .ucb-dim { opacity: var(--ucb-dim, 0.25) !important; transition: opacity 0.2s ease; }
 # .ucb-dim.ucb-hover:hover { opacity: 1 !important; }
-# /* hard hide — no hover reveal once removed from layout */
+# /* hard hide — no hover reveal once removed from layout. display:none changes
+#    layout, so peek auto-skips it (no page jump); Alt+Z still reveals it. */
 # .ucb-hide { display: none !important; }
 # /* recipe: block accidental clicks on blurred content. NOTE pointer-events:none
 #    also disables the element's own :hover reveal — pair it with no-hover, or
@@ -477,7 +491,8 @@
     }
 
     // Class names the script uses internally — a custom action may not reuse them.
-    const RESERVED_ACTIONS = new Set(['hover', 'freeze', 'frozen']);
+    // 'peek' is reserved because --ucb-peek is the per-class peek override in [css].
+    const RESERVED_ACTIONS = new Set(['hover', 'freeze', 'frozen', 'peek']);
 
     // Parse the action field into a list of { name, value } effects. Each becomes a
     // CSS class .ucb-<name> on the scoped element; an optional :value is exposed as
@@ -724,6 +739,7 @@
         const parsed = parseConfig(stored ?? DEFAULT_RULES);
         rules = parsed.rules;
         customCss = parsed.css;
+        peekExempt = computePeekExempt(customCss);
         activeRules = rules.filter((r) => r.urlPattern.regex.test(location.href));
         return activeRules;
     }
@@ -830,8 +846,9 @@ ${customCss || ''}
             }
             if (rule.options.hover) target.classList.add(HOVER_CLASS);
             if (rule.options.freeze) freezeMedia(target);
-            // If a peek is currently active, keep newly-matched content revealed too.
-            if (suspended) suspendEl(target);
+            // If a reveal is currently active, keep newly-matched content revealed too.
+            if (stylesOff) suspendEl(target, true);
+            else if (peekOn) suspendEl(target);
         }
         if (group.length > 1 && rule.options.hover) linkHoverGroup(group);
     }
@@ -975,22 +992,92 @@ ${customCss || ''}
     }
 
     // -----------------------------------------------------------------------
-    //  PEEK / SUSPEND (temporarily reveal everything — see PEEK config)
+    //  PEEK / SUSPEND (temporary peek + persistent all-effects toggle)
     // -----------------------------------------------------------------------
 
-    let suspended = false;
+    let peekOn = false; // transient reveal (PEEK hold/tap) — skips peek-exempt effects
+    let stylesOff = false; // persistent all-effects toggle (KEYS.toggleStyles / menu); resets on reload
     const touched = new Set(); // elements we've applied effect classes to
     const NON_EFFECT_CLASSES = new Set([HOVER_CLASS, FREEZE_CLASS, FROZEN_CLASS]);
 
-    // Suspend an element: stash its ucb-* effect classes in a data attribute and
-    // remove them, so the cascade restores the element's original look exactly.
-    // This works for any effect (built-in or user [css]), unlike a global "off".
-    function suspendEl(el) {
-        if (el.dataset.ucbOff != null) return;
-        const eff = [...el.classList].filter((c) => c.startsWith('ucb-') && !NON_EFFECT_CLASSES.has(c));
-        if (!eff.length) return;
-        el.dataset.ucbOff = eff.join(' ');
-        el.classList.remove(...eff);
+    // Effect classes ('ucb-NAME') a peek must NOT strip: revealing an effect that
+    // changes layout (a [css] hide/resize, …) makes content jump/scroll under the
+    // cursor mid-peek. Detected best-effort from the [css] section — see
+    // computePeekExempt(). The styles-off toggle and group hover ignore this.
+    let peekExempt = new Set();
+
+    // Best-effort: does setting this (longhand) CSS property change layout?
+    // Purely visual properties (filter, opacity, visibility, color, background,
+    // outline, box-shadow, transform, …) are peek-safe and intentionally absent.
+    function isLayoutProp(p) {
+        if (p.startsWith('--')) return false;
+        if (/^border-.*(width|style)$/.test(p)) return true; // border-color/-radius are visual-only
+        return /^(display|position|float|clear|top|right|bottom|left|inset|width|height|min-|max-|margin|padding|font|line-height|flex|grid|order|gap|row-gap|column-gap|overflow|content-visibility|box-sizing|white-space|vertical-align)/.test(
+            p
+        );
+    }
+
+    // Parse the user's [css] section (browser-native, via a <style> in a detached
+    // document — CSP-proof and sandbox-safe) and collect the .ucb-NAME classes
+    // whose declarations affect layout. A --ucb-peek: on|off declaration inside a
+    // class overrides the detection either way. Best effort: if parsing fails, no
+    // class is exempted (peek then behaves as before — reveal everything).
+    function computePeekExempt(cssText) {
+        const exempt = new Set();
+        if (!cssText) return exempt;
+        let sheet;
+        try {
+            const doc = document.implementation.createHTMLDocument('');
+            const style = doc.createElement('style');
+            style.textContent = cssText;
+            doc.head.appendChild(style);
+            sheet = style.sheet;
+            if (!sheet) throw new Error('no sheet on detached style element');
+        } catch (e) {
+            console.warn(LOG_PREFIX, 'could not parse [css] for peek layout analysis:', e.message);
+            return exempt;
+        }
+        const overrides = new Map(); // 'ucb-NAME' -> peekable (true) / exempt (false)
+        const walk = (ruleList) => {
+            for (const rule of ruleList) {
+                if (rule.style && rule.selectorText) {
+                    const classes = (rule.selectorText.match(/\.ucb-[a-z0-9_-]+/gi) || [])
+                        .map((c) => c.slice(1).toLowerCase())
+                        .filter((c) => !NON_EFFECT_CLASSES.has(c));
+                    if (classes.length) {
+                        const ov = rule.style.getPropertyValue('--ucb-peek').trim().toLowerCase();
+                        const layout = [...rule.style].some(isLayoutProp);
+                        for (const cls of classes) {
+                            if (layout) exempt.add(cls);
+                            if (ov) overrides.set(cls, !/^(off|no|none|never|false|0)$/.test(ov));
+                        }
+                    }
+                }
+                if (rule.cssRules) walk(rule.cssRules); // @media / nested rules
+            }
+        };
+        walk(sheet.cssRules);
+        for (const [cls, peekable] of overrides) {
+            if (peekable) exempt.delete(cls);
+            else exempt.add(cls);
+        }
+        return exempt;
+    }
+
+    // Suspend an element: stash removed ucb-* effect classes in a data attribute,
+    // so the cascade restores the element's original look exactly on resume. This
+    // works for any effect (built-in or user [css]), unlike a global "off".
+    // Default scope skips peek-exempt classes (layout-affecting effects); full=true
+    // strips ALL effects (styles-off toggle, group hover reveal). Calling again
+    // with full=true upgrades a partial suspension (stash entries are appended).
+    function suspendEl(el, full = false) {
+        const strip = [...el.classList].filter(
+            (c) => c.startsWith('ucb-') && !NON_EFFECT_CLASSES.has(c) && (full || !peekExempt.has(c))
+        );
+        if (!strip.length) return;
+        const prev = el.dataset.ucbOff;
+        el.dataset.ucbOff = (prev ? prev + ' ' : '') + strip.join(' ');
+        el.classList.remove(...strip);
         if (el.classList.contains(FREEZE_CLASS)) setMotion(el, true); // let motion play while revealed
     }
 
@@ -1002,18 +1089,44 @@ ${customCss || ''}
         if (el.classList.contains(FREEZE_CLASS)) setMotion(el, false);
     }
 
-    function setSuspended(on) {
-        if (on === suspended) return;
-        suspended = on;
+    // Bring an element to the state implied by the global flags alone (resume,
+    // then re-suspend at the right scope). Used when flags change and when the
+    // pointer leaves a hover group.
+    function applyGlobalState(el) {
+        resumeEl(el);
+        if (stylesOff) suspendEl(el, true);
+        else if (peekOn) suspendEl(el);
+    }
+
+    // Reconcile every touched element with the current (peekOn, stylesOff) flags.
+    // Members of a currently-hovered group are left alone — group hover owns them
+    // until the pointer leaves (its mouseout applies the global state then).
+    function updateSuspension() {
         for (const el of [...touched]) {
             if (!el.isConnected) {
                 touched.delete(el);
                 continue;
             }
-            if (on) suspendEl(el);
-            // Members of a currently-hovered group stay revealed when a peek ends.
-            else if (!hoveredGroup || !hoveredGroup.includes(el)) resumeEl(el);
+            if (hoveredGroup && hoveredGroup.includes(el)) continue;
+            applyGlobalState(el);
         }
+    }
+
+    function setPeek(on) {
+        if (on === peekOn) return;
+        peekOn = on;
+        if (!stylesOff) updateSuspension(); // styles-off already reveals everything
+    }
+
+    function setStylesOff(off) {
+        if (off === stylesOff) return;
+        stylesOff = off;
+        updateSuspension();
+    }
+
+    function toggleStyles() {
+        setStylesOff(!stylesOff);
+        toast('Content Blur: all effects ' + (stylesOff ? 'OFF' : 'ON'));
     }
 
     // -----------------------------------------------------------------------
@@ -1051,9 +1164,11 @@ ${customCss || ''}
                 if (!group || group === hoveredGroup) return;
                 // A stale hovered group (e.g. its members were re-rendered away, so
                 // no mouseout fired) is restored before revealing the new one.
-                if (hoveredGroup && !suspended) for (const el of hoveredGroup) resumeEl(el);
+                if (hoveredGroup) for (const el of hoveredGroup) applyGlobalState(el);
                 hoveredGroup = group;
-                if (!suspended) for (const el of group) suspendEl(el);
+                // Group hover is a deliberate reveal: strip ALL effects, upgrading a
+                // partial (peek-scoped) suspension of the members if one is active.
+                for (const el of group) suspendEl(el, true);
             },
             true
         );
@@ -1065,7 +1180,7 @@ ${customCss || ''}
                 if (!group || group !== hoveredGroup) return;
                 if (e.relatedTarget && group.some((el) => el.contains(e.relatedTarget))) return; // still inside
                 hoveredGroup = null;
-                if (!suspended) for (const el of group) resumeEl(el);
+                for (const el of group) applyGlobalState(el);
             },
             true
         );
@@ -1960,6 +2075,9 @@ ${customCss || ''}
         } else if (matchesKey(e, KEYS.quickAddSilent)) {
             e.preventDefault();
             quickAddSilent();
+        } else if (matchesKey(e, KEYS.toggleStyles)) {
+            e.preventDefault();
+            toggleStyles();
         }
     });
 
@@ -1997,10 +2115,10 @@ ${customCss || ''}
             if (!isBareModifier(e)) return;
             if (e.key === 'Alt') e.preventDefault(); // suppress Firefox menu-bar focus
             if (PEEK.mode === 'hold') {
-                if (holdTimer || suspended) return;
+                if (holdTimer || peekOn) return;
                 holdTimer = setTimeout(() => {
                     holdTimer = null;
-                    setSuspended(true);
+                    setPeek(true);
                 }, PEEK.holdDelayMs);
             } else {
                 tapCandidate = true;
@@ -2020,15 +2138,15 @@ ${customCss || ''}
                     clearTimeout(holdTimer);
                     holdTimer = null;
                 }
-                setSuspended(false);
+                setPeek(false);
             } else if (tapCandidate && performance.now() - tapStart <= PEEK.tapMaxMs) {
                 tapCandidate = false;
                 // While the quick-add bar is open, bare taps of the commit key belong
                 // to COMMIT_TAP — don't also toggle a peek on each tap.
                 if (COMMIT_TAP.enabled && e.key === COMMIT_TAP.key && document.getElementById('ucb-quick-panel'))
                     return;
-                setSuspended(!suspended);
-                toast('Content Blur: effects ' + (suspended ? 'suspended (revealed)' : 'active'));
+                setPeek(!peekOn);
+                toast('Content Blur: peek ' + (peekOn ? 'on (effects revealed)' : 'off'));
             }
         },
         true
@@ -2041,7 +2159,7 @@ ${customCss || ''}
             holdTimer = null;
         }
         tapCandidate = false;
-        if (PEEK.mode === 'hold') setSuspended(false);
+        if (PEEK.mode === 'hold') setPeek(false);
     });
 
     // ---- Commit-tap: rapid bare-modifier taps commit the quick-add bar ----
@@ -2108,11 +2226,11 @@ ${customCss || ''}
         quickAddPanel
     );
     GM_registerMenuCommand(`⛔ Quick-block into matching rule (${keyLabel(KEYS.quickBlock)})`, quickBlock);
-    if (PEEK.enabled) {
-        GM_registerMenuCommand(`👁️ Toggle reveal all — suspend effects (or hold ${PEEK.keys.join('/')})`, () =>
-            setSuspended(!suspended)
-        );
-    }
+    GM_registerMenuCommand(
+        `👁️ Toggle all effects on/off (${keyLabel(KEYS.toggleStyles)})` +
+            (PEEK.enabled ? ` — or hold ${PEEK.keys.join('/')} to peek` : ''),
+        toggleStyles
+    );
 
     await loadRules();
 

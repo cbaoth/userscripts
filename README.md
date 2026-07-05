@@ -128,7 +128,8 @@ See [Deprecated & Legacy Scripts](#deprecated--legacy-scripts) for older scripts
   | Alt-Shift-R   | Quick-add via a small panel: create a **new rule** (choose source, scope, hover), or add the value to an **existing rule** or **existing list** — the chosen destination is remembered across reloads for adding several in a row |
   | Alt-A         | Quick-block: fold the selection/username into the first matching rule's list (or create a new rule if none matches) — one-keypress user blocking. Usernames are captured as `"name"` (exact) so similar names aren't caught |
   | Alt-Shift-S   | Open the rules settings (edit/validate/bulk-edit) |
-  | Hold Shift / Alt | **Peek:** temporarily suspend all effects to see the page as-is (reveal blurred content, drop highlights); restores on release. Configurable as hold-to-peek or tap-to-toggle, with a hold delay so it ignores Shift-for-capitals; ignored while typing in a field |
+  | Hold Shift / Alt | **Peek:** temporarily suspend effects to see the page as-is (reveal blurred content, drop highlights); restores on release. Skips effects that change **layout** (e.g. a custom `hide`/resize — detected best-effort from your `[css]`, overridable per class via `--ucb-peek: on\|off`) so the page never jumps or scrolls under the cursor mid-peek. Configurable as hold-to-peek or tap-to-toggle, with a hold delay so it ignores Shift-for-capitals; ignored while typing in a field |
+  | Alt-Z         | **Toggle all effects on/off** (also in the userscript menu): a persistent reveal that — unlike peek — includes layout-changing effects; stays off until toggled back on or the page reloads |
 
 - **Cloudflare-safe:** runs at `document-idle`, stays completely inert on pages with no matching rule, and bails on Cloudflare challenge pages (unlike some similar scripts that break the "are you human" check).
 
