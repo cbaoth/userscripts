@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Universal Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-07-05T212335
+// @version      2026-07-05T215559
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -91,6 +91,26 @@
         tapMaxMs: 300, // toggle mode: max press duration still counted as a deliberate tap
     };
 
+    // Unload images inside HIDDEN content: when a rule's action hides its target
+    // (a [css] class with display:none / visibility:hidden, e.g. the .ucb-hide
+    // recipe), the src/srcset of contained <img>/<source> elements are stripped.
+    // Measured best-effort behavior (headless Chrome):
+    //   - lazy images inserted into the live DOM: never requested at all
+    //   - eager images / detached-fragment inserts: the request dispatches at
+    //     node creation (unavoidable; may still count against rate limits) but
+    //     the strip ABORTS the download at ~0 bytes — bandwidth and cache saved
+    //   - images in the initial HTML: fetched by the browser's preload scanner
+    //     before any userscript runs; cannot be stopped from here
+    // While a hide rule is active the observer scans undebounced to act inside
+    // the insertion microtask, and nodes inserted into an already-hidden target
+    // are unloaded via an ancestor check. Sources are restored (and only then
+    // fetched) on a deliberate reveal — the Alt+Z toggle or a group hover — but
+    // NOT by peek (hide is peek-exempt anyway). Note: a stripped src can confuse
+    // site scripts that re-read it; disable if a site misbehaves.
+    const UNLOAD = {
+        enabled: true,
+    };
+
     // -----------------------------------------------------------------------
     //  DEFERRED IDEAS (revisit if the built-in blur + [css] actions fall short)
     // -----------------------------------------------------------------------
@@ -134,6 +154,10 @@
 #                 the all-effects toggle (Alt+Z) reveals those too. Override the
 #                 detection per class by declaring --ucb-peek: off (never peek)
 #                 or --ucb-peek: on (always peek) inside the class body.
+#                 Classes that HIDE their target (display:none or
+#                 visibility:hidden) also get its images unloaded — src/srcset
+#                 stripped so hidden images aren't fetched (best effort) and
+#                 restored on Alt+Z / group hover. See the UNLOAD constant.
 #
 #   [rules]       one rule per line, pipe-separated:
 #                     url-pattern | source | patterns | action | scope | options
@@ -251,7 +275,8 @@
 # .ucb-dim { opacity: var(--ucb-dim, 0.25) !important; transition: opacity 0.2s ease; }
 # .ucb-dim.ucb-hover:hover { opacity: 1 !important; }
 # /* hard hide — no hover reveal once removed from layout. display:none changes
-#    layout, so peek auto-skips it (no page jump); Alt+Z still reveals it. */
+#    layout, so peek auto-skips it (no page jump); Alt+Z still reveals it. Images
+#    inside hidden targets are not fetched (best effort — UNLOAD constant). */
 # .ucb-hide { display: none !important; }
 # /* recipe: block accidental clicks on blurred content. NOTE pointer-events:none
 #    also disables the element's own :hover reveal — pair it with no-hover, or
@@ -754,8 +779,12 @@
         const parsed = parseConfig(stored ?? DEFAULT_RULES);
         rules = parsed.rules;
         customCss = parsed.css;
-        peekExempt = computePeekExempt(customCss);
+        const cssInfo = analyzeEffectCss(customCss);
+        peekExempt = cssInfo.peekExempt;
+        hiddenActions = cssInfo.hiddenActions;
         activeRules = rules.filter((r) => r.urlPattern.regex.test(location.href));
+        unloadActive = UNLOAD.enabled && activeRules.some(ruleHides);
+        hiddenSelector = [...hiddenActions].map((c) => '.' + c).join(', ');
         return activeRules;
     }
 
@@ -861,6 +890,8 @@ ${customCss || ''}
             }
             if (rule.options.hover) target.classList.add(HOVER_CLASS);
             if (rule.options.freeze) freezeMedia(target);
+            // Hidden content keeps its images unfetched / aborted (see UNLOAD).
+            if (UNLOAD.enabled && ruleHides(rule)) unloadMedia(target);
             // If a reveal is currently active, keep newly-matched content revealed too.
             if (stylesOff) suspendEl(target, true);
             else if (peekOn) suspendEl(target);
@@ -1018,8 +1049,19 @@ ${customCss || ''}
     // Effect classes ('ucb-NAME') a peek must NOT strip: revealing an effect that
     // changes layout (a [css] hide/resize, …) makes content jump/scroll under the
     // cursor mid-peek. Detected best-effort from the [css] section — see
-    // computePeekExempt(). The styles-off toggle and group hover ignore this.
+    // analyzeEffectCss(). The styles-off toggle and group hover ignore this.
     let peekExempt = new Set();
+    // Effect classes that HIDE their target (display:none / visibility:hidden) —
+    // images inside such targets are unloaded when UNLOAD is enabled.
+    let hiddenActions = new Set();
+    // True when UNLOAD is enabled AND an active rule hides: the observer then
+    // scans added nodes undebounced to beat the browser's image fetch dispatch.
+    let unloadActive = false;
+    // CSS selector matching any hidden-action class ('.ucb-hide, …') — used to
+    // catch late inserts INTO an already-hidden target (see the observer).
+    let hiddenSelector = '';
+
+    const ruleHides = (rule) => rule.actions.some((a) => hiddenActions.has('ucb-' + a.name));
 
     // Best-effort: does setting this (longhand) CSS property change layout?
     // Purely visual properties (filter, opacity, visibility, color, background,
@@ -1033,13 +1075,14 @@ ${customCss || ''}
     }
 
     // Parse the user's [css] section (browser-native, via a <style> in a detached
-    // document — CSP-proof and sandbox-safe) and collect the .ucb-NAME classes
-    // whose declarations affect layout. A --ucb-peek: on|off declaration inside a
-    // class overrides the detection either way. Best effort: if parsing fails, no
-    // class is exempted (peek then behaves as before — reveal everything).
-    function computePeekExempt(cssText) {
-        const exempt = new Set();
-        if (!cssText) return exempt;
+    // document — CSP-proof and sandbox-safe) and classify the .ucb-NAME classes:
+    // peekExempt = declarations affect layout (a --ucb-peek: on|off declaration
+    // inside a class overrides the detection either way); hiddenActions = the
+    // class hides its target outright (drives UNLOAD). Best effort: if parsing
+    // fails, both sets stay empty (peek reveals everything, nothing unloads).
+    function analyzeEffectCss(cssText) {
+        const res = { peekExempt: new Set(), hiddenActions: new Set() };
+        if (!cssText) return res;
         let sheet;
         try {
             const doc = document.implementation.createHTMLDocument('');
@@ -1049,8 +1092,8 @@ ${customCss || ''}
             sheet = style.sheet;
             if (!sheet) throw new Error('no sheet on detached style element');
         } catch (e) {
-            console.warn(LOG_PREFIX, 'could not parse [css] for peek layout analysis:', e.message);
-            return exempt;
+            console.warn(LOG_PREFIX, 'could not parse [css] for effect analysis:', e.message);
+            return res;
         }
         const overrides = new Map(); // 'ucb-NAME' -> peekable (true) / exempt (false)
         const walk = (ruleList) => {
@@ -1062,8 +1105,12 @@ ${customCss || ''}
                     if (classes.length) {
                         const ov = rule.style.getPropertyValue('--ucb-peek').trim().toLowerCase();
                         const layout = [...rule.style].some(isLayoutProp);
+                        const display = rule.style.getPropertyValue('display').trim().toLowerCase();
+                        const visibility = rule.style.getPropertyValue('visibility').trim().toLowerCase();
+                        const hides = display === 'none' || visibility === 'hidden' || visibility === 'collapse';
                         for (const cls of classes) {
-                            if (layout) exempt.add(cls);
+                            if (layout) res.peekExempt.add(cls);
+                            if (hides) res.hiddenActions.add(cls);
                             if (ov) overrides.set(cls, !/^(off|no|none|never|false|0)$/.test(ov));
                         }
                     }
@@ -1073,10 +1120,52 @@ ${customCss || ''}
         };
         walk(sheet.cssRules);
         for (const [cls, peekable] of overrides) {
-            if (peekable) exempt.delete(cls);
-            else exempt.add(cls);
+            if (peekable) res.peekExempt.delete(cls);
+            else res.peekExempt.add(cls);
         }
-        return exempt;
+        return res;
+    }
+
+    // Strip the fetchable sources from the <img>/<source> elements of a hidden
+    // target: aborts an in-flight download and keeps lazy images from ever being
+    // requested. Originals are stashed in data attributes for reloadMedia().
+    function unloadMedia(target) {
+        const els = target.matches?.('img, source') ? [target] : [];
+        if (target.querySelectorAll) els.push(...target.querySelectorAll('img, source'));
+        for (const el of els) {
+            if (el.dataset.ucbUnloaded) continue;
+            const src = el.getAttribute('src');
+            const srcset = el.getAttribute('srcset');
+            if (src == null && srcset == null) continue;
+            el.dataset.ucbUnloaded = '1';
+            if (src != null) {
+                el.dataset.ucbSrc = src;
+                el.removeAttribute('src');
+            }
+            if (srcset != null) {
+                el.dataset.ucbSrcset = srcset;
+                el.removeAttribute('srcset');
+            }
+        }
+    }
+
+    // Restore stripped sources — the fetches happen now, by user intent (Alt+Z /
+    // group hover). One-way per element: re-hiding does not re-strip, the image
+    // is already fetched and cached, there is nothing left to save.
+    function reloadMedia(target) {
+        const els = target.dataset?.ucbUnloaded ? [target] : [];
+        if (target.querySelectorAll) els.push(...target.querySelectorAll('[data-ucb-unloaded]'));
+        for (const el of els) {
+            if (el.dataset.ucbSrcset != null) {
+                el.setAttribute('srcset', el.dataset.ucbSrcset);
+                delete el.dataset.ucbSrcset;
+            }
+            if (el.dataset.ucbSrc != null) {
+                el.setAttribute('src', el.dataset.ucbSrc);
+                delete el.dataset.ucbSrc;
+            }
+            delete el.dataset.ucbUnloaded;
+        }
     }
 
     // Suspend an element: stash removed ucb-* effect classes in a data attribute,
@@ -1094,6 +1183,7 @@ ${customCss || ''}
         el.dataset.ucbOff = (prev ? prev + ' ' : '') + strip.join(' ');
         el.classList.remove(...strip);
         if (el.classList.contains(FREEZE_CLASS)) setMotion(el, true); // let motion play while revealed
+        if (full && UNLOAD.enabled) reloadMedia(el); // deliberate reveal → let its images load now
     }
 
     function resumeEl(el) {
@@ -1289,12 +1379,25 @@ ${customCss || ''}
                 for (const n of r.addedNodes)
                     if (n.nodeType === Node.ELEMENT_NODE) pendingRoots.add(n);
                     else if (n.nodeType === Node.TEXT_NODE && n.parentElement) pendingRoots.add(n.parentElement);
-            if (debounceTimer) clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => {
+            const flush = () => {
+                debounceTimer = null;
                 const roots = [...pendingRoots];
                 pendingRoots.clear();
-                for (const root of roots) if (root.isConnected) scan(root);
-            }, SCAN_DEBOUNCE_MS);
+                for (const root of roots) {
+                    if (!root.isConnected) continue;
+                    // A node inserted INTO an already-hidden target (lazy galleries
+                    // often add the img after the item was matched and hidden) never
+                    // matches a rule itself — unload it via the ancestor check.
+                    if (unloadActive && hiddenSelector && root.closest?.(hiddenSelector)) unloadMedia(root);
+                    scan(root);
+                }
+            };
+            if (debounceTimer) clearTimeout(debounceTimer);
+            // A hide+unload rule races the browser's image fetch: scanning right in
+            // the observer microtask usually wins, so skip the debounce then. Pages
+            // without such a rule keep the cheaper batched scanning.
+            if (unloadActive) flush();
+            else debounceTimer = setTimeout(flush, SCAN_DEBOUNCE_MS);
         });
         observer.observe(document.body, { childList: true, subtree: true });
     }
