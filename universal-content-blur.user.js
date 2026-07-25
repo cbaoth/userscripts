@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Universal Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-07-07
+// @version      2026-07-25
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -197,10 +197,12 @@
 #                             work inside; \\" is a literal quote.
 #                 /regex/i    raw regex (flags optional); matches as a SUBSTRING.
 #                             Add \\b...\\b for whole-word or ^...$ for full value.
-#               A , or | inside "..." is literal (not a separator). Inside a raw
-#               /regex/ they still split, so for a regex that needs | use a
-#               [list:NAME] line (list entries are one per line, so | and , are
-#               literal there).
+#               A , or | inside "..." is literal (not a separator). A , or | inside
+#               a /regex/ is also literal, as long as the regex starts the field or
+#               the token (a leading /) — so alternation like /(a|b)/ works in the
+#               url-pattern and in a pattern token. (A [list:NAME] line still works
+#               too — list entries are one per line, so | and , are always literal
+#               there.)
 #
 # action        Comma list of effects applied to the scoped element. Each effect
 #               is a CSS class — the script adds class .ucb-NAME:
@@ -328,14 +330,24 @@
         return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
-    // Split on a top-level single-char delimiter, treating "…" as a literal group so
-    // a delimiter inside double quotes (\" = literal quote) is NOT a separator. A raw
-    // /regex/ is NOT protected — a | or , inside a regex still splits (use "…" for a
-    // literal, or a [list:…] line for a regex that needs |). Whitespace is not trimmed.
+    // Split on a top-level single-char delimiter, protecting delimiters inside two
+    // kinds of spans:
+    //   "…"      a double-quoted literal (\" = literal quote)
+    //   /…/flags a regex literal — but ONLY when it begins a field or a ,/|-separated
+    //            token (leading whitespace aside), the only place the grammar allows
+    //            one. So a | (alternation) or , inside such a regex is part of the
+    //            pattern, not a separator — e.g. a URL pattern /host\/(a|b)/ or a
+    //            /a|b/ pattern token stay intact. (A regex NOT at a token start is not
+    //            protected, but the grammar never puts one there.)
+    // Whitespace is not trimmed.
     function splitTopLevel(str, delim) {
         const out = [];
         let cur = '';
         let inQuote = false;
+        let inRegex = false;
+        // True at the string start and just after a , or | (through leading
+        // whitespace) — i.e. wherever a new token begins and a leading / is a regex.
+        let atTokenStart = true;
         for (let i = 0; i < str.length; i++) {
             const c = str[i];
             if (inQuote) {
@@ -346,14 +358,36 @@
                     cur += c;
                     if (c === '"') inQuote = false;
                 }
+            } else if (inRegex) {
+                if (c === '\\' && i + 1 < str.length) {
+                    cur += c + str[i + 1]; // \/ etc. — an escaped char can't close the regex
+                    i++;
+                } else {
+                    cur += c;
+                    if (c === '/') inRegex = false; // closing delimiter; any flags copy as normal chars
+                }
             } else if (c === '"') {
                 inQuote = true;
                 cur += c;
-            } else if (c === delim) {
-                out.push(cur);
-                cur = '';
+                atTokenStart = false;
+            } else if (c === '/' && atTokenStart) {
+                inRegex = true;
+                cur += c;
+                atTokenStart = false;
+            } else if (c === '|' || c === ',') {
+                // Both are grammar separators (| between fields, , between tokens);
+                // whichever is NOT the active delimiter is copied literally, but either
+                // way a new token starts after it, so a following /…/ is a regex.
+                if (c === delim) {
+                    out.push(cur);
+                    cur = '';
+                } else {
+                    cur += c;
+                }
+                atTokenStart = true;
             } else {
                 cur += c;
+                if (c !== ' ' && c !== '\t') atTokenStart = false;
             }
         }
         out.push(cur);
