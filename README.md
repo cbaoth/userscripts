@@ -131,6 +131,7 @@ See [Deprecated & Legacy Scripts](#deprecated--legacy-scripts) for older scripts
   | Alt-Shift-S   | Open the rules settings (edit/validate/bulk-edit) |
   | Hold Shift / Alt | **Peek:** temporarily suspend effects to see the page as-is (reveal blurred content, drop highlights); restores on release. Skips effects that change **layout** (e.g. a custom `hide`/resize — detected best-effort from your `[css]`, overridable per class via `--ucb-peek: on\|off`) so the page never jumps or scrolls under the cursor mid-peek. Configurable as hold-to-peek or tap-to-toggle, with a hold delay so it ignores Shift-for-capitals; ignored while typing in a field |
   | Alt-Z         | **Toggle all effects on/off** (also in the userscript menu): a persistent reveal that — unlike peek — includes layout-changing effects; stays off until toggled back on or the page reloads |
+  | Alt-Shift-D   | **Debug overlay** (also in the userscript menu): reveals all effects and outlines every affected area with a `#N` badge (rule number as ordered in the settings) plus the matched text. A corner legend maps each `#N` to its full rule line and a live hit count — click a row to open the settings. Page-local, resets on reload |
 
 - **Cloudflare-safe:** runs at `document-idle`, stays completely inert on pages with no matching rule, and bails on Cloudflare challenge pages (unlike some similar scripts that break the "are you human" check).
 

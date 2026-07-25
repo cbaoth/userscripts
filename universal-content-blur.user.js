@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Universal Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-07-05T215559
+// @version      2026-07-07
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -43,6 +43,7 @@
         quickBlock: { alt: true, shift: false, ctrl: false, meta: false, key: 'a' },
         openSettings: { alt: true, shift: true, ctrl: false, meta: false, key: 's' },
         toggleStyles: { alt: true, shift: false, ctrl: false, meta: false, key: 'z' }, // ALL effects on/off (persistent until re-toggled or reload)
+        toggleDebug: { alt: true, shift: true, ctrl: false, meta: false, key: 'd' }, // reveal effects + label each affected area with its rule (page-local, resets on reload)
     };
 
     // Quick-add bar placement. Desktop browsers draw the link-target status bubble
@@ -696,7 +697,15 @@
             // Anything with pipes is a rule (allow rules even before a [rules] header).
             if (line.includes('|') || (section && section.type === 'rules')) {
                 const rule = parseRuleLine(line, lineNum, lists, issues);
-                if (rule) rules.push(rule);
+                if (rule) {
+                    // Stable identity for debug mode: the ordinal matches the rule's
+                    // position in the settings ("first rule = #1"); raw + line let the
+                    // user find it (Ctrl+F the line in the settings textarea).
+                    rule.id = rules.length + 1;
+                    rule.raw = line;
+                    rule.line = lineNum;
+                    rules.push(rule);
+                }
                 continue;
             }
 
@@ -837,6 +846,16 @@
 .${BLUR_CLASS}.${HOVER_CLASS}:hover { filter: none !important; }
 .${FREEZE_CLASS}, .${FREEZE_CLASS} * { animation-play-state: paused !important; }
 .${FREEZE_CLASS}.${HOVER_CLASS}:hover, .${FREEZE_CLASS}.${HOVER_CLASS}:hover * { animation-play-state: running !important; }
+/* DEBUG (Alt+Shift+D): outline every affected element and label it with its rule
+   id + matched text. Gated on the root .ucb-debug-on class so it costs nothing
+   until enabled. --ucb-r is stamped on each target by applyActions(). */
+html.ucb-debug-on [data-ucb-r] { outline: 2px dashed #ff3b30 !important; outline-offset: -1px !important; position: relative !important; }
+html.ucb-debug-on [data-ucb-r]::after {
+    content: attr(data-ucb-r); position: absolute; top: 0; left: 0; z-index: 2147483646;
+    background: #ff3b30; color: #fff; font: 11px/1.4 monospace; padding: 1px 5px;
+    border-radius: 0 0 4px 0; pointer-events: none; white-space: nowrap;
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+}
 ${customCss || ''}
 `;
         (document.head ?? document.documentElement).appendChild(style);
@@ -874,10 +893,14 @@ ${customCss || ''}
         return group;
     }
 
-    function applyActions(matchedEl, rule) {
+    function applyActions(matchedEl, rule, matchInfo) {
         const base = resolveTarget(matchedEl, rule.scope);
         if (!base || processed.has(base)) return;
         const group = expandScopeGroup(base, rule.scope);
+        // Debug label, stamped on every group member: "#N ⟨matched text⟩". Group
+        // siblings (prev/next) share the base match — they carry the same label.
+        const dbgLabel =
+            '#' + rule.id + (matchInfo?.match ? ' ' + truncate(String(matchInfo.match), 30) : '');
         for (const target of group) {
             if (processed.has(target)) continue;
             // Never touch structural roots.
@@ -892,8 +915,12 @@ ${customCss || ''}
             if (rule.options.freeze) freezeMedia(target);
             // Hidden content keeps its images unfetched / aborted (see UNLOAD).
             if (UNLOAD.enabled && ruleHides(rule)) unloadMedia(target);
+            // Debug provenance: stamp the label (shown only when .ucb-debug-on is set)
+            // and tally the hit so the HUD legend can show a per-rule count.
+            target.dataset.ucbR = dbgLabel;
+            countDebugHit(rule.id);
             // If a reveal is currently active, keep newly-matched content revealed too.
-            if (stylesOff) suspendEl(target, true);
+            if (revealAll()) suspendEl(target, true);
             else if (peekOn) suspendEl(target);
         }
         if (group.length > 1 && rule.options.hover) linkHoverGroup(group);
@@ -1043,7 +1070,11 @@ ${customCss || ''}
 
     let peekOn = false; // transient reveal (PEEK hold/tap) — skips peek-exempt effects
     let stylesOff = false; // persistent all-effects toggle (KEYS.toggleStyles / menu); resets on reload
+    let debugOn = false; // debug overlay (KEYS.toggleDebug) — reveals all effects + labels; resets on reload
     const touched = new Set(); // elements we've applied effect classes to
+    // Both the styles-off toggle and debug mode fully reveal every effect. Peek is
+    // the narrower, transient reveal (skips peek-exempt/layout effects).
+    const revealAll = () => stylesOff || debugOn;
     const NON_EFFECT_CLASSES = new Set([HOVER_CLASS, FREEZE_CLASS, FROZEN_CLASS]);
 
     // Effect classes ('ucb-NAME') a peek must NOT strip: revealing an effect that
@@ -1199,7 +1230,7 @@ ${customCss || ''}
     // pointer leaves a hover group.
     function applyGlobalState(el) {
         resumeEl(el);
-        if (stylesOff) suspendEl(el, true);
+        if (revealAll()) suspendEl(el, true);
         else if (peekOn) suspendEl(el);
     }
 
@@ -1220,7 +1251,7 @@ ${customCss || ''}
     function setPeek(on) {
         if (on === peekOn) return;
         peekOn = on;
-        if (!stylesOff) updateSuspension(); // styles-off already reveals everything
+        if (!revealAll()) updateSuspension(); // a full reveal already shows everything
     }
 
     function setStylesOff(off) {
@@ -1232,6 +1263,130 @@ ${customCss || ''}
     function toggleStyles() {
         setStylesOff(!stylesOff);
         toast('Content Blur: all effects ' + (stylesOff ? 'OFF' : 'ON'));
+    }
+
+    // -----------------------------------------------------------------------
+    //  DEBUG OVERLAY (KEYS.toggleDebug) — reveal effects + label each area
+    // -----------------------------------------------------------------------
+
+    // Per-rule hit tally, kept live so the HUD legend can show how many elements
+    // each active rule matched on this page.
+    const debugHits = new Map(); // rule.id -> count
+    const debugCountEls = new Map(); // rule.id -> the HUD <span> showing that count
+
+    function countDebugHit(id) {
+        const n = (debugHits.get(id) || 0) + 1;
+        debugHits.set(id, n);
+        const el = debugCountEls.get(id);
+        if (el) el.textContent = String(n);
+    }
+
+    function setDebug(on) {
+        if (on === debugOn) return;
+        debugOn = on;
+        document.documentElement.classList.toggle('ucb-debug-on', on);
+        updateSuspension(); // reveal (or restore, honoring peek/styles-off) every touched element
+        if (on) buildDebugHud();
+        else removeDebugHud();
+    }
+
+    function toggleDebug() {
+        ensureStyles(); // debug CSS lives in the main style block; make sure it's injected
+        setDebug(!debugOn);
+        toast('Content Blur: debug ' + (debugOn ? 'ON — effects revealed, areas labelled' : 'OFF'));
+    }
+
+    // A fixed corner legend mapping the #N badges to their rules: id, the raw
+    // config line (Ctrl+F it in settings), and a live hit count. Click a row to
+    // open the settings dialog.
+    function buildDebugHud() {
+        removeDebugHud();
+        const hud = document.createElement('div');
+        hud.id = 'ucb-debug-hud';
+        Object.assign(hud.style, {
+            position: 'fixed',
+            top: '8px',
+            right: '8px',
+            zIndex: '2147483647',
+            maxWidth: 'min(560px, 46vw)',
+            maxHeight: '80vh',
+            overflowY: 'auto',
+            overscrollBehavior: 'contain',
+            background: 'rgba(30,30,30,0.96)',
+            color: '#d4d4d4',
+            border: '1px solid #ff3b30',
+            borderRadius: '8px',
+            padding: '10px 12px',
+            fontFamily: 'sans-serif',
+            fontSize: '12px',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
+        });
+
+        const head = document.createElement('div');
+        Object.assign(head.style, { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' });
+        const title = document.createElement('strong');
+        title.textContent = 'Content Blur — debug';
+        Object.assign(title.style, { color: '#fff', flex: '1', fontSize: '13px' });
+        const close = document.createElement('span');
+        close.textContent = '✕';
+        close.title = 'Close (Alt+Shift+D)';
+        Object.assign(close.style, { cursor: 'pointer', color: '#888', padding: '0 2px' });
+        close.addEventListener('click', () => toggleDebug());
+        head.append(title, close);
+
+        const sub = document.createElement('div');
+        sub.textContent = `${activeRules.length} rule${activeRules.length !== 1 ? 's' : ''} active on ${location.hostname}`;
+        Object.assign(sub.style, { color: '#888', fontSize: '11px', marginBottom: '8px' });
+
+        hud.append(head, sub);
+
+        if (!activeRules.length) {
+            const none = document.createElement('div');
+            none.textContent = 'No rules match this page.';
+            Object.assign(none.style, { color: '#888' });
+            hud.append(none);
+        }
+
+        for (const r of activeRules) {
+            const row = document.createElement('div');
+            Object.assign(row.style, {
+                display: 'flex',
+                gap: '8px',
+                alignItems: 'baseline',
+                padding: '4px 6px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                lineHeight: '1.45',
+            });
+            row.title = 'Open settings';
+            row.addEventListener('mouseenter', () => (row.style.background = 'rgba(255,255,255,0.06)'));
+            row.addEventListener('mouseleave', () => (row.style.background = ''));
+            row.addEventListener('click', () => openSettings());
+
+            const id = document.createElement('span');
+            id.textContent = '#' + r.id;
+            Object.assign(id.style, { color: '#ff8c7a', fontFamily: 'monospace', fontWeight: 'bold' });
+
+            const raw = document.createElement('span');
+            raw.textContent = r.raw;
+            Object.assign(raw.style, { flex: '1', fontFamily: 'monospace', color: '#9cdcfe', wordBreak: 'break-all' });
+
+            const count = document.createElement('span');
+            count.textContent = String(debugHits.get(r.id) || 0);
+            count.title = 'elements matched';
+            Object.assign(count.style, { color: '#4ec9b0', fontFamily: 'monospace', minWidth: '2ch', textAlign: 'right' });
+            debugCountEls.set(r.id, count);
+
+            row.append(id, raw, count);
+            hud.append(row);
+        }
+
+        document.documentElement.appendChild(hud);
+    }
+
+    function removeDebugHud() {
+        document.getElementById('ucb-debug-hud')?.remove();
+        debugCountEls.clear();
     }
 
     // -----------------------------------------------------------------------
@@ -1312,7 +1467,8 @@ ${customCss || ''}
             const text = node.nodeValue;
             const el = node.parentElement;
             for (const rule of textRules) {
-                if (rule.regex.test(text)) applyActions(el, rule);
+                const m = rule.regex.exec(text); // exec (no /g flag) also yields the matched substring for debug
+                if (m) applyActions(el, rule, { source: 'text', match: m[0] });
             }
         }
     }
@@ -1336,14 +1492,17 @@ ${customCss || ''}
 
             for (const rule of attrRules) {
                 for (const source of rule.sources) {
-                    let hit = false;
-                    if (source === 'url' && href) hit = rule.regex.test(href);
-                    else if (source === 'alt' && alt) hit = rule.regex.test(alt);
-                    else if (source === 'title' && title) hit = rule.regex.test(title);
-                    else if (source === 'user' && usernames) hit = usernames.some((u) => rule.regex.test(u));
-                    else if (source === 'class' && classes) hit = classes.some((c) => rule.regex.test(c));
+                    // exec (no /g flag) yields the matched substring for the debug label.
+                    let hit = null;
+                    if (source === 'url' && href) hit = rule.regex.exec(href);
+                    else if (source === 'alt' && alt) hit = rule.regex.exec(alt);
+                    else if (source === 'title' && title) hit = rule.regex.exec(title);
+                    else if (source === 'user' && usernames)
+                        for (const u of usernames) if ((hit = rule.regex.exec(u))) break;
+                    else if (source === 'class' && classes)
+                        for (const c of classes) if ((hit = rule.regex.exec(c))) break;
                     if (hit) {
-                        applyActions(el, rule);
+                        applyActions(el, rule, { source, match: hit[0] });
                         break;
                     }
                 }
@@ -2201,6 +2360,9 @@ ${customCss || ''}
         } else if (matchesKey(e, KEYS.toggleStyles)) {
             e.preventDefault();
             toggleStyles();
+        } else if (matchesKey(e, KEYS.toggleDebug)) {
+            e.preventDefault();
+            toggleDebug();
         }
     });
 
@@ -2354,6 +2516,7 @@ ${customCss || ''}
             (PEEK.enabled ? ` — or hold ${PEEK.keys.join('/')} to peek` : ''),
         toggleStyles
     );
+    GM_registerMenuCommand(`🐞 Toggle debug overlay (${keyLabel(KEYS.toggleDebug)})`, toggleDebug);
 
     await loadRules();
 
