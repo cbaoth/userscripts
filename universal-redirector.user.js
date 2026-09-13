@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Universal Redirector
 // @namespace   https://github.com/cbaoth/userscripts
-// @version     2026-04-21
+// @version     2026-09-13
 // @description Redirect URLs based on configurable mappings. Supports simple hostname rules and regex patterns on the full URL.
 // @author      cbaoth235
 // @license     MIT
@@ -31,11 +31,13 @@
     const DEFAULT_MAPPINGS = `\
 # Simple hostname redirect (path, query, and hash are preserved):
 #   source.domain -> target.domain
-reddit.com -> old.reddit.com
 
 # Regex redirect (matches full URL, use $1/$2/… for capture groups):
 #   /pattern/flags -> replacement
-# /^https?:\\/\\/(www\\.)?twitter\\.com(.*)/i -> https://nitter.net$2
+
+# Exmaples:
+reddit.com -> old.reddit.com
+/^https?:\/\/pathofexile\.fandom\.com/wiki/(.*)/i -> https://poewiki.net/wiki/$1
 `;
 
     /*** Rule parsing ***/
