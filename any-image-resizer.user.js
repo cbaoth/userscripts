@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name        Universal Image Resizer
+// @name        Any Image Resizer
 // @namespace   https://github.com/cbaoth/userscripts
-// @version     2026-05-09T120000
+// @version     2026-09-18
 // @description Resize images on configured sites by CSS selector. Supports per-URL rules, hover zoom, container-fix, and an element picker for easy rule creation.
 // @author      cbaoth235
 // @license     MIT
@@ -14,7 +14,7 @@
 //
 // @run-at      document-idle
 //
-// @downloadURL https://github.com/cbaoth/userscripts/raw/master/universal-image-resizer.user.js
+// @downloadURL https://github.com/cbaoth/userscripts/raw/master/any-image-resizer.user.js
 // ==/UserScript==
 
 (async function () {

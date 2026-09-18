@@ -3,9 +3,13 @@
 ## Dependencies & Modernization
 
 - [ ] Review `lib/cblib.*` — evaluate whether to keep, refactor, or discard in favor of native/modern solutions
-- [ ] Audit all scripts for `jQuery`, `underscore`, `waitForKeyElements` usage — replace with native equivalents where feasible (ongoing; `copy-url-on-hover` already done)
+- [ ] Audit all scripts for `jQuery`, `underscore`, `waitForKeyElements` usage — replace with native equivalents where feasible (ongoing; `any-url-copier` already done)
 - [ ] Standardize observer pattern usage across all scripts
 - [ ] Standardize user settings/config approach across scripts (currently inconsistent: some use `GM_config`, some hardcode values)
+
+## Rename Migration
+
+- [ ] Delete the frozen copies at the old paths once all installs (all synced Violentmonkey devices) have updated to the new `@downloadURL` — renamed 2026-09-18, see `AGENTS.md` → Naming: `universal-content-blur`, `universal-emoji-replacer`, `universal-image-resizer`, `universal-redirector`, `copy-url-on-hover`, `amazon-links`, `auto-show-forum-spoilers`, `search-hotkey` (`*.user.js`)
 
 ## Build Toolchain
 
@@ -33,10 +37,10 @@ Scripts that have not had functional updates in a long time — verify each stil
 
 - [ ] `gerrit-tweaks.user.js` (2018-12-02)
 - [ ] `jenkins-tweaks.user.js` (2020-06-30)
-- [ ] `imdb-tweaks.user.js` (2020-10-26) — _deprecated_; IMDB redesigned its pages a few years ago, almost certainly broken. Likely delete.
-- [ ] `auto-show-forum-spoilers.user.js` (2021-02-23) — _deprecated_; presumably still works on older forums. Better options may exist; drop the unnecessary `@require` dependencies (overkill for such simple functionality).
-- [ ] `amazon-links.user.js` (2022-01-11) — _deprecated_; unmaintained for years, then a partial fix/improvement attempt a few months ago that was likely never finished. Review → ok / update / delete.
-- [ ] `search-hotkey.user.js` (2022-07-01) — _deprecated_; good idea originally but unused for a long time. Test whether it still works and is still useful; keep or delete accordingly.
+- [ ] `imdb-tweaks.user.js` (2020-10-26) — _deprecated_; IMDb redesigned its pages a few years ago, almost certainly broken. Likely delete.
+- [ ] `forum-spoiler-reveal.user.js` (2021-02-23) — _deprecated_; presumably still works on older forums. Better options may exist; drop the unnecessary `@require` dependencies (overkill for such simple functionality).
+- [ ] `amazon-tweaks.user.js` (2022-01-11) — _deprecated_; unmaintained for years, then a partial fix/improvement attempt a few months ago that was likely never finished. Review → ok / update / delete.
+- [ ] `wiki-search-hotkey.user.js` (2022-07-01) — _deprecated_; good idea originally but unused for a long time. Test whether it still works and is still useful; keep or delete accordingly.
 - [ ] `streaming-tweaks.user.js` (2022-11-11) — _deprecated_; long unused. YouTube now handled by other scripts/extensions; the remaining services mostly used on TV in recent years. Sites have likely changed — review, may no longer work.
 - [ ] `foswiki-tweaks.user.js` (2025-01-24) — unclear whether this was just WIP or actually useful. Evaluate the `GM_config` (`@require`) dependency — overkill for a single float value; replace with a native or minimal custom implementation.
 
@@ -44,13 +48,13 @@ Scripts that have not had functional updates in a long time — verify each stil
 
 ## Script-Specific Ideas
 
-- [ ] `universal-emoji-replacer.user.js`
+- [ ] `any-emoji-replacer.user.js`
   - [ ] Consider adding globale include/exclude list for hosts and or per sule/section conditions (e.g. apply mapping rule(s) only on specific social media websites)
 
-- [ ] `universal-image-resizer.user.js`
+- [ ] `any-image-resizer.user.js`
   - [ ] Picker: add match-count range filter to candidate list — allow user to specify min/max number of matched images (e.g. 80–120) so candidates can be narrowed down when depth is high and many selectors are found. Useful when you know roughly how many images a page section should contain (e.g. a search result grid).
 
-- [ ] `universal-content-blur.user.js`
+- [ ] `any-content-blur.user.js`
   - [x] ~~Additional actions beyond `blur`: `hide` (display:none), `dim` (low opacity).~~ Done differently: actions are now arbitrary user-defined `.ucb-NAME` classes via a `[css]` section (`blur` is the built-in default, parameterizable as `blur:N`). `hide`/`dim`/`darken`/`grayscale`/`resize` etc. are plain CSS the user writes; `NAME:VALUE` exposes `--ucb-NAME` for per-rule tuning.
   - [ ] [M] `pixelate` action — the one obscuring effect plain CSS can't do (needs a canvas/SVG filter). Add as a built-in if blur proves insufficient for images.
   - [x] [S] ~~Opt-in `pointer-events:none` to block accidental clicks — document as a `[css]` recipe rather than building it in.~~ Done: `.ucb-noclick` recipe documented in the default config, incl. the caveat that `pointer-events:none` also disables the element's own `:hover` reveal (pair with `no-hover`, peek, or a prev/next group hover).

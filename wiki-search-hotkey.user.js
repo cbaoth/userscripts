@@ -2,10 +2,10 @@
 // @namespace   https://github.com/cbaoth/userscripts
 // @author      cbaoth235
 //
-// @name        Search Hotkey
-// @version     2022-07-01
+// @name        Wiki Search Hotkey
+// @version     2026-09-18
 // @description Open / focus the search field via alt-f in some wikis, forums, etc.
-// @downloadURL https://github.com/cbaoth/userscripts/raw/master/search-hotkey.user.js
+// @downloadURL https://github.com/cbaoth/userscripts/raw/master/wiki-search-hotkey.user.js
 //
 // @include     /^https?://\w+\.fandom.com/wiki/.*/
 // @include     /^https?://\w+\.wikipedia.org/.*/

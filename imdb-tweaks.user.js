@@ -2,7 +2,7 @@
 // @namespace   https://github.com/cbaoth/userscripts
 // @author      cbaoth235
 //
-// @name        IMDB Tweaks
+// @name        IMDb Tweaks
 // @version     2020-10-26
 // @description Some tweaks for IMDB
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/imdb-tweaks.user.js
@@ -40,7 +40,7 @@ $ = jQuery = jQuery.noConflict(true);
     };
     GM_config.init({
         id: GM_CONFIG_ID,
-        title: 'IMDB Tweaks Config',
+        title: 'IMDb Tweaks Config',
         fields: GM_CONFIG_FIELDS,
         events: {
             open: function (doc) {

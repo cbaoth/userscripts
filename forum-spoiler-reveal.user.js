@@ -2,10 +2,10 @@
 // @namespace   https://github.com/cbaoth/userscripts
 // @author      cbaoth235
 //
-// @name        Auto Show Forum Spoilers
-// @version     2021-02-23
+// @name        Forum Spoiler Reveal
+// @version     2026-09-18
 // @description Automatically show all spoilers in forum posts and expand partially shown articles
-// @downloadURL https://github.com/cbaoth/userscripts/raw/master/auto-show-forum-spoilers.user.js
+// @downloadURL https://github.com/cbaoth/userscripts/raw/master/forum-spoiler-reveal.user.js
 //
 // @include     *://*/showthread.php*
 // @include     *://*/forum/*

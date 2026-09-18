@@ -3,11 +3,11 @@
 ## Table of Contents
 
 - [User Scripts](#user-scripts)
-  - [Universal Content Blur](#universal-content-blur)
-  - [Universal Emoji Replacer](#universal-emoji-replacer)
-  - [Universal Image Resizer](#universal-image-resizer)
-  - [Universal Redirector](#universal-redirector)
-  - [Copy URL on Hover](#copy-url-on-hover)
+  - [Any Content Blur](#any-content-blur)
+  - [Any Emoji Replacer](#any-emoji-replacer)
+  - [Any Image Resizer](#any-image-resizer)
+  - [Any Redirector](#any-redirector)
+  - [Any URL Copier](#any-url-copier)
   - [Gerrit Tweaks](#gerrit-tweaks)
   - [Jenkins Tweaks](#jenkins-tweaks)
   - [OpenProject Tweaks](#openproject-tweaks)
@@ -35,9 +35,82 @@ See [Deprecated & Legacy Scripts](#deprecated--legacy-scripts) for older scripts
 
 ---
 
-### Copy URL on Hover
+### Any Content Blur
 
-[copy-url-on-hover.user.js](copy-url-on-hover.user.js) copies link/media URIs to the clipboard on mouse hover.
+[any-content-blur.user.js](any-content-blur.user.js) blurs disturbing or unwanted content on any site by configurable rules, with reveal-on-hover so you can decide whether to peek. A general, config-file-driven approach to filtering unwanted content.
+
+- A single plain-text config (one rule per line, edited in one textarea — no fiddly multi-tab GUI, no JSON export/import):
+
+  ```
+[list:words_violent]
+  gore
+  /blood(y)?/
+  /murder|kill(ed|ing)?/
+
+  [rules]
+  # url-pattern | source | patterns | action | scope | options
+  *://*/*        | text | @words_* | blur | self | hover
+  *://site.com/* | user | @users   | blur | row  | hover
+  ```
+
+- **Per-rule URL patterns** (glob `*://host/*` or `/regex/flags`) — rules only run where you configure them, not globally.
+- **Sources:** visible `text`, image `alt`/`title`, link/image `url`, `user` (username extracted from profile-style URLs), or `class` (CSS class names, tested per class — catch marker classes like interest/genre/status icons that say more than the visible content; explicit opt-in, not part of `*`).
+- **Pattern syntax:** bare words match **whole-word and literally** (`test` ≠ `tested`), with simple `*`/`?` wildcards (`\*`/`\?` for literals). Wrap in `"…"` for an **exact full-value** match (e.g. usernames: `"mike"` ≠ `mike2`), or in `/…/` for full regex (matches as a **substring**; add `\b…\b`/`^…$` as needed). A `,` or `|` inside `"…"` is literal (not a field/token separator).
+- **Reusable pattern lists** (`[list:NAME]`, referenced as `@NAME` or `@glob*`) shared across rules. Lists can **reference other lists** by name or by glob wildcard (`@text_*` expands to every list whose name matches), and wildcards also work directly in a rule's patterns field. Duplicate fragments across overlapping lists are deduplicated automatically. Nesting up to 5 levels deep; self-references and cycles are silently skipped. Lists are the place for complex regex with alternation (e.g. `/kill(ed|ing)?/`) — inside a rule line `|` is the field separator, so inline `/regex/` tokens use commas for alternatives instead.
+- **Scope:** blur the matched element (`self`), an ancestor (`up:N`), a `closest:SELECTOR`, or the whole table `row` — handy for old table-based layouts.
+- **Actions:** the built-in `blur` (strength tweakable as `blur:20`), plus your own effects — add a `[css]` section, define `.ucb-NAME` classes (darken, grayscale, hide, resize, … anything CSS can do) and use `NAME` as the action. Combine several (`blur, dim:0.1`); a `NAME:VALUE` action exposes `--ucb-NAME` so a rule can parameterize your CSS. For reveal-on-hover on custom actions, add a `.ucb-NAME.ucb-hover:hover` rule (the script adds `.ucb-hover` when the rule uses the `hover` option).
+- **Stop motion** (`freeze` option): pauses videos + CSS animations and snapshots animated images (GIF/WebP/APNG) to a still frame, so a blurred animation can't leak context through movement. With hover-reveal, motion resumes while you peek and re-freezes when you leave.
+- **Hidden = not fetched** (best effort): when a rule *hides* its target (a `[css]` class with `display:none`/`visibility:hidden`), the images inside get their `src`/`srcset` stripped. Lazy images inserted into the live DOM (infinite scroll) are never requested at all; eager/fragment-built images still dispatch a request at node creation but the download is aborted at ~0 bytes — bandwidth saved, no cache pollution from unwanted content. Images in the initial HTML are already fetched by the browser's preload scanner before userscripts run, so those can't be prevented. Sources are restored on a deliberate reveal (Alt+Z / group hover). Toggleable via the `UNLOAD` constant.
+- **Keyboard quick-add:** select text or hover a link, then _(shortcuts are configurable constants at the top of the script)_:
+
+  | Keys          | Action |
+  |---------------|--------|
+  | Alt-R         | Quick-add a blur rule from the selection/hovered link (applies immediately) |
+  | Alt-Shift-R   | Quick-add via a small panel: create a **new rule** (choose source, scope, hover), or add the value to an **existing rule** or **existing list** — the chosen destination is remembered across reloads for adding several in a row |
+  | Alt-A         | Quick-block: fold the selection/username into the first matching rule's list (or create a new rule if none matches) — one-keypress user blocking. Usernames are captured as `"name"` (exact) so similar names aren't caught |
+  | Alt-Shift-S   | Open the rules settings (edit/validate/bulk-edit) |
+  | Hold Shift / Alt | **Peek:** temporarily suspend effects to see the page as-is (reveal blurred content, drop highlights); restores on release. Skips effects that change **layout** (e.g. a custom `hide`/resize — detected best-effort from your `[css]`, overridable per class via `--ucb-peek: on\|off`) so the page never jumps or scrolls under the cursor mid-peek. Configurable as hold-to-peek or tap-to-toggle, with a hold delay so it ignores Shift-for-capitals; ignored while typing in a field |
+  | Alt-Z         | **Toggle all effects on/off** (also in the userscript menu): a persistent reveal that — unlike peek — includes layout-changing effects; stays off until toggled back on or the page reloads |
+  | Alt-Shift-D   | **Debug overlay** (also in the userscript menu): reveals all effects and outlines every affected area with a `#N` badge (rule number as ordered in the settings) plus the matched text. A corner legend maps each `#N` to its full rule line and a live hit count — click a row to open the settings. Page-local, resets on reload |
+
+- **Cloudflare-safe:** runs at `document-idle`, stays completely inert on pages with no matching rule, and bails on Cloudflare challenge pages (unlike some similar scripts that break the "are you human" check).
+
+---
+
+### Any Emoji Replacer
+
+[any-emoji-replacer.user.js](any-emoji-replacer.user.js) replaces emojis based on configurable mappings to personalize your browsing experience, or to reduce emotional friction by replacing potentially triggering emojis with more neutral alternatives.
+
+- Supports simple emoji replacement rules (`🙁 <- 💩 🤮 🤬 😡 👿 😠`) based on configurable mappings.
+- Mappings are edited via a userscript extension (\*monkey menu command); export/import is done by copy-pasting the textarea.
+
+---
+
+### Any Image Resizer
+
+[any-image-resizer.user.js](any-image-resizer.user.js) resizes images on configured sites by CSS selector — handy for sites that serve needlessly small (or large) images.
+
+- **Per-URL rules** (glob `*://host/*` or `/regex/flags`) mapping a CSS selector to a target size, edited in a single plain-text textarea (one rule per line: `url-pattern | css-selector | size | options | hover-size`).
+- **Hover zoom:** optional per-rule hover size, including hover-only rules (use `-` as the static size).
+- **Container-fix** option for layouts that clip or constrain the resized image.
+- **Element picker:** pick an image on the page to generate a matching selector/rule visually, with an adjustable ancestor depth and live match count, instead of writing selectors by hand.
+- Configured via the userscript extension (\*monkey menu command).
+
+---
+
+### Any Redirector
+
+[any-redirector.user.js](any-redirector.user.js) redirects domains based on configurable mappings — a single script covering all redirect use cases instead of one script per site.
+
+- Supports simple hostname rules (`reddit.com -> old.reddit.com`) and regex patterns on the full URL.
+- Redirects fire at `document-start` before any content loads.
+- Mappings are edited via a userscript extension (\*monkey menu command); export/import is done by copy-pasting the textarea.
+
+---
+
+### Any URL Copier
+
+[any-url-copier.user.js](any-url-copier.user.js) copies link/media URIs to the clipboard on mouse hover.
 
 - Copies link URI into clipboard when hovering over a link while holding `Alt-C`.
 - Tries to copy media (image/video) URI into clipboard when hovering over an image while holding `Alt-B`.
@@ -95,90 +168,17 @@ See [Deprecated & Legacy Scripts](#deprecated--legacy-scripts) for older scripts
 
 ---
 
-### Universal Content Blur
-
-[universal-content-blur.user.js](universal-content-blur.user.js) blurs disturbing or unwanted content on any site by configurable rules, with reveal-on-hover so you can decide whether to peek. A general, config-file-driven approach to filtering unwanted content.
-
-- A single plain-text config (one rule per line, edited in one textarea — no fiddly multi-tab GUI, no JSON export/import):
-
-  ```
-[list:words_violent]
-  gore
-  /blood(y)?/
-  /murder|kill(ed|ing)?/
-
-  [rules]
-  # url-pattern | source | patterns | action | scope | options
-  *://*/*        | text | @words_* | blur | self | hover
-  *://site.com/* | user | @users   | blur | row  | hover
-  ```
-
-- **Per-rule URL patterns** (glob `*://host/*` or `/regex/flags`) — rules only run where you configure them, not globally.
-- **Sources:** visible `text`, image `alt`/`title`, link/image `url`, `user` (username extracted from profile-style URLs), or `class` (CSS class names, tested per class — catch marker classes like interest/genre/status icons that say more than the visible content; explicit opt-in, not part of `*`).
-- **Pattern syntax:** bare words match **whole-word and literally** (`test` ≠ `tested`), with simple `*`/`?` wildcards (`\*`/`\?` for literals). Wrap in `"…"` for an **exact full-value** match (e.g. usernames: `"mike"` ≠ `mike2`), or in `/…/` for full regex (matches as a **substring**; add `\b…\b`/`^…$` as needed). A `,` or `|` inside `"…"` is literal (not a field/token separator).
-- **Reusable pattern lists** (`[list:NAME]`, referenced as `@NAME` or `@glob*`) shared across rules. Lists can **reference other lists** by name or by glob wildcard (`@text_*` expands to every list whose name matches), and wildcards also work directly in a rule's patterns field. Duplicate fragments across overlapping lists are deduplicated automatically. Nesting up to 5 levels deep; self-references and cycles are silently skipped. Lists are the place for complex regex with alternation (e.g. `/kill(ed|ing)?/`) — inside a rule line `|` is the field separator, so inline `/regex/` tokens use commas for alternatives instead.
-- **Scope:** blur the matched element (`self`), an ancestor (`up:N`), a `closest:SELECTOR`, or the whole table `row` — handy for old table-based layouts.
-- **Actions:** the built-in `blur` (strength tweakable as `blur:20`), plus your own effects — add a `[css]` section, define `.ucb-NAME` classes (darken, grayscale, hide, resize, … anything CSS can do) and use `NAME` as the action. Combine several (`blur, dim:0.1`); a `NAME:VALUE` action exposes `--ucb-NAME` so a rule can parameterize your CSS. For reveal-on-hover on custom actions, add a `.ucb-NAME.ucb-hover:hover` rule (the script adds `.ucb-hover` when the rule uses the `hover` option).
-- **Stop motion** (`freeze` option): pauses videos + CSS animations and snapshots animated images (GIF/WebP/APNG) to a still frame, so a blurred animation can't leak context through movement. With hover-reveal, motion resumes while you peek and re-freezes when you leave.
-- **Hidden = not fetched** (best effort): when a rule *hides* its target (a `[css]` class with `display:none`/`visibility:hidden`), the images inside get their `src`/`srcset` stripped. Lazy images inserted into the live DOM (infinite scroll) are never requested at all; eager/fragment-built images still dispatch a request at node creation but the download is aborted at ~0 bytes — bandwidth saved, no cache pollution from unwanted content. Images in the initial HTML are already fetched by the browser's preload scanner before userscripts run, so those can't be prevented. Sources are restored on a deliberate reveal (Alt+Z / group hover). Toggleable via the `UNLOAD` constant.
-- **Keyboard quick-add:** select text or hover a link, then _(shortcuts are configurable constants at the top of the script)_:
-
-  | Keys          | Action |
-  |---------------|--------|
-  | Alt-R         | Quick-add a blur rule from the selection/hovered link (applies immediately) |
-  | Alt-Shift-R   | Quick-add via a small panel: create a **new rule** (choose source, scope, hover), or add the value to an **existing rule** or **existing list** — the chosen destination is remembered across reloads for adding several in a row |
-  | Alt-A         | Quick-block: fold the selection/username into the first matching rule's list (or create a new rule if none matches) — one-keypress user blocking. Usernames are captured as `"name"` (exact) so similar names aren't caught |
-  | Alt-Shift-S   | Open the rules settings (edit/validate/bulk-edit) |
-  | Hold Shift / Alt | **Peek:** temporarily suspend effects to see the page as-is (reveal blurred content, drop highlights); restores on release. Skips effects that change **layout** (e.g. a custom `hide`/resize — detected best-effort from your `[css]`, overridable per class via `--ucb-peek: on\|off`) so the page never jumps or scrolls under the cursor mid-peek. Configurable as hold-to-peek or tap-to-toggle, with a hold delay so it ignores Shift-for-capitals; ignored while typing in a field |
-  | Alt-Z         | **Toggle all effects on/off** (also in the userscript menu): a persistent reveal that — unlike peek — includes layout-changing effects; stays off until toggled back on or the page reloads |
-  | Alt-Shift-D   | **Debug overlay** (also in the userscript menu): reveals all effects and outlines every affected area with a `#N` badge (rule number as ordered in the settings) plus the matched text. A corner legend maps each `#N` to its full rule line and a live hit count — click a row to open the settings. Page-local, resets on reload |
-
-- **Cloudflare-safe:** runs at `document-idle`, stays completely inert on pages with no matching rule, and bails on Cloudflare challenge pages (unlike some similar scripts that break the "are you human" check).
-
----
-
-### Universal Emoji Replacer
-
-[universal-emoji-replacer.user.js](universal-emoji-replacer.user.js) replaces emojis based on configurable mappings to personalize your browsing experience, or to reduce emotional friction by replacing potentially triggering emojis with more neutral alternatives.
-
-- Supports simple emoji replacement rules (`🙁 <- 💩 🤮 🤬 😡 👿 😠`) based on configurable mappings.
-- Mappings are edited via a userscript extension (\*monkey menu command); export/import is done by copy-pasting the textarea.
-
----
-
-### Universal Image Resizer
-
-[universal-image-resizer.user.js](universal-image-resizer.user.js) resizes images on configured sites by CSS selector — handy for sites that serve needlessly small (or large) images.
-
-- **Per-URL rules** (glob `*://host/*` or `/regex/flags`) mapping a CSS selector to a target size, edited in a single plain-text textarea (one rule per line: `url-pattern | css-selector | size | options | hover-size`).
-- **Hover zoom:** optional per-rule hover size, including hover-only rules (use `-` as the static size).
-- **Container-fix** option for layouts that clip or constrain the resized image.
-- **Element picker:** pick an image on the page to generate a matching selector/rule visually, with an adjustable ancestor depth and live match count, instead of writing selectors by hand.
-- Configured via the userscript extension (\*monkey menu command).
-
----
-
-### Universal Redirector
-
-[universal-redirector.user.js](universal-redirector.user.js) redirects domains based on configurable mappings — a single script covering all redirect use cases instead of one script per site.
-
-- Supports simple hostname rules (`reddit.com -> old.reddit.com`) and regex patterns on the full URL.
-- Redirects fire at `document-start` before any content loads.
-- Mappings are edited via a userscript extension (\*monkey menu command); export/import is done by copy-pasting the textarea.
-
----
-
 ## Deprecated & Legacy Scripts
 
 The following scripts are kept around but **no longer maintained** and may not work
 with the current versions of their target sites. They are documented separately and
 tracked for review (verify / update / remove) in [docs/TODO.md](docs/TODO.md):
 
-- **Amazon Tweaks** (`amazon-links.user.js`)
-- **Auto Show Forum Spoilers** (`auto-show-forum-spoilers.user.js`)
-- **IMDB Tweaks** (`imdb-tweaks.user.js`)
-- **Search Hotkey** (`search-hotkey.user.js`)
+- **Amazon Tweaks** (`amazon-tweaks.user.js`)
+- **Forum Spoiler Reveal** (`forum-spoiler-reveal.user.js`)
+- **IMDb Tweaks** (`imdb-tweaks.user.js`)
 - **Streaming Tweaks** (`streaming-tweaks.user.js`)
+- **Wiki Search Hotkey** (`wiki-search-hotkey.user.js`)
 
 See [docs/deprecated.md](docs/deprecated.md) for details on each.
 

@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name        Universal Emoji Replacer
+// @name        Any Emoji Replacer
 // @namespace   https://github.com/cbaoth/userscripts
-// @version     2026-04-25
+// @version     2026-09-18
 // @description Replace emojis with customizable alternatives on all websites, e.g. to reduce emotional impact or just for fun.
 // @author      cbaoth235
 // @license     MIT
@@ -12,7 +12,7 @@
 // @grant       GM.setValue
 // @grant       GM_registerMenuCommand
 //
-// @downloadURL https://github.com/cbaoth/userscripts/raw/master/universal-emoji-replacer.user.js
+// @downloadURL https://github.com/cbaoth/userscripts/raw/master/any-emoji-replacer.user.js
 // ==/UserScript==
 
 (async function () {

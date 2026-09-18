@@ -2,10 +2,10 @@
 // @namespace   https://github.com/cbaoth/userscripts
 // @author      cbaoth235
 //
-// @name        Copy URL on hover
+// @name        Any URL Copier
 // @description Copy link / media urls on mouse-over while alt-c/-b is pressed
-// @version     2025-12-27
-// @downloadURL https://github.com/cbaoth/userscripts/raw/master/copy-url-on-hover.user.js
+// @version     2026-09-18
+// @downloadURL https://github.com/cbaoth/userscripts/raw/master/any-url-copier.user.js
 //
 // @include     *
 //

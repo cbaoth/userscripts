@@ -3,9 +3,9 @@
 // @author      cbaoth235
 //
 // @name        Amazon Tweaks
-// @version     2022-01-11
+// @version     2026-09-18
 // @description Some improvments to amazon shop pages
-// @downloadURL https://github.com/cbaoth/userscripts/raw/master/amazon-links.user.js
+// @downloadURL https://github.com/cbaoth/userscripts/raw/master/amazon-tweaks.user.js
 //
 // @include     /^https?://(www\.|smile\.)?amazon\.(com|de|co\.uk)//
 //

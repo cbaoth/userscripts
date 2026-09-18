@@ -14,7 +14,7 @@ Linked back from the main [README](../README.md).
 
 > **Note:** Last updated 2022-01-11. This script may no longer work correctly with the current version of the site.
 
-[amazon-links.user.js](../amazon-links.user.js) improves amazon shop pages.
+[amazon-tweaks.user.js](../amazon-tweaks.user.js) improves amazon shop pages.
 
 - **Product page**
   - Auto select _one-time_ buy option (instead of default: subscription)
@@ -33,15 +33,15 @@ Linked back from the main [README](../README.md).
 
 ---
 
-## Auto Show Forum Spoilers
+## Forum Spoiler Reveal
 
 > **Note:** Last updated 2021-02-23. This script may no longer work correctly with the current version of the site.
 
-[auto-show-forum-spoilers.user.js](../auto-show-forum-spoilers.user.js) automatically expands spoilers in common forums and collapsed "continue reading .." texts on patreon.com.
+[forum-spoiler-reveal.user.js](../forum-spoiler-reveal.user.js) automatically expands spoilers in common forums and collapsed "continue reading .." texts on patreon.com.
 
 ---
 
-## IMDB Tweaks
+## IMDb Tweaks
 
 > **Note:** Last updated 2020-10-26. This script may no longer work correctly with the current version of the site.
 
@@ -84,19 +84,6 @@ Linked back from the main [README](../README.md).
 | Shift-[0-9]  | Navigate to season 10 to 19 _(if available)_ |
 | [            | Navigate to previous season _(if available)_ |
 | ]            | Navigate to next season _(if available)_ |
-
----
-
-## Search Hotkey
-
-> **Note:** Last updated 2022-07-01. This script may no longer work correctly with the current version of the site.
-
-[search-hotkey.user.js](../search-hotkey.user.js) adds the `alt-f` hotkey to some pages for faster searching (focus search input field).
-
-Currently supported pages:
-
-- https://wikipedia.org
-- https://fandom.com — entertainment & gaming wikis
 
 ---
 
@@ -240,3 +227,16 @@ Improvements to [ZDF](https://www.zdf.de) Mediathek _(including [3sat](https://w
 | =     | Default playback rate (1x) |
 | ]     | Increase playback rate (up to 2x) |
 | [     | Decrease playback rate (down to 0.25x) |
+
+---
+
+## Wiki Search Hotkey
+
+> **Note:** Last updated 2022-07-01. This script may no longer work correctly with the current version of the site.
+
+[wiki-search-hotkey.user.js](../wiki-search-hotkey.user.js) adds the `alt-f` hotkey to some pages for faster searching (focus search input field).
+
+Currently supported pages:
+
+- https://wikipedia.org
+- https://fandom.com — entertainment & gaming wikis

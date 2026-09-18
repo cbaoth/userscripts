@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Universal Content Blur
+// @name         Any Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-07-25
+// @version      2026-09-18
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -14,7 +14,7 @@
 //
 // @run-at       document-idle
 //
-// @downloadURL  https://github.com/cbaoth/userscripts/raw/master/universal-content-blur.user.js
+// @downloadURL  https://github.com/cbaoth/userscripts/raw/master/any-content-blur.user.js
 // ==/UserScript==
 
 (async function () {
@@ -127,7 +127,7 @@
     // -----------------------------------------------------------------------
 
     const DEFAULT_RULES = `\
-# Universal Content Blur — configuration
+# Any Content Blur — configuration
 #
 # Three kinds of sections:
 #
@@ -411,7 +411,7 @@
         return new RegExp('^' + escaped + '$', 'i');
     }
 
-    // Glob (with *) or /regex/flags → { regex }. Mirrors universal-image-resizer.
+    // Glob (with *) or /regex/flags → { regex }. Mirrors any-image-resizer.
     function parseUrlPattern(src, issues, lineNum) {
         if (src.startsWith('/')) {
             const lastSlash = src.lastIndexOf('/');
@@ -2191,7 +2191,7 @@ ${customCss || ''}
         const header = document.createElement('div');
         Object.assign(header.style, { display: 'flex', alignItems: 'center', margin: '0 0 6px' });
         const title = document.createElement('h3');
-        title.textContent = 'Universal Content Blur — Rules';
+        title.textContent = 'Any Content Blur — Rules';
         Object.assign(title.style, { margin: '0', color: '#fff', fontSize: '15px', flex: '1' });
         const btnClose = document.createElement('button');
         btnClose.textContent = '✕';

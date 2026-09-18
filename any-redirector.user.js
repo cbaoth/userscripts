@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name        Universal Redirector
+// @name        Any Redirector
 // @namespace   https://github.com/cbaoth/userscripts
-// @version     2026-09-13
+// @version     2026-09-18
 // @description Redirect URLs based on configurable mappings. Supports simple hostname rules and regex patterns on the full URL.
 // @author      cbaoth235
 // @license     MIT
@@ -14,7 +14,7 @@
 //
 // @run-at      document-start
 //
-// @downloadURL https://github.com/cbaoth/userscripts/raw/master/universal-redirector.user.js
+// @downloadURL https://github.com/cbaoth/userscripts/raw/master/any-redirector.user.js
 // ==/UserScript==
 
 (async function () {
