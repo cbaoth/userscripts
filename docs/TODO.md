@@ -54,6 +54,12 @@ Scripts that have not had functional updates in a long time — verify each stil
 - [ ] `any-image-resizer.user.js`
   - [ ] Picker: add match-count range filter to candidate list — allow user to specify min/max number of matched images (e.g. 80–120) so candidates can be narrowed down when depth is high and many selectors are found. Useful when you know roughly how many images a page section should contain (e.g. a search result grid).
 
+- [ ] `poe-shop-enhancer.user.js` (added 2026-10-04)
+  - [ ] Verify on the live shop (only tested against saved pages so far): control layout in the count row (incl. active search chip), infinite loading with filters/sort active, item dialog via card click and direct `/shop/item/...` load, live watchlist toggle, a logged-out session
+  - [ ] [S] Watchlist state for variant items: the card only reflects "all variants watched"; partial watching needs the modal's per-variant buttons or the page's item JSON (`onWatchlist` per variant)
+  - [ ] [S] Idea: guild items filter (cards with class `guild`, e.g. on the specials page)
+  - [ ] [M] Idea: optionally load all pages up front when a non-native sort is active, so sorting covers items not loaded yet (currently they are sorted in as the infinite loader appends them)
+
 - [ ] `any-content-blur.user.js`
   - [x] ~~Additional actions beyond `blur`: `hide` (display:none), `dim` (low opacity).~~ Done differently: actions are now arbitrary user-defined `.ucb-NAME` classes via a `[css]` section (`blur` is the built-in default, parameterizable as `blur:N`). `hide`/`dim`/`darken`/`grayscale`/`resize` etc. are plain CSS the user writes; `NAME:VALUE` exposes `--ucb-NAME` for per-rule tuning.
   - [ ] [M] `pixelate` action — the one obscuring effect plain CSS can't do (needs a canvas/SVG filter). Add as a built-in if blur proves insufficient for images.
