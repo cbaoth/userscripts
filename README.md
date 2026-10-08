@@ -176,7 +176,7 @@ See [Deprecated & Legacy Scripts](#deprecated--legacy-scripts) for older scripts
 - Compact controls in the item count row: sort by native order, name, or price (asc/desc); filter items on sale, already owned, or on the watchlist (show / hide / only each); a reset button.
 - Settings are saved and apply across all shop pages (and language subdomains) until changed or reset; reset also clears the saved settings. Active controls are highlighted and the number of hidden items is shown.
 - Works with the shop's infinite loading, search, and item dialog: newly loaded cards are sorted and filtered as they appear.
-- Best effort, based on what the cards show: price ranges sort by their lowest price, and for items with variations only "all variants on the watchlist" is detectable. The watchlist filter is hidden on the watchlist page itself and when logged out.
+- Best effort, based on what the cards show: price ranges (items with variations) sort by their lowest price, with an extra high-to-low option by their highest price; for items with variations only "all variants on the watchlist" is detectable. The watchlist filter is hidden on the watchlist page itself and when logged out.
 
 ---
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PoE Shop Enhancer
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-10-04
+// @version      2026-10-04T220212
 // @description  Sort and filter the item cards on Path of Exile microtransaction shop list pages (categories, specials, watchlist).
 // @author       cbaoth235
 // @license      MIT
@@ -34,7 +34,8 @@
         'name-asc': 'Name (A–Z)',
         'name-desc': 'Name (Z–A)',
         'price-asc': 'Price (low–high)',
-        'price-desc': 'Price (high–low)',
+        'price-desc': 'Price (high–low, min)',
+        'price-desc-max': 'Price (high–low, max)',
     };
     const FILTER_MODES = ['show', 'hide', 'only'];
     const FILTERS = {
@@ -90,8 +91,8 @@
             .map((n) => n.textContent)
             .join(' ');
         const nums = (text.match(/\d[\d,.]*/g) ?? []).map((s) => Number(s.replace(/[,.]/g, '')));
-        if (nums.length) return Math.min(...nums);
-        return text.trim() ? 0 : null;
+        if (nums.length) return { min: Math.min(...nums), max: Math.max(...nums) };
+        return text.trim() ? { min: 0, max: 0 } : null;
     };
 
     const cardInfo = (card) => {
@@ -109,19 +110,30 @@
         };
     };
 
+    // parsed card data, dropped whenever the card's relevant DOM changes (see isRelevant)
+    const infoCache = new WeakMap();
+    const getInfo = (card) => {
+        let info = infoCache.get(card);
+        if (!info) infoCache.set(card, (info = cardInfo(card)));
+        return info;
+    };
+
     // ---- sorting / filtering -----------------------------------------------
 
-    const byPrice = (dir) => (a, b) => {
-        if (a.price === b.price) return 0;
-        if (a.price === null) return 1; // unknown price always last
-        if (b.price === null) return -1;
-        return (a.price - b.price) * dir;
+    const byPrice = (key, dir) => (a, b) => {
+        const pa = a.price?.[key] ?? null;
+        const pb = b.price?.[key] ?? null;
+        if (pa === pb) return 0;
+        if (pa === null) return 1; // unknown price always last
+        if (pb === null) return -1;
+        return (pa - pb) * dir;
     };
     const COMPARATORS = {
         'name-asc': (a, b) => collator.compare(a.name, b.name),
         'name-desc': (a, b) => collator.compare(b.name, a.name),
-        'price-asc': byPrice(1),
-        'price-desc': byPrice(-1),
+        'price-asc': byPrice('min', 1),
+        'price-desc': byPrice('min', -1),
+        'price-desc-max': byPrice('max', -1),
     };
 
     const matches = (mode, value) => mode === 'show' || (mode === 'only') === value;
@@ -129,10 +141,14 @@
     let list = null;
     let observer = null;
     let ui = null;
+    let lastHidden = 0;
+
+    const OBSERVE_OPTS = { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] };
 
     const apply = () => {
         if (!list) return;
         observer?.disconnect();
+        list.classList.toggle('pse-pending', !isDefault());
 
         const cards = [...list.querySelectorAll(CARD_SEL)];
         if (cards.length === 0) {
@@ -142,7 +158,8 @@
         }
         const items = cards.map((el) => {
             if (!nativeIndex.has(el.id)) nativeIndex.set(el.id, nativeSeq++);
-            return { el, idx: nativeIndex.get(el.id), ...cardInfo(el) };
+            el.setAttribute('data-pse-done', '');
+            return { el, idx: nativeIndex.get(el.id), ...getInfo(el) };
         });
 
         // watchlist filter is pointless on the watchlist itself, and unknown when logged out
@@ -167,20 +184,40 @@
         }
 
         observer?.takeRecords();
-        observer?.observe(list, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+        observer?.observe(list, OBSERVE_OPTS);
 
-        // fewer visible cards may bring the footer into view: let the site's infinite loader check again
-        if (hidden) window.dispatchEvent(new Event('scroll'));
+        // more hidden cards may bring the footer into view: let the site's infinite loader check again
+        // (its handler forces a layout, so only nudge when needed, and after our DOM writes are done)
+        if (hidden > lastHidden) setTimeout(() => window.dispatchEvent(new Event('scroll')));
+        lastHidden = hidden;
     };
 
-    let applyQueued = false;
-    const scheduleApply = () => {
-        if (applyQueued) return;
-        applyQueued = true;
-        requestAnimationFrame(() => {
-            applyQueued = false;
-            apply();
-        });
+    // Only react to changes that can affect sorting/filtering: cards added/removed/re-rendered, a card's own
+    // class, or a watchlist toggle. Skips the bulk of mutations (progressive image loading, modal internals).
+    const isRelevant = (rec) => {
+        const t = rec.target;
+        if (t === list) return true;
+        if (t.parentElement === list) {
+            infoCache.delete(t); // card re-rendered in place, or its class changed
+            return true;
+        }
+        if (rec.type === 'attributes' && t.matches('.controls > .watchlist')) {
+            infoCache.delete(t.closest('.shopItemBase'));
+            return true;
+        }
+        return false;
+    };
+
+    // trailing debounce: one apply per burst (e.g. a page of cards rendering); while sorting/filtering is
+    // active, unprocessed cards stay hidden via CSS until then, so nothing flashes up or jumps around
+    const APPLY_DELAY_MS = 100;
+    let applyTimer = null;
+    const onMutations = (records) => {
+        let relevant = false;
+        for (const rec of records) relevant = isRelevant(rec) || relevant; // check all: invalidates cache
+        if (!relevant) return;
+        clearTimeout(applyTimer);
+        applyTimer = setTimeout(apply, APPLY_DELAY_MS);
     };
 
     const isDefault = () => Object.keys(DEFAULTS).every((k) => state[k] === DEFAULTS[k]);
@@ -196,7 +233,8 @@
     // ---- UI ----------------------------------------------------------------
 
     const STYLE = `
-        #mtx-list > [data-pse-hidden] { display: none !important; }
+        #mtx-list > [data-pse-hidden],
+        #mtx-list.pse-pending > .shopItemBase:not([data-pse-done]) { display: none !important; }
         #counter-container { height: auto; min-height: 20px; flex-wrap: wrap; row-gap: 4px; }
         .pse-bar { display: flex; align-items: center; gap: 6px; margin: 0 16px 0 6px; }
         .pse-bar select, .pse-bar button {
@@ -225,7 +263,9 @@
 
         const sortSel = el(
             'select',
-            { title: 'Sort items (ties keep the native order; price ranges sort by their lowest price)' },
+            {
+                title: 'Sort items (ties keep the native order). Price ranges sort by their lowest price (min), or by their highest (max)',
+            },
             Object.entries(SORTS).map(([value, text]) => el('option', { value, textContent: text }))
         );
         sortSel.addEventListener('change', () => setState({ sort: sortSel.value }));
@@ -279,6 +319,6 @@
 
     ui = buildUi();
     list = await waitFor(LIST_SEL);
-    observer = new MutationObserver(scheduleApply);
+    observer = new MutationObserver(onMutations);
     apply();
 })();
