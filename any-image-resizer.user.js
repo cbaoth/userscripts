@@ -19,7 +19,6 @@
 
 (async function () {
     'use strict';
-    /* eslint-disable no-console */
 
     const STORAGE_KEY = 'imageResizerRules';
     const PICKER_AUTO_OPEN_KEY = 'imageResizerPickerAutoOpen';
