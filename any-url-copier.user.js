@@ -4,7 +4,7 @@
 //
 // @name        Any URL Copier
 // @description Copy link / media urls on mouse-over while alt-c/-b is pressed
-// @version     2026-09-18
+// @version     2026-10-10
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/any-url-copier.user.js
 //
 // @include     *
@@ -24,7 +24,6 @@
     const KCODE_C = 67;
 
     // Timing constants
-    const POLL_RATE = 25; // Polling interval for key state checks (deprecated)
     const SHOW_TT = true; // Show tooltip?
     const TT_TIMEOUT = 750; // Tooltip timeout in ms
     const TT_FADEOUT = 250; // Tooltip fadeout time in ms
@@ -36,58 +35,6 @@
     /* }}} = END: CONSTANTS AND GLOBALS =================================== */
 
     /* {{{ = UTILITY FUNCTIONS ============================================ */
-
-    /**
-     * Wait for elements to appear in the DOM using MutationObserver.
-     *
-     * @param {string} selector - CSS selector to match elements.
-     * @param {Function} callback - Function called for each new element found.
-     * @param {Object} options - Options object.
-     * @param {Element} [options.target=document.body] - Element to observe.
-     * @param {boolean} [options.once=false] - Stop after first match?
-     * @param {number} [options.timeout=null] - Auto-disconnect timeout in ms.
-     * @returns {MutationObserver} The observer instance.
-     */
-    function waitForElements(selector, callback, options = {}) {
-        const { target = document.body, once = false, timeout = null } = options;
-
-        const processedElements = new WeakSet();
-
-        const checkElements = () => {
-            const elements = document.querySelectorAll(selector);
-            elements.forEach((element) => {
-                if (!processedElements.has(element)) {
-                    processedElements.add(element);
-                    callback(element);
-                }
-            });
-            return elements.length > 0;
-        };
-
-        // Check if elements already exist
-        if (checkElements() && once) {
-            return;
-        }
-
-        // Set up MutationObserver to watch for new elements
-        const observer = new MutationObserver(() => {
-            if (checkElements() && once) {
-                observer.disconnect();
-            }
-        });
-
-        observer.observe(target, {
-            childList: true,
-            subtree: true,
-        });
-
-        // Optional timeout
-        if (timeout) {
-            setTimeout(() => observer.disconnect(), timeout);
-        }
-
-        return observer;
-    }
 
     /**
      * Create or replace a tooltip near the mouse cursor.
@@ -157,20 +104,6 @@
     document.addEventListener('mousemove', (e) => {
         window.lastMouseEvent = e;
     });
-
-    /**
-     * Resolve the topmost element currently under the cursor.
-     *
-     * @returns {Element|null} The element under the cursor, or null if none.
-     */
-    function getHoveredElement() {
-        if (window.lastMouseEvent && typeof document.elementFromPoint === 'function') {
-            const el = document.elementFromPoint(window.lastMouseEvent.clientX, window.lastMouseEvent.clientY);
-            if (el) return el;
-        }
-        const hovered = document.querySelectorAll(':hover');
-        return hovered.length ? hovered[hovered.length - 1] : null;
-    }
 
     /**
      * Resolve all elements under the cursor as a stack (overlay-safe).
@@ -316,10 +249,9 @@
      *
      * @param {Element} e - The element to extract from.
      * @param {Object} dict - Dictionary mapping selectors to attribute names.
-     * @param {boolean} [includeBgImg=false] - Deprecated, not used.
      * @returns {string|undefined} The extracted URL value, or undefined if not found.
      */
-    function getSrc(e, dict = { a: ['href'] }, includeBgImg = false) {
+    function getSrc(e, dict = { a: ['href'] }) {
         let v;
         for (const k in dict) {
             if (e.matches(k)) {
@@ -398,43 +330,6 @@
         currentKeys.ctrl = ev.ctrlKey;
         currentKeys.alt = ev.altKey;
         currentKeys.meta = ev.metaKey;
-    }
-
-    /**
-     * Check if current key state matches the expected modifier key state.
-     *
-     * @param {Object} keys - Expected key state object.
-     * @returns {boolean} True if the current key state matches.
-     */
-    function checkKeyState(keys) {
-        const metaKey = ['shift', 'ctrl', 'alt', 'meta'];
-        for (const i in metaKey) {
-            if (currentKeys[metaKey[i]] !== (keys[metaKey[i]] || false)) {
-                return false;
-            }
-        }
-        return currentKeys.keyCode === keys.keyCode;
-    }
-
-    /**
-     * Check if event modifier keys match the expected state.
-     *
-     * @param {KeyboardEvent} event - The keyboard event.
-     * @param {Object} keys - Expected key state object with modifier flags.
-     * @returns {boolean} True if all modifier keys match the expected state.
-     */
-    function checkModState(event, keys) {
-        const ev = event || window.event;
-        if (ev === undefined) {
-            return false;
-        }
-
-        const shift = ev.shiftKey === (keys.shift || false);
-        const ctrl = ev.ctrlKey === (keys.ctrl || false);
-        const alt = ev.altKey === (keys.alt || false);
-        const meta = ev.metaKey === (keys.meta || false);
-
-        return shift && ctrl && alt && meta;
     }
 
     // Register global keyup event

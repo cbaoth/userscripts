@@ -3,7 +3,7 @@
 // @author      cbaoth235
 //
 // @name        IMDb Tweaks
-// @version     2020-10-26
+// @version     2026-10-10
 // @description Some tweaks for IMDB
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/imdb-tweaks.user.js
 //
@@ -59,26 +59,6 @@ $ = jQuery = jQuery.noConflict(true);
     // change total votes style
     GM_addStyle(`.ipl-rating-star__total-votes { color: #909090; font-size: .7em; }`);
 
-    function svgGlowFilter(
-        svg,
-        { id = 'glow', color = 'gold', floodOpacity = 0.75, radius = 1.75, stdDeviation = 1.5 } = {}
-    ) {
-        const defs = `<defs>
-            <filter id="${id}" x="-5000%" y="-5000%" width="10000%" height="10000%">
-                <feFlood result="flood" flood-color="${color}" flood-opacity="${floodOpacity}"></feFlood>
-                <feComposite in="flood" result="mask" in2="SourceGraphic" operator="in"></feComposite>
-                <feMorphology in="mask" result="dilated" operator="dilate" radius="${radius}"></feMorphology>
-                <feGaussianBlur in="dilated" result="blurred" stdDeviation="${stdDeviation}"></feGaussianBlur>
-                <feMerge>
-                    <feMergeNode in="blurred"></feMergeNode>
-                    <feMergeNode in="SourceGraphic"></feMergeNode>
-                </feMerge>
-             </filter>
-         </defs>`;
-        $(svg).prepend($.parseXML(defs).documentElement); // case sensitive
-        $(svg).children('path').attr('filter', `url(#${id})`);
-    }
-
     function starSetStyle(star, rating, { isAverage = false, light = false } = {}) {
         const svg = $(star);
 
@@ -114,7 +94,6 @@ $ = jQuery = jQuery.noConflict(true);
                 _fill('#ffa826');
                 svg.css('width', isAverage ? '2em' : '1.75em');
                 svg.css('height', isAverage ? '2em' : '1.75em');
-                //svgGlowFilter(myStar); // TODO
                 break;
             default:
                 break; // unexpected rating: < 0 | > 10

@@ -3,7 +3,7 @@
 // @author      cbaoth235
 //
 // @name        OpenProject Tweaks
-// @version     2026-02-27
+// @version     2026-10-10
 // @description Some tweaks for OpenProject (incl. Markdown Editor improvements)
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/openproject-tweaks.user.js
 //
@@ -516,32 +516,6 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     }
     /* }}} -- OPENPROJECT CORE ------------------------------------------------ */
 
-    /* {{{ -- SPECIAL TWEAKS -------------------------------------------------- */
-    function sortUserSelectOptionsByText() {
-        const select = $(`select[data-filter-name="user_id"].filter-value`),
-            options = $(`select[data-filter-name="user_id"].filter-value option`),
-            checked = $(`select[data-filter-name="user_id"].filter-value option:checked`);
-        options.sort(function (o1, o2) {
-            const t1 = o1.text.toLowerCase(),
-                t2 = o2.text.toLowerCase(); // sort case insensitive
-            return o1.text == 'me'
-                ? -1 // special user 'me' should always come first
-                : o2.text == 'me'
-                  ? 1
-                  : t1 > t2
-                    ? 1
-                    : t1 < t2
-                      ? -1
-                      : 0;
-        });
-        options.detach();
-        options.appendTo(select);
-        // FIXME scroll to previous position / selection on single-select
-        //select.value = checked.value;
-        //options[0].prop('checked', true);
-    }
-    /* }}} -- SPECIAL TWEAKS -------------------------------------------------- */
-
     /* {{{ -- EXECUTION ------------------------------------------------------- */
     // add additional (global) CSS styles, one time only and for known screens only
     if (opCurrentScreen != SCREEN_UNKNOWN) {
@@ -599,8 +573,5 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             break;
     }
 
-    // special tweaks: sort (otherwise randomely listed) names in user-name filter (e.g. cost_reports site)
-    // FIXME messes up selection
-    //waitForKeyElements(`select[data-filter-name="user_id"].filter-value option`, _.debounce(sortUserSelectOptionsByText, 250));
     /* }}} -- EXECUTION ------------------------------------------------------- */
 })();

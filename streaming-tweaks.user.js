@@ -3,7 +3,7 @@
 // @author      cbaoth235
 //
 // @name        Streaming Tweaks
-// @version     2022-11-11
+// @version     2026-10-10
 // @description Some tweaks for various streaming sites
 // @downloadURL https://github.com/cbaoth/userscripts/raw/master/streaming-tweaks.user.js
 //
@@ -35,7 +35,6 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const KEY_SLASH = 191;
     const KEY_BRACKET_LEFT = 219;
     const KEY_BRACKET_RIGHT = 221;
-    const KEY_BACKSLASH = 220;
     const KEY_EQUAL = 61;
     const KEY_EQUAL_SIGN = 187;
     const KEY_R = 82;
@@ -46,7 +45,6 @@ this.$ = this.jQuery = jQuery.noConflict(true);
     const KEY_D = 68;
     const KEY_Q = 81;
     const KEY_A = 65;
-    const KEY_SPACE = 32;
     const KEY_BACKSPACE = 8;
     const KEY_F12 = 123;
 
@@ -61,19 +59,6 @@ this.$ = this.jQuery = jQuery.noConflict(true);
             offsetMouse: false,
             fadeoutTime: 500,
             css: { 'font-size': size, color: color },
-        });
-    }
-
-    // toggle generic video player play/pause
-    function genericPlayPause(player) {
-        ((player.paused || player.ended) && player.play()) || player.pause();
-    }
-
-    // register generic playback rate keys
-    function genericPlayPauseReg(player) {
-        // keys: space -> play/pause
-        cb.bindKeyDown(KEY_SPACE, () => {
-            genericPlayPause(player);
         });
     }
 

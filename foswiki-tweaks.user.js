@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name        Foswiki Tweaks
-// @version     2025-01-24
+// @version     2026-10-10
 // @description Some improvements to Foswiki
 // @author      cbaoth235
 // @namespace   https://github.com/cbaoth/userscripts
@@ -27,7 +27,6 @@ GM_config.init({
     css: '#FoswikiTweaksConfig { background: #f4f4f4; padding: 20px; }',
     events: {
         save: function () {
-            console.log('Config saved');
             GM_config.close();
         },
     },
