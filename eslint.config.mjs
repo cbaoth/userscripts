@@ -1,6 +1,16 @@
 import globals from 'globals';
 
+// Frozen copies of renamed scripts (old paths, see docs/TODO.md): never edited, so not linted.
+const FROZEN = [
+  'amazon-links.user.js',
+  'auto-show-forum-spoilers.user.js',
+  'copy-url-on-hover.user.js',
+  'search-hotkey.user.js',
+  'universal-*.user.js',
+];
+
 export default [
+  { ignores: FROZEN },
   {
     files: ['**/*.user.js', 'lib/**/*.js'],
     languageOptions: {
