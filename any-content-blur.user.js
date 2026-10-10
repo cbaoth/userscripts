@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Any Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-09-18
+// @version      2026-10-10
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -1745,11 +1745,12 @@ ${customCss || ''}
         );
     }
 
-    // Quick-block: add the captured pattern to the FIRST existing rule whose source
-    // type + URL pattern match the current page — into its first referenced
-    // [list:NAME] if it has one, else appended inline to the rule's patterns field.
-    // Falls back to creating a new rule when nothing matches. Great for blocking
-    // users one keypress at a time into a list an existing rule already uses.
+    // Quick-block: add the captured pattern to the rule/list last used via the
+    // quick-add panel (or a previous quick-block) when it still applies to this
+    // page, else to the FIRST existing rule whose source type + URL pattern match
+    // — into its first referenced [list:NAME] if it has one, else appended inline
+    // to the rule's patterns field. Falls back to creating a new rule when nothing
+    // matches. Great for blocking users one keypress at a time into a chosen list.
     async function quickBlock() {
         const ctx = captureContext();
         if (!ctx) {
@@ -1757,9 +1758,15 @@ ${customCss || ''}
             return;
         }
         const stored = (await GM.getValue(STORAGE_KEY, null)) ?? DEFAULT_RULES;
-        const res = addPatternToMatchingRule(stored, ctx);
+        const saved = (await GM.getValue(PANEL_STATE_KEY, null)) || {};
+        const res = addPatternToMatchingRule(stored, ctx, saved);
+        if (res) await GM.setValue(PANEL_STATE_KEY, { ...saved, ...res.state });
         if (!res) {
             const added = await addNewRuleFromContext(ctx);
+            if (added.changed) {
+                const line = buildRuleLine(ctx.source, defaultToken(ctx), 'self', ['hover']);
+                await GM.setValue(PANEL_STATE_KEY, { ...saved, mode: 'rule', ruleKey: line.trim() });
+            }
             toast(
                 added.changed
                     ? `Content Blur: no matching rule — created one for "${truncate(ctx.label, 40)}"`
@@ -1840,30 +1847,56 @@ ${customCss || ''}
         return { changed: true, message: `added "${truncate(label, 40)}" to the rule` };
     }
 
-    // Quick-block target: the FIRST rule matching the current URL + captured source.
-    // Prefer its first referenced [list:NAME]; else append inline to its patterns.
-    // Returns { text, changed, message } (text only when changed), or null.
-    function addPatternToMatchingRule(text, ctx) {
+    // First [list:NAME] (lowercase) a rule references that actually exists, or null.
+    function firstListOf(entry, listBlocks) {
+        const ref = splitTopLevel(entry.fields[2], ',')
+            .map((t) => t.trim())
+            .find((t) => t.startsWith('@'));
+        const name = ref?.slice(1).toLowerCase();
+        return name && listBlocks.has(name) ? name : null;
+    }
+
+    // Quick-block target, in order of preference:
+    //   1. the destination last used via the quick-add panel (incl. a newly
+    //      created rule) or quick-block (`saved`), if it is still relevant here (its rule matches the current
+    //      URL + captured source) — so repeated adds keep going to the same place
+    //   2. the FIRST rule matching the current URL + captured source
+    // A rule's first referenced [list:NAME] is preferred over its inline patterns.
+    // Returns { text, changed, message, state } (text only when changed), or null.
+    function addPatternToMatchingRule(text, ctx, saved = {}) {
         const lines = text.split('\n');
         const { listBlocks, ruleEntries } = indexConfigRaw(lines);
-        const match = ruleEntries.find((e) => {
+        const relevant = ruleEntries.filter((e) => {
             const up = parseUrlPattern(e.fields[0]);
             return up && up.regex.test(location.href) && parseSource(e.fields[1]).includes(ctx.source);
         });
-        if (!match) return null;
+        if (!relevant.length) return null;
 
-        const listRef = splitTopLevel(match.fields[2], ',')
-            .map((t) => t.trim())
-            .find((t) => t.startsWith('@'));
         const token = defaultToken(ctx);
-        let res;
-        if (listRef && listBlocks.has(listRef.slice(1).toLowerCase())) {
-            const name = listRef.slice(1).toLowerCase();
-            res = insertListEntry(lines, listBlocks.get(name), name, token, ctx.label);
+        const toList = (name) => {
+            const res = insertListEntry(lines, listBlocks.get(name), name, token, ctx.label);
+            return { res, state: { mode: 'list', listName: name } };
+        };
+        const toRule = (entry) => {
+            const res = insertRulePattern(lines, entry, token, ctx.label);
+            return { res, state: { mode: 'rule', ruleKey: lines[entry.idx].trim() } };
+        };
+
+        let out;
+        if (saved.mode === 'list' && relevant.some((e) => firstListOf(e, listBlocks) === saved.listName)) {
+            out = toList(saved.listName);
+        } else if (
+            (saved.mode === 'rule' || saved.mode === 'new') &&
+            relevant.some((e) => lines[e.idx].trim() === saved.ruleKey)
+        ) {
+            out = toRule(relevant.find((e) => lines[e.idx].trim() === saved.ruleKey));
         } else {
-            res = insertRulePattern(lines, match, token, ctx.label);
+            const first = relevant[0];
+            const name = firstListOf(first, listBlocks);
+            out = name ? toList(name) : toRule(first);
         }
-        return { ...res, text: res.changed ? lines.join('\n') : undefined };
+        const { res, state } = out;
+        return { ...res, state, text: res.changed ? lines.join('\n') : undefined };
     }
 
     function truncate(s, n) {
@@ -2102,7 +2135,8 @@ ${customCss || ''}
                     scan(document.body);
                     if (activeRules.length > 0) startObserver();
                 }
-                await saveState({ mode });
+                // Remember the new rule so Alt+A (quick-block) keeps adding to it.
+                await saveState(res.changed ? { mode, ruleKey: line.trim() } : { mode });
                 toast('Content Blur: ' + (res.changed ? 'rule added' : 'rule already exists'));
             } else if (mode === 'rule') {
                 const entry = ruleEntries[Number(mid.ruleSel.value)];
