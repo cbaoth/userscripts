@@ -1403,6 +1403,7 @@ ${customCss || ''}
     // open the settings dialog.
     function buildDebugHud() {
         removeDebugHud();
+        ensureUiStyles();
         const hud = document.createElement('div');
         hud.id = 'ucb-debug-hud';
         Object.assign(hud.style, {
@@ -1562,6 +1563,21 @@ ${customCss || ''}
     // scanned: its help text contains words the rules match, which would get the
     // dialog blurred/underlined/hidden.
     const OWN_UI_SELECTOR = '#ucb-quick-panel, #ucb-settings, #ucb-debug-hud';
+
+    // Page stylesheets leak into our UI (e.g. a site's global `code { background }`
+    // made the settings help text unreadable). `all: revert` rolls every page-author
+    // declaration back to browser defaults; our inline styles still win because the
+    // rule is not !important. Not a shadow root, so the UI stays plain light DOM.
+    function ensureUiStyles() {
+        if (document.getElementById('ucb-ui-style')) return;
+        const style = document.createElement('style');
+        style.id = 'ucb-ui-style';
+        style.textContent = OWN_UI_SELECTOR.split(', ')
+            .flatMap((id) => [id, id + ' *'])
+            .join(', ')
+            .concat(' { all: revert; }');
+        (document.head || document.documentElement).appendChild(style);
+    }
 
     function scanText(root, textRules) {
         if (!textRules.length) return;
@@ -2023,6 +2039,7 @@ ${customCss || ''}
         const listNames = [...listBlocks.keys()];
         const savedState = (await GM.getValue(PANEL_STATE_KEY, null)) || {};
 
+        ensureUiStyles();
         const panel = document.createElement('div');
         panel.id = 'ucb-quick-panel';
         Object.assign(panel.style, {
@@ -2275,6 +2292,7 @@ ${customCss || ''}
 
     function openSettings() {
         document.getElementById('ucb-settings')?.remove();
+        ensureUiStyles();
 
         const overlay = document.createElement('div');
         overlay.id = 'ucb-settings';
