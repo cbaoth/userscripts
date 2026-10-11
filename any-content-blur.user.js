@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Any Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-10-10
+// @version      2026-10-11
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -163,7 +163,8 @@
 #   [rules]       one rule per line, pipe-separated:
 #                     url-pattern | source | patterns | action | scope | options
 #
-# Outside [css], lines starting with # or // and blank lines are ignored.
+# Outside [css], lines starting with # or // and blank lines are ignored
+# (no /* */ block comments there — a line starting with /* is an error).
 #
 # ── Fields ────────────────────────────────────────────────────────────────
 #
@@ -686,6 +687,7 @@
         const lists = new Map();
         const rules = [];
         const cssLines = [];
+        const cssEntries = []; // { text, line } for balance checking
         const issues = [];
         let section = null; // { type:'list', name } | { type:'rules' } | { type:'css' }
         let lineNum = 0;
@@ -715,13 +717,29 @@
             // Inside [css]: capture verbatim (skip only blank lines). # and // stay
             // literal so #id selectors and CSS work; use /* … */ for CSS comments.
             if (section && section.type === 'css') {
-                if (trimmed) cssLines.push(rawLine);
+                if (trimmed) {
+                    cssLines.push(rawLine);
+                    cssEntries.push({ text: rawLine, line: lineNum });
+                }
                 continue;
             }
 
             // Everywhere else: # and // are comments, blank lines are ignored.
             const line = trimmed;
             if (!line || line.startsWith('#') || line.startsWith('//')) continue;
+
+            // Block comments only exist inside [css]; elsewhere a line opening with /*
+            // would silently become a list entry / rule, so flag it (best effort: only
+            // line starts, since patterns and regexes may legitimately contain /*).
+            if (line.startsWith('/*')) {
+                reportIssue(
+                    issues,
+                    lineNum,
+                    'error',
+                    "'/*' block comments are only supported in [css]; use # or // per line here"
+                );
+                continue;
+            }
 
             if (section && section.type === 'list') {
                 lists.get(section.name).push(line);
@@ -746,7 +764,58 @@
             reportIssue(issues, lineNum, 'warning', `ignored (not in a section, no pipes): ${line}`);
         }
 
+        checkCssBalance(cssEntries, issues);
+
         return { lists, rules, css: cssLines.join('\n'), issues };
+    }
+
+    // Basic structural check of the [css] text: unclosed /* comments and unbalanced
+    // { } ( ) [ ]. The browser silently drops broken CSS, so an unclosed comment
+    // would otherwise swallow every rule after it without any hint.
+    function checkCssBalance(entries, issues) {
+        const stack = []; // { ch, line }
+        const closers = { '}': '{', ')': '(', ']': '[' };
+        let commentLine = 0;
+        for (const { text, line } of entries) {
+            let quote = null; // strings cannot span lines unescaped
+            for (let i = 0; i < text.length; i++) {
+                const c = text[i];
+                if (commentLine) {
+                    if (c === '*' && text[i + 1] === '/') {
+                        commentLine = 0;
+                        i++;
+                    }
+                } else if (quote) {
+                    if (c === '\\') i++;
+                    else if (c === quote) quote = null;
+                } else if (c === '/' && text[i + 1] === '*') {
+                    commentLine = line;
+                    i++;
+                } else if (c === '"' || c === "'") {
+                    quote = c;
+                } else if (c === '{' || c === '(' || c === '[') {
+                    stack.push({ ch: c, line });
+                } else if (closers[c]) {
+                    if (stack.at(-1)?.ch !== closers[c]) {
+                        reportIssue(issues, line, 'error', `[css]: unexpected '${c}' (no matching '${closers[c]}')`);
+                        return;
+                    }
+                    stack.pop();
+                }
+            }
+        }
+        if (commentLine) {
+            reportIssue(
+                issues,
+                commentLine,
+                'error',
+                "[css]: comment opened with '/*' is never closed with '*/' (swallows all CSS after it)"
+            );
+            return;
+        }
+        for (const { ch, line } of stack) {
+            reportIssue(issues, line, 'error', `[css]: '${ch}' is never closed`);
+        }
     }
 
     function parseRuleLine(line, lineNum, lists, issues) {
@@ -933,8 +1002,7 @@ ${customCss || ''}
         const group = expandScopeGroup(base, rule.scope);
         // Debug label, stamped on every group member: "#N ⟨matched text⟩". Group
         // siblings (prev/next) share the base match — they carry the same label.
-        const dbgLabel =
-            '#' + rule.id + (matchInfo?.match ? ' ' + truncate(String(matchInfo.match), 30) : '');
+        const dbgLabel = '#' + rule.id + (matchInfo?.match ? ' ' + truncate(String(matchInfo.match), 30) : '');
         for (const target of group) {
             if (processed.has(target)) continue;
             // Never touch structural roots.
@@ -1408,7 +1476,12 @@ ${customCss || ''}
             const count = document.createElement('span');
             count.textContent = String(debugHits.get(r.id) || 0);
             count.title = 'elements matched';
-            Object.assign(count.style, { color: '#4ec9b0', fontFamily: 'monospace', minWidth: '2ch', textAlign: 'right' });
+            Object.assign(count.style, {
+                color: '#4ec9b0',
+                fontFamily: 'monospace',
+                minWidth: '2ch',
+                textAlign: 'right',
+            });
             debugCountEls.set(r.id, count);
 
             row.append(id, raw, count);
@@ -1532,9 +1605,10 @@ ${customCss || ''}
                     else if (source === 'alt' && alt) hit = rule.regex.exec(alt);
                     else if (source === 'title' && title) hit = rule.regex.exec(title);
                     else if (source === 'user' && usernames)
-                        for (const u of usernames) if ((hit = rule.regex.exec(u))) break;
-                    else if (source === 'class' && classes)
-                        for (const c of classes) if ((hit = rule.regex.exec(c))) break;
+                        for (const u of usernames)
+                            if ((hit = rule.regex.exec(u))) break;
+                            else if (source === 'class' && classes)
+                                for (const c of classes) if ((hit = rule.regex.exec(c))) break;
                     if (hit) {
                         applyActions(el, rule, { source, match: hit[0] });
                         break;
