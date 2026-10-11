@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Any Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-10-11T170000
+// @version      2026-10-11T214601
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -198,6 +198,12 @@
 #                             work inside; \\" is a literal quote.
 #                 /regex/i    raw regex (flags optional); matches as a SUBSTRING.
 #                             Add \\b...\\b for whole-word or ^...$ for full value.
+#                 !TOKEN      EXCLUDE: any of the above prefixed with ! (!word,
+#                             !"text", !/regex/, !@NAME). A value matches the rule
+#                             only if a plain pattern matches it AND no ! pattern
+#                             does — each text/attribute value is checked on its
+#                             own. Needs at least one plain pattern. Write \\! for
+#                             a literal leading !. Rule patterns only (not in lists).
 #               A , or | inside "..." is literal (not a separator). A , or | inside
 #               a /regex/ is also literal, as long as the regex starts the field or
 #               the token (a leading /) — so alternation like /(a|b)/ works in the
@@ -242,6 +248,22 @@
 #                                 blurred animation can't leak context via motion.
 #                                 With hover, motion resumes while the area is
 #                                 revealed and re-freezes when you leave it.
+#                 if-none         INVERT: apply the action to every scope container
+#                                 whose text has NO match (instead of to the
+#                                 matches). Needs a closest:SELECTOR (or row) scope,
+#                                 which defines the containers; text source only.
+#                                 Only the texts inside in:SEL (if set) count; a
+#                                 container without any counted text is skipped.
+#                                 Runs after the normal rules, and like any rule
+#                                 skips an element an earlier rule already took.
+#                 in:SELECTOR     only match inside elements matching this CSS
+#                                 selector (the matched text / attribute element
+#                                 must have such an ancestor, or be one). Limits
+#                                 WHERE a match may be, not the scope: in:.mod with
+#                                 closest:.card still marks the whole card. Must be
+#                                 the LAST option — it takes the rest of the
+#                                 field, so commas in the selector are fine:
+#                                 no-hover, in:.results, aside .comments
 #
 # ── Examples (remove the leading # to enable) ───────────────────────────────
 #
@@ -315,6 +337,13 @@
 # *://*/*          | text          | @words_violent     | blur, dim:0.1 | self | hover
 # # HIGHLIGHT your own name + friends' usernames (the opposite of blurring):
 # *://*/*          | text,user     | @friends           | hl         | up:1  | no-hover
+# # highlight a card when any line mentions a wanted term — but not when that same
+# # line also contains an unwanted one ("Minions deal 10% increased Damage"):
+# *://*/*          | text          | @wanted, !@unwanted, !minion* | hl | up:3 | no-hover
+# # only inside the comment section of a site (rest of the page untouched):
+# *://site.com/*   | text          | @words_violent     | blur       | self  | hover, in:#comments
+# # dim every result card that has NOT a single wanted line (if-none inverts):
+# *://site.com/*   | text          | @wanted, !@unwanted | dim | closest:.card | if-none
 # # hide gallery items whose interest/genre icon carries a marker class — the
 # # class says what the content is even when text/alt/url don't; scope climbs
 # # from the icon div to the whole item:
@@ -444,13 +473,13 @@
 
     // Body of a literal pattern (no anchors/boundaries): escape regex specials,
     // expand the simplified wildcards (* = any run, ? = one char), and honor
-    // \* \? \\ \" \/ as the literal characters. The caller decides anchoring.
+    // \* \? \\ \" \/ \! as the literal characters. The caller decides anchoring.
     function literalBody(text) {
         let body = '';
         for (let i = 0; i < text.length; i++) {
             const c = text[i];
-            if (c === '\\' && '*?\\"/'.includes(text[i + 1])) {
-                body += escapeRegExp(text[i + 1]); // literal *, ?, \, ", or /
+            if (c === '\\' && '*?\\"/!'.includes(text[i + 1])) {
+                body += escapeRegExp(text[i + 1]); // literal *, ?, \, ", /, or !
                 i++;
             } else if (c === '*') {
                 body += '.*';
@@ -608,15 +637,29 @@
         return out;
     }
 
+    // in:SEL takes the rest of the field (like closest:SEL in scope), so the
+    // selector may contain commas and keeps its case.
     function parseOptions(field, issues, lineNum) {
-        const opts = { hover: true, freeze: false };
+        const opts = { hover: true, freeze: false, within: null, ifNone: false };
         if (!field) return opts;
+        const inAt = field.search(/(?:^|,)\s*in:/i);
+        if (inAt !== -1) {
+            const selector = field.slice(field.indexOf(':', inAt) + 1).trim();
+            field = field.slice(0, inAt);
+            try {
+                document.createDocumentFragment().querySelector(selector); // throws on invalid syntax
+                opts.within = selector;
+            } catch {
+                reportIssue(issues, lineNum, 'warning', `invalid in: selector "${selector}", ignoring it`);
+            }
+        }
         for (const raw of field.split(',')) {
             const t = raw.trim().toLowerCase();
             if (!t) continue;
             if (t === 'hover') opts.hover = true;
             else if (t === 'no-hover') opts.hover = false;
             else if (t === 'freeze') opts.freeze = true;
+            else if (t === 'if-none') opts.ifNone = true;
             else reportIssue(issues, lineNum, 'warning', `unknown option "${t}"`);
         }
         return opts;
@@ -659,6 +702,17 @@
         visited.add(name);
         for (const listLine of lists.get(name)) {
             const t = listLine.trim();
+            if (t.startsWith('!')) {
+                // Negation is a rule-level operator (!@NAME excludes a whole list);
+                // inside a list it would be ambiguous once lists nest.
+                reportIssue(
+                    issues,
+                    lineNum,
+                    'warning',
+                    `skipping "${t}" in list @${name}: ! (exclude) only works in rule patterns — write \\! for a literal !`
+                );
+                continue;
+            }
             if (t.startsWith('@')) {
                 expandListFragments(
                     t.slice(1).toLowerCase(),
@@ -844,17 +898,20 @@
         // inline token. seenFragments deduplicates across all refs + inline tokens so
         // overlapping lists (e.g. @dark and @text_* both yielding "gore") produce only
         // one regex branch — unique by fragment string, not semantic equivalence.
-        const fragments = [];
-        const seenFragments = new Set();
+        // A leading ! puts the token into the exclude set instead (see scanText).
+        const include = { fragments: [], seen: new Set() };
+        const exclude = { fragments: [], seen: new Set() };
         for (const tok of splitTopLevel(rawPatterns, ',')) {
-            const t = tok.trim();
+            let t = tok.trim();
+            const set = t.startsWith('!') ? exclude : include;
+            if (set === exclude) t = t.slice(1).trim();
             if (!t) continue;
             if (t.startsWith('@')) {
                 expandListFragments(
                     t.slice(1).toLowerCase(),
                     lists,
-                    fragments,
-                    seenFragments,
+                    set.fragments,
+                    set.seen,
                     new Set(),
                     1,
                     issues,
@@ -862,20 +919,44 @@
                 );
             } else {
                 const frag = patternTokenToFragment(t);
-                if (frag !== null && !seenFragments.has(frag)) {
-                    seenFragments.add(frag);
-                    fragments.push(frag);
+                if (frag !== null && !set.seen.has(frag)) {
+                    set.seen.add(frag);
+                    set.fragments.push(frag);
                 }
             }
         }
-        const regex = buildCombinedRegex(fragments, issues, lineNum);
+        if (!include.fragments.length && exclude.fragments.length) {
+            reportIssue(issues, lineNum, 'error', `only ! (exclude) patterns, nothing to match: ${rawPatterns}`);
+            return null;
+        }
+        const regex = buildCombinedRegex(include.fragments, issues, lineNum);
         if (!regex) {
             reportIssue(issues, lineNum, 'error', `no valid patterns: ${rawPatterns}`);
             return null;
         }
+        const excludeRegex = exclude.fragments.length ? buildCombinedRegex(exclude.fragments, issues, lineNum) : null;
 
         const scope = parseScope(rawScope, issues, lineNum);
-        return { urlPattern, sources, regex, actions, scope, options };
+        if (options.ifNone) {
+            // if-none has no matched element to start from — the scope selector is
+            // what defines the containers to check.
+            if (scope.kind !== 'closest') {
+                reportIssue(issues, lineNum, 'error', `if-none needs a closest:SELECTOR (or row) scope: ${line}`);
+                return null;
+            }
+            if (sources.some((s) => s !== 'text')) {
+                reportIssue(issues, lineNum, 'warning', 'if-none only checks text, ignoring the other sources');
+            }
+            sources.splice(0, sources.length, 'text');
+        }
+        return { urlPattern, sources, regex, excludeRegex, actions, scope, options };
+    }
+
+    // A rule's match on one value: the include regex hits and no exclude pattern
+    // does. Returns the exec result (for the debug label) or null.
+    function matchRule(rule, value) {
+        const m = rule.regex.exec(value); // exec (no /g flag) also yields the matched substring for debug
+        return m && !rule.excludeRegex?.test(value) ? m : null;
     }
 
     // -----------------------------------------------------------------------
@@ -1579,9 +1660,9 @@ ${customCss || ''}
         (document.head || document.documentElement).appendChild(style);
     }
 
-    function scanText(root, textRules) {
-        if (!textRules.length) return;
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+    // Walker over the visible, non-empty text nodes under root (own UI excluded).
+    function textWalker(root) {
+        return document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
             acceptNode(node) {
                 // Elements are only visited to prune own-UI subtrees; SKIP keeps descending.
                 if (node.nodeType === Node.ELEMENT_NODE)
@@ -1592,12 +1673,18 @@ ${customCss || ''}
                 return NodeFilter.FILTER_ACCEPT;
             },
         });
+    }
+
+    function scanText(root, textRules) {
+        if (!textRules.length) return;
+        const walker = textWalker(root);
         let node;
         while ((node = walker.nextNode())) {
             const text = node.nodeValue;
             const el = node.parentElement;
             for (const rule of textRules) {
-                const m = rule.regex.exec(text); // exec (no /g flag) also yields the matched substring for debug
+                if (rule.options.within && !el.closest(rule.options.within)) continue;
+                const m = matchRule(rule, text);
                 if (m) applyActions(el, rule, { source: 'text', match: m[0] });
             }
         }
@@ -1622,16 +1709,16 @@ ${customCss || ''}
             const classes = needClass && el.classList?.length ? [...el.classList] : null;
 
             for (const rule of attrRules) {
+                if (rule.options.within && !el.closest(rule.options.within)) continue;
                 for (const source of rule.sources) {
-                    // exec (no /g flag) yields the matched substring for the debug label.
                     let hit = null;
-                    if (source === 'url' && href) hit = rule.regex.exec(href);
-                    else if (source === 'alt' && alt) hit = rule.regex.exec(alt);
-                    else if (source === 'title' && title) hit = rule.regex.exec(title);
+                    if (source === 'url' && href) hit = matchRule(rule, href);
+                    else if (source === 'alt' && alt) hit = matchRule(rule, alt);
+                    else if (source === 'title' && title) hit = matchRule(rule, title);
                     else if (source === 'user' && usernames) {
-                        for (const u of usernames) if ((hit = rule.regex.exec(u))) break;
+                        for (const u of usernames) if ((hit = matchRule(rule, u))) break;
                     } else if (source === 'class' && classes) {
-                        for (const c of classes) if ((hit = rule.regex.exec(c))) break;
+                        for (const c of classes) if ((hit = matchRule(rule, c))) break;
                     }
                     if (hit) {
                         applyActions(el, rule, { source, match: hit[0] });
@@ -1642,13 +1729,47 @@ ${customCss || ''}
         }
     }
 
+    // if-none rules: every scope container (closest:SEL) under or around root whose
+    // text has NO match gets the actions. A container is re-checked whenever new
+    // content lands in it, but an applied effect is not undone if a matching text
+    // only arrives later.
+    function scanNone(root, noneRules) {
+        for (const rule of noneRules) {
+            const sel = rule.scope.selector;
+            const containers = new Set(root.querySelectorAll?.(sel) ?? []);
+            const around = root.closest?.(sel);
+            if (around) containers.add(around);
+            for (const box of containers) {
+                if (processed.has(box)) continue;
+                // Like for normal rules, in:SEL restricts which texts count, not the
+                // target. A box without any counted text (e.g. not rendered yet, or
+                // a same-class element elsewhere on the page) is left alone.
+                const walker = textWalker(box);
+                let node;
+                let counted = 0;
+                let hit = false;
+                while (!hit && (node = walker.nextNode())) {
+                    if (rule.options.within && !node.parentElement.closest(rule.options.within)) continue;
+                    counted++;
+                    hit = !!matchRule(rule, node.nodeValue);
+                }
+                if (counted && !hit) applyActions(box, rule, { source: 'text', match: '(no match)' });
+            }
+        }
+    }
+
     function scan(root = document.body) {
         if (!root || isCloudflareChallenge() || root.closest?.(OWN_UI_SELECTOR)) return;
         ensureStyles();
-        const textRules = activeRules.filter((r) => r.sources.includes('text'));
-        const attrRules = activeRules.filter((r) => r.sources.some((s) => s !== 'text'));
+        const matchRules = activeRules.filter((r) => !r.options.ifNone);
+        const textRules = matchRules.filter((r) => r.sources.includes('text'));
+        const attrRules = matchRules.filter((r) => r.sources.some((s) => s !== 'text'));
         scanText(root, textRules);
         scanAttributes(root, attrRules);
+        scanNone(
+            root,
+            activeRules.filter((r) => r.options.ifNone)
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1749,11 +1870,11 @@ ${customCss || ''}
     }
 
     // Escape raw captured text into a faithful *literal* token: neutralize the
-    // literal-syntax specials (\ * ? ") and a leading / (which would otherwise be
-    // read as the start of a /regex/). Interior characters need no escaping.
+    // literal-syntax specials (\ * ? ") and a leading / or ! (which would otherwise
+    // be read as a /regex/ or an exclude). Interior characters need no escaping.
     function escapeLiteral(s) {
         const out = s.replace(/([\\*?"])/g, '\\$1');
-        return out.startsWith('/') ? '\\' + out : out;
+        return /^[/!]/.test(out) ? '\\' + out : out;
     }
 
     // The config-syntax token quick-add pre-fills / writes for a captured value:
