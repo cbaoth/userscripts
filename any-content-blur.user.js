@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Any Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-10-11
+// @version      2026-10-11T170000
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -1628,11 +1628,11 @@ ${customCss || ''}
                     if (source === 'url' && href) hit = rule.regex.exec(href);
                     else if (source === 'alt' && alt) hit = rule.regex.exec(alt);
                     else if (source === 'title' && title) hit = rule.regex.exec(title);
-                    else if (source === 'user' && usernames)
-                        for (const u of usernames)
-                            if ((hit = rule.regex.exec(u))) break;
-                            else if (source === 'class' && classes)
-                                for (const c of classes) if ((hit = rule.regex.exec(c))) break;
+                    else if (source === 'user' && usernames) {
+                        for (const u of usernames) if ((hit = rule.regex.exec(u))) break;
+                    } else if (source === 'class' && classes) {
+                        for (const c of classes) if ((hit = rule.regex.exec(c))) break;
+                    }
                     if (hit) {
                         applyActions(el, rule, { source, match: hit[0] });
                         break;
