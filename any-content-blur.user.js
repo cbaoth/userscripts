@@ -1558,11 +1558,18 @@ ${customCss || ''}
     // -----------------------------------------------------------------------
 
     const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION']);
+    // The script's own UI (settings dialog, quick panel, debug HUD) must never be
+    // scanned: its help text contains words the rules match, which would get the
+    // dialog blurred/underlined/hidden.
+    const OWN_UI_SELECTOR = '#ucb-quick-panel, #ucb-settings, #ucb-debug-hud';
 
     function scanText(root, textRules) {
         if (!textRules.length) return;
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
             acceptNode(node) {
+                // Elements are only visited to prune own-UI subtrees; SKIP keeps descending.
+                if (node.nodeType === Node.ELEMENT_NODE)
+                    return node.matches(OWN_UI_SELECTOR) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
                 if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
                 const parent = node.parentElement;
                 if (!parent || SKIP_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
@@ -1591,6 +1598,7 @@ ${customCss || ''}
         const descendants = root.querySelectorAll === undefined ? [] : root.querySelectorAll(sel);
         const els = root.matches?.(sel) ? [root, ...descendants] : descendants;
         for (const el of els) {
+            if (el.closest?.(OWN_UI_SELECTOR)) continue;
             const href = el.getAttribute && (el.getAttribute('href') || el.getAttribute('src'));
             const alt = el.getAttribute && el.getAttribute('alt');
             const title = el.getAttribute && el.getAttribute('title');
@@ -1619,7 +1627,7 @@ ${customCss || ''}
     }
 
     function scan(root = document.body) {
-        if (!root || isCloudflareChallenge()) return;
+        if (!root || isCloudflareChallenge() || root.closest?.(OWN_UI_SELECTOR)) return;
         ensureStyles();
         const textRules = activeRules.filter((r) => r.sources.includes('text'));
         const attrRules = activeRules.filter((r) => r.sources.some((s) => s !== 'text'));
@@ -1701,7 +1709,7 @@ ${customCss || ''}
     // anonymous content while focus reliably sits on the input itself.
     function isOwnUiNode(node) {
         const el = node instanceof Element ? node : node?.parentElement;
-        return !!el?.closest?.('#ucb-quick-panel, #ucb-settings');
+        return !!el?.closest?.(OWN_UI_SELECTOR);
     }
 
     // Figure out what to capture: selected text wins, else hovered link. `pattern`
