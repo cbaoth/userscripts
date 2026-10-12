@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Any Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-10-11T214601
+// @version      2026-10-12T165403
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -25,7 +25,12 @@
     //  CONFIG (constants — tweak to taste)
     // -----------------------------------------------------------------------
 
+    // DEPRECATED (2026-10-12): legacy single config, only read by the one-time
+    // migration in getFiles(). Remove together with that migration (docs/TODO.md).
     const STORAGE_KEY = 'contentBlurRules';
+    const FILES_KEY = 'contentBlurFiles'; // [{ id, name, enabled, text }]; run order = name order (sortFiles)
+    const REFERENCE_NAME = 'reference'; // built-in read-only file (DEFAULT_RULES), never stored
+    const FILE_NAME_RE = /^[a-z0-9][a-z0-9_.-]*$/; // used in [use] and @file/list, so no / or spaces
     const PANEL_STATE_KEY = 'contentBlurPanelState'; // remembered quick-add destination
     const BLUR_CLASS = 'ucb-blur';
     const HOVER_CLASS = 'ucb-hover';
@@ -127,9 +132,45 @@
     // -----------------------------------------------------------------------
 
     const DEFAULT_RULES = `\
-# Any Content Blur — configuration
+# Any Content Blur — reference (read-only; always matches the installed version)
 #
-# Three kinds of sections:
+# ── Settings files ────────────────────────────────────────────────────────
+#
+# Config is split into settings files, each behaving like its own userscript.
+# Use "Copy to new file" to start from this text, or "New" for an empty file.
+#
+#   [match]       URL patterns (one per line, glob or /regex/, like @match) the
+#                 file runs on. All enabled files that match a page run, in
+#                 NAME order (character order: - before 0-9 before a-z); an
+#                 element already taken by an earlier rule is skipped by later
+#                 ones, also across files — prefix names (10-…, 50-…) to set
+#                 the order.
+#                 *://*/* = everywhere. Several lines = any of them, e.g. one
+#                 regex covering every Jenkins/Gerrit/MediaWiki host.
+#   [exclude]     URL patterns the file must NOT run on (wins over [match]).
+#                 To keep a global file off a site, exclude the site here.
+#   [use]         library file names (one per line) whose lists this file uses.
+#
+# Lists and CSS are private to their file. A file WITHOUT [match] is a library:
+# it never runs by itself; files that [use] it reference its lists as
+# @LIB/NAME (also @LIB/glob*) and get its [css] injected while they run. A
+# library's own [use] and [rules] are ignored. The Enabled flag only applies to
+# running files — an imported library is used even when disabled.
+#
+# A rule's url-pattern narrows further within the file's [match]: write * for
+# "wherever the file runs".
+#
+# Example:
+#   [match]
+#   *://www.example.com/*
+#   [use]
+#   common                           (a library file named "common")
+#   [rules]
+#   * | text | @common/words_violent | blur | self | hover
+#
+# ── Sections ──────────────────────────────────────────────────────────────
+#
+# Besides [match] / [exclude] / [use], three kinds of sections:
 #
 #   [list:NAME]   reusable pattern list — one regex per line (case-insensitive).
 #                 Reference it from a rule as @NAME. A list line may itself be
@@ -137,7 +178,8 @@
 #                 reference loops and self-references are silently dropped).
 #                 Wildcards (* / ?) are supported in list names: @text_* expands
 #                 to every list whose name matches that glob. This works both in
-#                 rule patterns and in list entries.
+#                 rule patterns and in list entries. Imported library lists
+#                 are named LIB/NAME, so @* matches them too.
 #                 A line starting with @ is always a list reference — to match a
 #                 literal "@foo" use a regex, e.g. /^@foo$/ or /@foo/.
 #
@@ -734,16 +776,33 @@
         }
     }
 
-    // Parse the whole config into { lists, rules, css, issues }. `issues` collects
-    // structured problems (errors block save; warnings are advisory). `css` is the
-    // raw text of the [css] section, injected verbatim into the page.
-    function parseConfig(text) {
+    // Section header → { type, name? }, or null when the line is not a header.
+    // Shared by parseConfig(), fileHeader() and indexConfigRaw() so they agree.
+    function sectionHeader(trimmed) {
+        const listHeader = trimmed.match(/^\[list:([^\]]+)\]$/i);
+        if (listHeader) return { type: 'list', name: listHeader[1].trim().toLowerCase() };
+        const m = trimmed.match(/^\[(rules|css|match|exclude|use)\]$/i);
+        return m ? { type: m[1].toLowerCase() } : null;
+    }
+
+    // Parse one settings file into
+    //   { lists, rules, css, issues, match, exclude, use, isLibrary, libs }.
+    // `issues` collects structured problems (errors block save; warnings are
+    // advisory). `css` is the raw text of the [css] section, injected verbatim.
+    // getLib(name) → the parsed library file, or null if there is no such file.
+    // Imported lists are added as LIB/NAME. Lists are collected before rules are
+    // parsed, so a rule may reference a list defined further down.
+    function parseConfig(text, getLib = null, fileName = '') {
         const lists = new Map();
         const rules = [];
         const cssLines = [];
         const cssEntries = []; // { text, line } for balance checking
         const issues = [];
-        let section = null; // { type:'list', name } | { type:'rules' } | { type:'css' }
+        const match = [];
+        const exclude = [];
+        const use = []; // { name, line }
+        const ruleLines = []; // { line, lineNum }
+        let section = null; // see sectionHeader()
         let lineNum = 0;
 
         for (const rawLine of text.split('\n')) {
@@ -752,19 +811,20 @@
 
             // Section headers are detected before comment filtering so we can switch
             // into/out of [css] — where # is a CSS id selector, not a comment.
-            const listHeader = trimmed.match(/^\[list:([^\]]+)\]$/i);
-            if (listHeader) {
-                const name = listHeader[1].trim().toLowerCase();
-                if (!lists.has(name)) lists.set(name, []);
-                section = { type: 'list', name };
-                continue;
-            }
-            if (/^\[rules\]$/i.test(trimmed)) {
-                section = { type: 'rules' };
-                continue;
-            }
-            if (/^\[css\]$/i.test(trimmed)) {
-                section = { type: 'css' };
+            const header = sectionHeader(trimmed);
+            if (header) {
+                section = header;
+                if (header.type === 'list') {
+                    if (header.name.includes('/')) {
+                        reportIssue(
+                            issues,
+                            lineNum,
+                            'error',
+                            `list name "${header.name}" may not contain / (used by @LIB/NAME)`
+                        );
+                    }
+                    if (!lists.has(header.name)) lists.set(header.name, []);
+                }
                 continue;
             }
 
@@ -799,19 +859,19 @@
                 lists.get(section.name).push(line);
                 continue;
             }
+            if (section && (section.type === 'match' || section.type === 'exclude')) {
+                const up = parseUrlPattern(line, issues, lineNum);
+                if (up) (section.type === 'match' ? match : exclude).push(up);
+                continue;
+            }
+            if (section && section.type === 'use') {
+                use.push({ name: line.toLowerCase(), line: lineNum });
+                continue;
+            }
 
             // Anything with pipes is a rule (allow rules even before a [rules] header).
             if (line.includes('|') || (section && section.type === 'rules')) {
-                const rule = parseRuleLine(line, lineNum, lists, issues);
-                if (rule) {
-                    // Stable identity for debug mode: the ordinal matches the rule's
-                    // position in the settings ("first rule = #1"); raw + line let the
-                    // user find it (Ctrl+F the line in the settings textarea).
-                    rule.id = rules.length + 1;
-                    rule.raw = line;
-                    rule.line = lineNum;
-                    rules.push(rule);
-                }
+                ruleLines.push({ line, lineNum });
                 continue;
             }
 
@@ -820,7 +880,112 @@
 
         checkCssBalance(cssEntries, issues);
 
-        return { lists, rules, css: cssLines.join('\n'), issues };
+        // No [match] = library: never runs by itself, so its own imports and rules
+        // would have no effect (rules are still parsed below, for validation).
+        const isLibrary = !match.length;
+        const libs = []; // { name, css } of imported libraries, in [use] order
+        if (isLibrary) {
+            if (use.length) {
+                reportIssue(
+                    issues,
+                    use[0].line,
+                    'warning',
+                    'no [match] (library): [use] is ignored — libraries cannot import'
+                );
+            }
+            if (ruleLines.length) {
+                reportIssue(issues, ruleLines[0].lineNum, 'warning', 'no [match] (library): its [rules] never run');
+            }
+        } else if (getLib) {
+            for (const u of use) {
+                if (libs.some((l) => l.name === u.name)) continue;
+                const lib = u.name === fileName ? null : getLib(u.name);
+                if (u.name === fileName) {
+                    reportIssue(issues, u.line, 'error', '[use]: a file cannot import itself');
+                } else if (!lib) {
+                    reportIssue(issues, u.line, 'error', `[use]: no settings file named "${u.name}"`);
+                } else if (!lib.isLibrary) {
+                    reportIssue(
+                        issues,
+                        u.line,
+                        'error',
+                        `[use]: "${u.name}" has a [match] section — only libraries can be imported`
+                    );
+                } else {
+                    if (lib.issues.some((i) => i.severity === 'error')) {
+                        reportIssue(
+                            issues,
+                            u.line,
+                            'warning',
+                            `[use]: library "${u.name}" has errors (open it to see them)`
+                        );
+                    }
+                    libs.push({ name: u.name, css: lib.css });
+                    // Nested @refs inside a library list point to the library's own
+                    // lists, so they get the same LIB/ prefix.
+                    for (const [name, entries] of lib.lists) {
+                        lists.set(
+                            `${u.name}/${name}`,
+                            entries.map((e) => (e.startsWith('@') ? `@${u.name}/${e.slice(1)}` : e))
+                        );
+                    }
+                }
+            }
+        }
+
+        for (const { line, lineNum: n } of ruleLines) {
+            const rule = parseRuleLine(line, n, lists, issues);
+            if (rule) {
+                // Stable identity for debug mode: file name + the rule's position in
+                // that file ("first rule = name#1"); raw + line let the user find it
+                // (Ctrl+F the line in the settings textarea).
+                rule.id = `${fileName}#${rules.length + 1}`;
+                rule.raw = line;
+                rule.line = n;
+                rule.file = fileName;
+                rules.push(rule);
+            }
+        }
+
+        return { lists, rules, css: cssLines.join('\n'), issues, match, exclude, use, isLibrary, libs };
+    }
+
+    // Only the [match]/[exclude] patterns of a file — cheap enough to run for every
+    // stored file on every page load, without parsing (and logging) the rest.
+    function fileHeader(text) {
+        const out = { match: [], exclude: [] };
+        let section = null;
+        for (const raw of text.split('\n')) {
+            const t = raw.trim();
+            const h = sectionHeader(t);
+            if (h) {
+                section = h.type;
+                continue;
+            }
+            if ((section === 'match' || section === 'exclude') && t && !t.startsWith('#') && !t.startsWith('//')) {
+                const up = parseUrlPattern(t);
+                if (up) out[section].push(up);
+            }
+        }
+        return out;
+    }
+
+    // Whether a file (parsed or fileHeader()) runs on `url`.
+    function fileRunsOn(header, url = location.href) {
+        return header.match.some((p) => p.regex.test(url)) && !header.exclude.some((p) => p.regex.test(url));
+    }
+
+    // Parse a stored file in the context of all files, resolving [use] by name.
+    // Pass the same libCache across calls to parse each library only once.
+    function parseFile(file, files, libCache = new Map()) {
+        const getLib = (name) => {
+            if (!libCache.has(name)) {
+                const f = files.find((x) => x.name === name);
+                libCache.set(name, f ? parseConfig(f.text, null, f.name) : null);
+            }
+            return libCache.get(name);
+        };
+        return parseConfig(file.text, getLib, file.name);
     }
 
     // Basic structural check of the [css] text: unclosed /* comments and unbalanced
@@ -960,18 +1125,92 @@
     }
 
     // -----------------------------------------------------------------------
+    //  SETTINGS FILES (storage)
+    // -----------------------------------------------------------------------
+
+    function newFileId() {
+        return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    }
+
+    // Run order = name order, by plain character code (0-9 before a-z, - before
+    // both), so a prefix like 10-… / 50-… sets the order — see the reference.
+    function sortFiles(files) {
+        return files.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    }
+
+    // Stored files in run order, migrating the legacy single config on first use:
+    // it becomes file "main" running everywhere (its rules keep their own url
+    // patterns, so behavior is unchanged). The legacy key is left untouched for
+    // rollback.
+    async function getFiles() {
+        const files = await GM.getValue(FILES_KEY, null);
+        if (Array.isArray(files)) return sortFiles(files);
+        // DEPRECATED (2026-10-12): legacy migration below — remove once all installs
+        // have run it (docs/TODO.md); then just return [] here.
+        const legacy = await GM.getValue(STORAGE_KEY, null);
+        const migrated = [];
+        if (legacy != null && legacy.trim() && legacy.trim() !== DEFAULT_RULES.trim()) {
+            // Rule lines may precede the first section header (allowed in the old
+            // format); keep them rules once [match] is prepended.
+            const firstContent = legacy.split('\n').find((l) => {
+                const t = l.trim();
+                return t && !t.startsWith('#') && !t.startsWith('//');
+            });
+            const needRules = firstContent !== undefined && !sectionHeader(firstContent.trim());
+            const head =
+                '# migrated from the single-config version\n[match]\n*://*/*\n' + (needRules ? '\n[rules]\n' : '\n');
+            migrated.push({ id: newFileId(), name: 'main', enabled: true, text: head + legacy });
+        }
+        await GM.setValue(FILES_KEY, migrated);
+        return migrated;
+    }
+
+    async function saveFiles(files) {
+        await GM.setValue(FILES_KEY, files);
+    }
+
+    // Replace one file's text in the CURRENT stored state (not a stale copy), so
+    // a quick-add never overwrites concurrent edits to other files.
+    async function saveFileText(id, text) {
+        const files = await getFiles();
+        const f = files.find((x) => x.id === id);
+        if (!f) return false;
+        f.text = text;
+        await saveFiles(files);
+        return true;
+    }
+
+    // -----------------------------------------------------------------------
     //  RULE STATE
     // -----------------------------------------------------------------------
 
-    let rules = [];
     let activeRules = [];
-    let customCss = ''; // raw [css] section, injected by ensureStyles()
+    let activeFiles = []; // names of the files running on this page, in run order
+    let customCss = ''; // [css] of the active files + their libraries, injected by ensureStyles()
 
+    // Every enabled file whose [match] fits this page runs, in name order. A
+    // library's CSS comes before its importer's (so the importer can override it)
+    // and is injected only once even when several active files use it.
     async function loadRules() {
-        const stored = await GM.getValue(STORAGE_KEY, null);
-        const parsed = parseConfig(stored ?? DEFAULT_RULES);
-        rules = parsed.rules;
-        customCss = parsed.css;
+        const files = await getFiles();
+        const libCache = new Map();
+        const cssParts = [];
+        const cssLibs = new Set();
+        const rules = [];
+        activeFiles = [];
+        for (const f of files) {
+            if (!f.enabled || !fileRunsOn(fileHeader(f.text))) continue;
+            const parsed = parseFile(f, files, libCache);
+            activeFiles.push(f.name);
+            for (const lib of parsed.libs) {
+                if (cssLibs.has(lib.name) || !lib.css) continue;
+                cssLibs.add(lib.name);
+                cssParts.push(`/* library: ${lib.name} */\n${lib.css}`);
+            }
+            if (parsed.css) cssParts.push(`/* file: ${f.name} */\n${parsed.css}`);
+            rules.push(...parsed.rules);
+        }
+        customCss = cssParts.join('\n');
         const cssInfo = analyzeEffectCss(customCss);
         peekExempt = cssInfo.peekExempt;
         hiddenActions = cssInfo.hiddenActions;
@@ -1083,7 +1322,7 @@ ${customCss || ''}
         const group = expandScopeGroup(base, rule.scope);
         // Debug label, stamped on every group member: "#N ⟨matched text⟩". Group
         // siblings (prev/next) share the base match — they carry the same label.
-        const dbgLabel = '#' + rule.id + (matchInfo?.match ? ' ' + truncate(String(matchInfo.match), 30) : '');
+        const dbgLabel = rule.id + (matchInfo?.match ? ' ' + truncate(String(matchInfo.match), 30) : '');
         for (const target of group) {
             if (processed.has(target)) continue;
             // Never touch structural roots.
@@ -1479,9 +1718,9 @@ ${customCss || ''}
         toast('Content Blur: debug ' + (debugOn ? 'ON — effects revealed, areas labelled' : 'OFF'));
     }
 
-    // A fixed corner legend mapping the #N badges to their rules: id, the raw
+    // A fixed corner legend mapping the FILE#N badges to their rules: id, the raw
     // config line (Ctrl+F it in settings), and a live hit count. Click a row to
-    // open the settings dialog.
+    // open that settings file.
     function buildDebugHud() {
         removeDebugHud();
         ensureUiStyles();
@@ -1519,7 +1758,9 @@ ${customCss || ''}
         head.append(title, close);
 
         const sub = document.createElement('div');
-        sub.textContent = `${activeRules.length} rule${activeRules.length !== 1 ? 's' : ''} active on ${location.hostname}`;
+        sub.textContent =
+            `${activeRules.length} rule${activeRules.length !== 1 ? 's' : ''} active on ${location.hostname}` +
+            (activeFiles.length ? ` — files: ${activeFiles.join(', ')}` : '');
         Object.assign(sub.style, { color: '#888', fontSize: '11px', marginBottom: '8px' });
 
         hud.append(head, sub);
@@ -1542,13 +1783,13 @@ ${customCss || ''}
                 cursor: 'pointer',
                 lineHeight: '1.45',
             });
-            row.title = 'Open settings';
+            row.title = `Open settings file "${r.file}"`;
             row.addEventListener('mouseenter', () => (row.style.background = 'rgba(255,255,255,0.06)'));
             row.addEventListener('mouseleave', () => (row.style.background = ''));
-            row.addEventListener('click', () => openSettings());
+            row.addEventListener('click', () => openSettings(r.file));
 
             const id = document.createElement('span');
-            id.textContent = '#' + r.id;
+            id.textContent = r.id;
             Object.assign(id.style, { color: '#ff8c7a', fontFamily: 'monospace', fontWeight: 'bold' });
 
             const raw = document.createElement('span');
@@ -1901,21 +2142,61 @@ ${customCss || ''}
             .join(' | ');
     }
 
-    // Append a rule line, unless a semantically-identical rule already exists.
-    // Returns { changed } so callers can report added-vs-already-present.
-    async function appendRuleLine(ruleLine) {
-        const stored = (await GM.getValue(STORAGE_KEY, null)) ?? DEFAULT_RULES;
-        const { ruleEntries } = indexConfigRaw(stored.split('\n'));
+    // Append a rule line to settings file `fileName` — or to a new file for this
+    // host when there is no such file — unless a semantically-identical rule
+    // already exists there. Returns { changed, file } (file = name written to).
+    async function appendRuleLine(ruleLine, fileName) {
+        const files = await getFiles();
+        const f = files.find((x) => x.name === fileName) ?? createHostFile(files);
+        const { ruleEntries } = indexConfigRaw(f.text.split('\n'));
         const newNorm = normalizeRuleLine(ruleLine);
         if (ruleEntries.some((e) => e.fields.join(' | ') === newNorm)) {
-            return { changed: false };
+            return { changed: false, file: f.name };
         }
-        let next = stored.trimEnd();
-        if (!/\[rules\]/i.test(next)) next += '\n\n[rules]';
-        next += '\n' + ruleLine + '\n';
-        await GM.setValue(STORAGE_KEY, next);
+        let next = f.text.trimEnd();
+        // Append into a [rules] section: a trailing list/css/match block would
+        // otherwise swallow the new line.
+        const lastHeader = next
+            .split('\n')
+            .map((l) => sectionHeader(l.trim()))
+            .filter(Boolean)
+            .pop();
+        if (lastHeader?.type !== 'rules') next += '\n\n[rules]';
+        f.text = next + '\n' + ruleLine + '\n';
+        await saveFiles(files);
         await loadRules();
-        return { changed: true };
+        return { changed: true, file: f.name };
+    }
+
+    // Files quick-add may write to on this page: the running files (their rules
+    // and lists) plus the libraries they import (lists only — library rules never
+    // run). Each carries its raw lines + index, so edits happen in place.
+    async function editTargets() {
+        const files = await getFiles();
+        const targets = [];
+        const libNames = [];
+        for (const f of files) {
+            if (!f.enabled || !fileRunsOn(fileHeader(f.text))) continue;
+            const lines = f.text.split('\n');
+            const idx = indexConfigRaw(lines);
+            targets.push({ file: f, lines, ...idx, isLibrary: false });
+            libNames.push(...idx.use);
+        }
+        for (const name of new Set(libNames)) {
+            const f = files.find((x) => x.name === name);
+            if (!f || targets.some((t) => t.file === f) || fileHeader(f.text).match.length) continue;
+            const lines = f.text.split('\n');
+            const idx = indexConfigRaw(lines);
+            targets.push({ file: f, lines, ...idx, ruleEntries: [], isLibrary: true });
+        }
+        return targets;
+    }
+
+    // File a new rule goes to: the remembered one if it still runs here, else the
+    // first file running here, else null (= create a file for this host).
+    function newRuleFile(targets, saved) {
+        const running = targets.filter((t) => !t.isLibrary);
+        return (running.find((t) => t.file.name === saved.newFile) ?? running[0])?.file.name ?? null;
     }
 
     function toast(msg, ok = true) {
@@ -1941,8 +2222,8 @@ ${customCss || ''}
     }
 
     // Append a brand-new rule built from the captured context, then apply it.
-    async function addNewRuleFromContext(ctx) {
-        const res = await appendRuleLine(buildRuleLine(ctx.source, defaultToken(ctx), 'self', ['hover']));
+    async function addNewRuleFromContext(ctx, fileName) {
+        const res = await appendRuleLine(buildRuleLine(ctx.source, defaultToken(ctx), 'self', ['hover']), fileName);
         if (res.changed) {
             scan(document.body);
             if (activeRules.length > 0) startObserver(); // apply immediately on this page
@@ -1956,75 +2237,77 @@ ${customCss || ''}
             toast('Content Blur: select text or hover a link first', false);
             return;
         }
-        const res = await addNewRuleFromContext(ctx);
+        const saved = (await GM.getValue(PANEL_STATE_KEY, null)) || {};
+        const res = await addNewRuleFromContext(ctx, newRuleFile(await editTargets(), saved));
         toast(
             res.changed
-                ? `Content Blur: added rule for "${truncate(ctx.label, 40)}"`
-                : `Content Blur: rule for "${truncate(ctx.label, 40)}" already exists`
+                ? `Content Blur: added rule for "${truncate(ctx.label, 40)}" to ${res.file}`
+                : `Content Blur: rule for "${truncate(ctx.label, 40)}" already exists in ${res.file}`
         );
     }
 
     // Quick-block: add the captured pattern to the rule/list last used via the
     // quick-add panel (or a previous quick-block) when it still applies to this
-    // page, else to the FIRST existing rule whose source type + URL pattern match
-    // — into its first referenced [list:NAME] if it has one, else appended inline
-    // to the rule's patterns field. Falls back to creating a new rule when nothing
-    // matches. Great for blocking users one keypress at a time into a chosen list.
+    // page, else to the FIRST rule (in a file running here) whose source type +
+    // URL pattern match — into its first referenced [list:NAME] if it has one,
+    // else appended inline to the rule's patterns field. Falls back to creating a
+    // new rule when nothing matches. Great for blocking users one keypress at a
+    // time into a chosen list.
     async function quickBlock() {
         const ctx = captureContext();
         if (!ctx) {
             toast('Content Blur: select text or hover a link first', false);
             return;
         }
-        const stored = (await GM.getValue(STORAGE_KEY, null)) ?? DEFAULT_RULES;
+        const targets = await editTargets();
         const saved = (await GM.getValue(PANEL_STATE_KEY, null)) || {};
-        const res = addPatternToMatchingRule(stored, ctx, saved);
-        if (res) await GM.setValue(PANEL_STATE_KEY, { ...saved, ...res.state });
+        const res = addPatternToMatchingRule(targets, ctx, saved);
         if (!res) {
-            const added = await addNewRuleFromContext(ctx);
+            const added = await addNewRuleFromContext(ctx, newRuleFile(targets, saved));
             if (added.changed) {
                 const line = buildRuleLine(ctx.source, defaultToken(ctx), 'self', ['hover']);
-                await GM.setValue(PANEL_STATE_KEY, { ...saved, mode: 'rule', ruleKey: line.trim() });
+                await GM.setValue(PANEL_STATE_KEY, {
+                    ...saved,
+                    mode: 'rule',
+                    file: added.file,
+                    newFile: added.file,
+                    ruleKey: line.trim(),
+                });
             }
             toast(
                 added.changed
-                    ? `Content Blur: no matching rule — created one for "${truncate(ctx.label, 40)}"`
-                    : `Content Blur: rule for "${truncate(ctx.label, 40)}" already exists`
+                    ? `Content Blur: no matching rule — created one for "${truncate(ctx.label, 40)}" in ${added.file}`
+                    : `Content Blur: rule for "${truncate(ctx.label, 40)}" already exists in ${added.file}`
             );
             return;
         }
+        await GM.setValue(PANEL_STATE_KEY, { ...saved, ...res.state });
         if (res.changed) {
-            await GM.setValue(STORAGE_KEY, res.text);
+            await saveFileText(res.target.file.id, res.target.lines.join('\n'));
             await loadRules();
             scan(document.body);
             if (activeRules.length > 0) startObserver();
         }
-        toast('Content Blur: ' + res.message);
+        toast(`Content Blur: ${res.message} (${res.target.file.name})`);
     }
 
-    // Scan raw config lines once into an index of list blocks + rule lines, so the
-    // quick-add panel and quick-block can insert into a chosen destination and edit
-    // the raw text in place. Mirrors the section handling in parseConfig().
+    // Scan raw config lines once into an index of list blocks, rule lines and
+    // [use] names, so the quick-add panel and quick-block can insert into a chosen
+    // destination and edit the raw text in place. Mirrors parseConfig().
     function indexConfigRaw(lines) {
         const listBlocks = new Map(); // name -> { headerIdx, lastEntryIdx }
         const ruleEntries = []; // { idx, fields } for each rule line
+        const use = []; // [use] file names
         let section = null;
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
 
-            const listHeader = line.match(/^\[list:([^\]]+)\]$/i);
-            if (listHeader) {
-                const name = listHeader[1].trim().toLowerCase();
-                if (!listBlocks.has(name)) listBlocks.set(name, { headerIdx: i, lastEntryIdx: i });
-                section = { type: 'list', name };
-                continue;
-            }
-            if (/^\[rules\]$/i.test(line)) {
-                section = { type: 'rules' };
-                continue;
-            }
-            if (/^\[css\]$/i.test(line)) {
-                section = { type: 'css' };
+            const header = sectionHeader(line);
+            if (header) {
+                if (header.type === 'list' && !listBlocks.has(header.name)) {
+                    listBlocks.set(header.name, { headerIdx: i, lastEntryIdx: i });
+                }
+                section = header;
                 continue;
             }
             if (section && section.type === 'css') continue; // never touch raw CSS
@@ -2034,12 +2317,17 @@ ${customCss || ''}
                 listBlocks.get(section.name).lastEntryIdx = i;
                 continue;
             }
+            if (section && section.type === 'use') {
+                use.push(line.toLowerCase());
+                continue;
+            }
+            if (section && (section.type === 'match' || section.type === 'exclude')) continue;
             if (line.includes('|') || (section && section.type === 'rules')) {
                 const fields = splitTopLevel(line, '|').map((f) => f.trim());
                 if (fields.length >= 4) ruleEntries.push({ idx: i, fields });
             }
         }
-        return { listBlocks, ruleEntries };
+        return { listBlocks, ruleEntries, use };
     }
 
     // Insert an entry into a [list:NAME] block (dedup). Mutates `lines` in place.
@@ -2066,56 +2354,65 @@ ${customCss || ''}
         return { changed: true, message: `added "${truncate(label, 40)}" to the rule` };
     }
 
-    // First [list:NAME] (lowercase) a rule references that actually exists, or null.
-    function firstListOf(entry, listBlocks) {
+    // First list a rule references that actually exists, as { target, name }
+    // (`name` local to that target's file), or null. @LIB/NAME resolves into the
+    // imported library's file; wildcard refs are skipped.
+    function firstListOf(entry, target, targets) {
         const ref = splitTopLevel(entry.fields[2], ',')
             .map((t) => t.trim())
             .find((t) => t.startsWith('@'));
-        const name = ref?.slice(1).toLowerCase();
-        return name && listBlocks.has(name) ? name : null;
+        const full = ref?.slice(1).toLowerCase();
+        if (!full) return null;
+        const slash = full.indexOf('/');
+        if (slash === -1) return target.listBlocks.has(full) ? { target, name: full } : null;
+        const lib = targets.find((t) => t.isLibrary && t.file.name === full.slice(0, slash));
+        const name = full.slice(slash + 1);
+        return lib?.listBlocks.has(name) ? { target: lib, name } : null;
     }
 
     // Quick-block target, in order of preference:
     //   1. the destination last used via the quick-add panel (incl. a newly
-    //      created rule) or quick-block (`saved`), if it is still relevant here (its rule matches the current
-    //      URL + captured source) — so repeated adds keep going to the same place
+    //      created rule) or quick-block (`saved`), if it is still relevant here
+    //      (its rule matches the current URL + captured source) — so repeated
+    //      adds keep going to the same place
     //   2. the FIRST rule matching the current URL + captured source
-    // A rule's first referenced [list:NAME] is preferred over its inline patterns.
-    // Returns { text, changed, message, state } (text only when changed), or null.
-    function addPatternToMatchingRule(text, ctx, saved = {}) {
-        const lines = text.split('\n');
-        const { listBlocks, ruleEntries } = indexConfigRaw(lines);
-        const relevant = ruleEntries.filter((e) => {
-            const up = parseUrlPattern(e.fields[0]);
-            return up && up.regex.test(location.href) && parseSource(e.fields[1]).includes(ctx.source);
-        });
+    // A rule's first referenced list is preferred over its inline patterns.
+    // Mutates the chosen target's `lines`. Returns
+    // { target, changed, message, state }, or null when no rule is relevant.
+    function addPatternToMatchingRule(targets, ctx, saved = {}) {
+        const relevant = targets.flatMap((t) =>
+            t.ruleEntries
+                .filter((e) => {
+                    const up = parseUrlPattern(e.fields[0]);
+                    return up && up.regex.test(location.href) && parseSource(e.fields[1]).includes(ctx.source);
+                })
+                .map((e) => ({ t, e }))
+        );
         if (!relevant.length) return null;
 
         const token = defaultToken(ctx);
-        const toList = (name) => {
-            const res = insertListEntry(lines, listBlocks.get(name), name, token, ctx.label);
-            return { res, state: { mode: 'list', listName: name } };
+        const toList = ({ target, name }) => {
+            const res = insertListEntry(target.lines, target.listBlocks.get(name), name, token, ctx.label);
+            return { ...res, target, state: { mode: 'list', file: target.file.name, listName: name } };
         };
-        const toRule = (entry) => {
-            const res = insertRulePattern(lines, entry, token, ctx.label);
-            return { res, state: { mode: 'rule', ruleKey: lines[entry.idx].trim() } };
+        const toRule = ({ t, e }) => {
+            const res = insertRulePattern(t.lines, e, token, ctx.label);
+            return { ...res, target: t, state: { mode: 'rule', file: t.file.name, ruleKey: t.lines[e.idx].trim() } };
         };
+        const isSavedRule = ({ t, e }) => t.file.name === saved.file && t.lines[e.idx].trim() === saved.ruleKey;
 
-        let out;
-        if (saved.mode === 'list' && relevant.some((e) => firstListOf(e, listBlocks) === saved.listName)) {
-            out = toList(saved.listName);
-        } else if (
-            (saved.mode === 'rule' || saved.mode === 'new') &&
-            relevant.some((e) => lines[e.idx].trim() === saved.ruleKey)
-        ) {
-            out = toRule(relevant.find((e) => lines[e.idx].trim() === saved.ruleKey));
-        } else {
-            const first = relevant[0];
-            const name = firstListOf(first, listBlocks);
-            out = name ? toList(name) : toRule(first);
+        if (saved.mode === 'list') {
+            const hit = relevant
+                .map(({ t, e }) => firstListOf(e, t, targets))
+                .find((l) => l && l.target.file.name === saved.file && l.name === saved.listName);
+            if (hit) return toList(hit);
+        } else if (saved.mode === 'rule' || saved.mode === 'new') {
+            const hit = relevant.find(isSavedRule);
+            if (hit) return toRule(hit);
         }
-        const { res, state } = out;
-        return { ...res, state, text: res.changed ? lines.join('\n') : undefined };
+        const first = relevant[0];
+        const list = firstListOf(first.e, first.t, targets);
+        return list ? toList(list) : toRule(first);
     }
 
     function truncate(s, n) {
@@ -2153,11 +2450,12 @@ ${customCss || ''}
         existing?.remove();
         let ctx = captured;
 
-        // Load config (to enumerate destinations) + remembered panel state.
-        const stored = (await GM.getValue(STORAGE_KEY, null)) ?? DEFAULT_RULES;
-        const lines = stored.split('\n');
-        const { listBlocks, ruleEntries } = indexConfigRaw(lines);
-        const listNames = [...listBlocks.keys()];
+        // Load the files running here (to enumerate destinations) + remembered
+        // panel state. Destinations are file-qualified: { t: target, e | name }.
+        const targets = await editTargets();
+        const ruleOpts = targets.flatMap((t) => t.ruleEntries.map((e) => ({ t, e })));
+        const listOpts = targets.flatMap((t) => [...t.listBlocks.keys()].map((name) => ({ t, name })));
+        const runningFiles = targets.filter((t) => !t.isLibrary).map((t) => t.file.name);
         const savedState = (await GM.getValue(PANEL_STATE_KEY, null)) || {};
 
         ensureUiStyles();
@@ -2221,8 +2519,8 @@ ${customCss || ''}
             const o = document.createElement('option');
             o.value = m.value;
             o.textContent = m.label;
-            if (m.value === 'rule' && !ruleEntries.length) o.disabled = true;
-            if (m.value === 'list' && !listNames.length) o.disabled = true;
+            if (m.value === 'rule' && !ruleOpts.length) o.disabled = true;
+            if (m.value === 'list' && !listOpts.length) o.disabled = true;
             modeSel.appendChild(o);
         }
 
@@ -2269,28 +2567,48 @@ ${customCss || ''}
                     color: '#999',
                 });
                 hoverLabel.append(hoverCb, 'reveal on hover');
-                Object.assign(mid, { sourceSel, scopeSel, hoverCb });
-                midWrap.append(field('source', sourceSel), field('scope', scopeSel), hoverLabel);
+                const fileSel = mkSelect();
+                const defaultFile = newRuleFile(targets, savedState);
+                for (const name of runningFiles) {
+                    const o = document.createElement('option');
+                    o.value = o.textContent = name;
+                    if (name === defaultFile) o.selected = true;
+                    fileSel.appendChild(o);
+                }
+                const o = document.createElement('option');
+                o.value = '';
+                o.textContent = `+ new file (${location.hostname})`;
+                if (!defaultFile) o.selected = true;
+                fileSel.appendChild(o);
+                Object.assign(mid, { sourceSel, scopeSel, hoverCb, fileSel });
+                midWrap.append(
+                    field('file', fileSel),
+                    field('source', sourceSel),
+                    field('scope', scopeSel),
+                    hoverLabel
+                );
             } else if (mode === 'rule') {
                 const ruleSel = mkSelect();
                 Object.assign(ruleSel.style, { maxWidth: '440px' });
-                ruleEntries.forEach((e, i) => {
+                ruleOpts.forEach(({ t, e }, i) => {
                     const o = document.createElement('option');
+                    const raw = t.lines[e.idx].trim();
                     o.value = String(i);
-                    o.textContent = truncate(lines[e.idx].trim(), 70);
-                    if (lines[e.idx].trim() === savedState.ruleKey) o.selected = true;
+                    o.textContent = `${t.file.name}: ${truncate(raw, 60)}`;
+                    if (t.file.name === savedState.file && raw === savedState.ruleKey) o.selected = true;
                     ruleSel.appendChild(o);
                 });
                 mid.ruleSel = ruleSel;
                 midWrap.append(field('target rule', ruleSel));
             } else {
                 const listSel = mkSelect();
-                for (const name of listNames) {
+                listOpts.forEach(({ t, name }, i) => {
                     const o = document.createElement('option');
-                    o.value = o.textContent = name;
-                    if (name === savedState.listName) o.selected = true;
+                    o.value = String(i);
+                    o.textContent = `${t.file.name}: ${name}`;
+                    if (t.file.name === savedState.file && name === savedState.listName) o.selected = true;
                     listSel.appendChild(o);
-                }
+                });
                 mid.listSel = listSel;
                 midWrap.append(field('target list', listSel));
             }
@@ -2298,8 +2616,8 @@ ${customCss || ''}
 
         // Initial mode: remembered, if still available; else new.
         let initialMode = savedState.mode || 'new';
-        if (initialMode === 'rule' && !ruleEntries.length) initialMode = 'new';
-        if (initialMode === 'list' && !listNames.length) initialMode = 'new';
+        if (initialMode === 'rule' && !ruleOpts.length) initialMode = 'new';
+        if (initialMode === 'list' && !listOpts.length) initialMode = 'new';
         modeSel.value = initialMode;
         renderMid(initialMode);
         modeSel.addEventListener('change', () => renderMid(modeSel.value));
@@ -2311,9 +2629,9 @@ ${customCss || ''}
             const cur = (await GM.getValue(PANEL_STATE_KEY, null)) || {};
             await GM.setValue(PANEL_STATE_KEY, { ...cur, ...patch });
         };
-        const applyEdits = async (changed) => {
+        const applyEdits = async (target, changed) => {
             if (!changed) return;
-            await GM.setValue(STORAGE_KEY, lines.join('\n'));
+            await saveFileText(target.file.id, target.lines.join('\n'));
             await loadRules();
             scan(document.body);
             if (activeRules.length > 0) startObserver();
@@ -2350,26 +2668,31 @@ ${customCss || ''}
                     mid.scopeSel.value,
                     mid.hoverCb.checked ? ['hover'] : ['no-hover']
                 );
-                const res = await appendRuleLine(line);
+                const res = await appendRuleLine(line, mid.fileSel.value || null);
                 if (res.changed) {
                     scan(document.body);
                     if (activeRules.length > 0) startObserver();
                 }
-                // Remember the new rule so Alt+A (quick-block) keeps adding to it.
-                await saveState(res.changed ? { mode, ruleKey: line.trim() } : { mode });
-                toast('Content Blur: ' + (res.changed ? 'rule added' : 'rule already exists'));
+                // Remember the new rule (and its file) so Alt+A (quick-block) and
+                // the next new rule keep going there.
+                await saveState(
+                    res.changed
+                        ? { mode, file: res.file, newFile: res.file, ruleKey: line.trim() }
+                        : { mode, newFile: res.file }
+                );
+                toast(`Content Blur: ${res.changed ? 'rule added' : 'rule already exists'} (${res.file})`);
             } else if (mode === 'rule') {
-                const entry = ruleEntries[Number(mid.ruleSel.value)];
-                const res = insertRulePattern(lines, entry, token, ctx.label);
-                await applyEdits(res.changed);
-                await saveState({ mode, ruleKey: lines[entry.idx].trim() });
-                toast('Content Blur: ' + res.message);
+                const { t, e } = ruleOpts[Number(mid.ruleSel.value)];
+                const res = insertRulePattern(t.lines, e, token, ctx.label);
+                await applyEdits(t, res.changed);
+                await saveState({ mode, file: t.file.name, ruleKey: t.lines[e.idx].trim() });
+                toast(`Content Blur: ${res.message} (${t.file.name})`);
             } else {
-                const name = mid.listSel.value;
-                const res = insertListEntry(lines, listBlocks.get(name), name, token, ctx.label);
-                await applyEdits(res.changed);
-                await saveState({ mode, listName: name });
-                toast('Content Blur: ' + res.message);
+                const { t, name } = listOpts[Number(mid.listSel.value)];
+                const res = insertListEntry(t.lines, t.listBlocks.get(name), name, token, ctx.label);
+                await applyEdits(t, res.changed);
+                await saveState({ mode, file: t.file.name, listName: name });
+                toast(`Content Blur: ${res.message} (${t.file.name})`);
             }
             panel.remove();
         });
@@ -2411,7 +2734,104 @@ ${customCss || ''}
         return btn;
     }
 
-    function openSettings() {
+    // Settings-file name derived from this page's host (e.g. "example.com").
+    function hostFileName() {
+        return (
+            location.hostname
+                .toLowerCase()
+                .replace(/^www\./, '')
+                .replace(/[^a-z0-9_.-]+/g, '-')
+                .replace(/^[^a-z0-9]+/, '') || 'site'
+        );
+    }
+
+    // `base`, or base-2, base-3, … — the first name no file in `files` uses.
+    function uniqueFileName(base, files) {
+        let name = base;
+        for (let n = 2; name === REFERENCE_NAME || files.some((x) => x.name === name); n++) name = `${base}-${n}`;
+        return name;
+    }
+
+    // The text of a new settings file running on this host.
+    function hostFileText(name) {
+        return `# ${name}\n[match]\n*://${location.hostname}/*\n\n[rules]\n`;
+    }
+
+    // A new, empty settings file running on this host (pushed onto `files`).
+    function createHostFile(files) {
+        const name = uniqueFileName(hostFileName(), files);
+        const f = { id: newFileId(), name, enabled: true, text: hostFileText(name) };
+        files.push(f);
+        return f;
+    }
+
+    // Names of the files that [use] the file named `name`.
+    function importersOf(name, files) {
+        return files
+            .filter((f) => f.name !== name && indexConfigRaw(f.text.split('\n')).use.includes(name))
+            .map((f) => f.name);
+    }
+
+    // Rewrite references to a renamed library: its [use] line and @OLD/ list refs
+    // in list and rule lines ([css] and other sections are left alone).
+    function renameImports(text, oldName, newName) {
+        let section = null;
+        const refRe = new RegExp('@' + escapeRegExp(oldName) + '/', 'gi');
+        return text
+            .split('\n')
+            .map((line) => {
+                const t = line.trim();
+                const h = sectionHeader(t);
+                if (h) {
+                    section = h.type;
+                    return line;
+                }
+                if (!t || t.startsWith('#') || t.startsWith('//')) return line;
+                if (section === 'use') return t.toLowerCase() === oldName ? line.replace(t, newName) : line;
+                if (section === 'list' || section === 'rules' || section === null)
+                    return line.replace(refRe, `@${newName}/`);
+                return line;
+            })
+            .join('\n');
+    }
+
+    // Export / import format: { format, version, exported, files: [{ name, enabled, text }] }.
+    const EXPORT_FORMAT = 'any-content-blur';
+
+    function downloadJson(filename, files) {
+        const data = {
+            format: EXPORT_FORMAT,
+            version: 1,
+            exported: new Date().toISOString(),
+            files: files.map(({ name, enabled, text }) => ({ name, enabled, text })),
+        };
+        const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        (document.body ?? document.documentElement).append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    // Parse an export file's text into [{ name, enabled, text }], or throw.
+    function parseImport(json) {
+        const data = JSON.parse(json);
+        if (data?.format !== EXPORT_FORMAT || !Array.isArray(data.files)) {
+            throw new Error('not an Any Content Blur export');
+        }
+        return data.files
+            .filter((f) => typeof f?.name === 'string' && typeof f?.text === 'string')
+            .map((f) => ({ name: f.name.trim().toLowerCase(), enabled: f.enabled !== false, text: f.text }));
+    }
+
+    // Settings dialog: a file bar (select, enabled, New/Duplicate/Rename/Delete,
+    // Import/Export) above the selected file's text. File-bar actions are stored
+    // immediately; text edits need Save (per file — leaving a file with unsaved
+    // changes asks first). The built-in reference file is read-only and never
+    // stored.
+    function openSettings(fileName) {
         document.getElementById('ucb-settings')?.remove();
         ensureUiStyles();
 
@@ -2433,7 +2853,7 @@ ${customCss || ''}
             color: '#d4d4d4',
             borderRadius: '8px',
             padding: '18px',
-            width: '760px',
+            width: '860px',
             maxWidth: '96vw',
             maxHeight: '92vh',
             overflowY: 'auto',
@@ -2446,7 +2866,7 @@ ${customCss || ''}
         const header = document.createElement('div');
         Object.assign(header.style, { display: 'flex', alignItems: 'center', margin: '0 0 6px' });
         const title = document.createElement('h3');
-        title.textContent = 'Any Content Blur — Rules';
+        title.textContent = 'Any Content Blur — Settings';
         Object.assign(title.style, { margin: '0', color: '#fff', fontSize: '15px', flex: '1' });
         const btnClose = document.createElement('button');
         btnClose.textContent = '✕';
@@ -2468,20 +2888,88 @@ ${customCss || ''}
 
         const hint = document.createElement('div');
         hint.innerHTML =
+            'Each settings file runs like its own userscript on the URLs in its ' +
+            '<code style="color:#9cdcfe">[match]</code> section (minus ' +
+            '<code style="color:#9cdcfe">[exclude]</code>); its lists and CSS are private. A file without ' +
+            '<code style="color:#9cdcfe">[match]</code> is a library: import it with ' +
+            '<code style="color:#9cdcfe">[use]</code> and reference its lists as ' +
+            '<code style="color:#9cdcfe">@LIB/NAME</code>. ' +
             'One rule per line: ' +
-            '<code style="color:#9cdcfe">url-pattern | source | patterns | action | scope | options</code>. ' +
-            'Define reusable lists with <code style="color:#9cdcfe">[list:NAME]</code> and reference them as ' +
-            '<code style="color:#9cdcfe">@NAME</code> or <code style="color:#9cdcfe">@glob*</code> — lists ' +
-            'may reference other lists (including wildcards) to compose categories. ' +
-            'Patterns: <code style="color:#9cdcfe">word</code> (whole-word), ' +
-            '<code style="color:#9cdcfe">"exact"</code>, <code style="color:#9cdcfe">/regex/</code>. ' +
-            'Sources: text, alt, title, url, user, class (matched per class name). Scope: self, up:N, ' +
-            'closest:SEL, row — append prev:N / next:N to extend the effect to sibling ' +
-            'elements (hover reveals the whole group). Actions: blur (or blur:N), plus any ' +
-            '<code style="color:#9cdcfe">.ucb-NAME</code> class you define in a ' +
-            '<code style="color:#9cdcfe">[css]</code> block. ' +
-            'See the comments in the default config for full docs.';
+            '<code style="color:#9cdcfe">url-pattern | source | patterns | action | scope | options</code> ' +
+            '(url <code style="color:#9cdcfe">*</code> = wherever the file runs). ' +
+            'Files run in name order (prefix 10-…, 50-… to order them). ● runs here · · not here · × disabled · ○ library. ' +
+            'See the read-only <code style="color:#9cdcfe">reference</code> file for full docs and examples.';
         Object.assign(hint.style, { margin: '0 0 10px', color: '#888', fontSize: '11px', lineHeight: '1.5' });
+
+        // --- file bar ---
+        const smallBtn = (label, tip) => {
+            const b = makeBtn(label, '#333', '#ccc');
+            Object.assign(b.style, { padding: '4px 9px', fontSize: '12px' });
+            b.title = tip;
+            return b;
+        };
+        const setEnabled = (btn, on) => {
+            btn.disabled = !on;
+            btn.style.opacity = on ? '1' : '0.4';
+            btn.style.cursor = on ? 'pointer' : 'default';
+        };
+        const fileBar = document.createElement('div');
+        Object.assign(fileBar.style, {
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '6px',
+            alignItems: 'center',
+            margin: '0 0 8px',
+        });
+        const fileSel = document.createElement('select');
+        Object.assign(fileSel.style, {
+            background: '#2d2d2d',
+            color: '#d4d4d4',
+            border: '1px solid #444',
+            borderRadius: '4px',
+            padding: '4px 6px',
+            fontSize: '12px',
+            fontFamily: 'monospace',
+            minWidth: '220px',
+        });
+        const enabledCb = document.createElement('input');
+        enabledCb.type = 'checkbox';
+        const enabledLabel = document.createElement('label');
+        Object.assign(enabledLabel.style, {
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            fontSize: '12px',
+            color: '#999',
+        });
+        enabledLabel.title = 'Disabled files never run (an imported library is used regardless)';
+        enabledLabel.append(enabledCb, 'enabled');
+        const btnNew = smallBtn('New', `New file running on ${location.hostname}`);
+        const btnDup = smallBtn('Duplicate', 'Copy this file (the copy starts disabled)');
+        const btnRename = smallBtn('Rename', 'Rename this file (also updates files that [use] it)');
+        const btnDelete = smallBtn('Delete', 'Delete this file');
+        const spacer = document.createElement('div');
+        spacer.style.flex = '1';
+        const btnImport = smallBtn('Import…', 'Import files from an exported .json');
+        const btnExportFile = smallBtn('Export file', 'Download this file and the libraries it uses as .json');
+        const btnExportAll = smallBtn('Export all', 'Download all settings files as .json');
+        const importInput = document.createElement('input');
+        importInput.type = 'file';
+        importInput.accept = '.json,application/json';
+        importInput.style.display = 'none';
+        fileBar.append(
+            fileSel,
+            enabledLabel,
+            btnNew,
+            btnDup,
+            btnRename,
+            btnDelete,
+            spacer,
+            btnImport,
+            btnExportFile,
+            btnExportAll,
+            importInput
+        );
 
         const textarea = document.createElement('textarea');
         Object.assign(textarea.style, {
@@ -2500,74 +2988,407 @@ ${customCss || ''}
             lineHeight: '1.6',
         });
 
-        let savedValue = '';
-        GM.getValue(STORAGE_KEY, null).then((stored) => {
-            savedValue = stored ?? DEFAULT_RULES;
-            textarea.value = savedValue;
-            textarea.scrollTop = textarea.scrollHeight;
-        });
-
-        const isDirty = () => textarea.value !== savedValue;
-        const confirmClose = () => {
-            if (isDirty() && !confirm('Discard unsaved changes to blur rules?')) return;
-            overlay.remove();
-        };
-
         const statusLine = document.createElement('div');
         Object.assign(statusLine.style, { marginTop: '6px', fontSize: '11px', color: '#888', minHeight: '16px' });
+        const setStatus = (msg, color = '#888') => {
+            statusLine.style.color = color;
+            statusLine.textContent = msg;
+        };
 
         const btnRow = document.createElement('div');
         Object.assign(btnRow.style, { display: 'flex', gap: '8px', marginTop: '10px', justifyContent: 'flex-end' });
-
-        const btnReset = makeBtn('Reset to Default', '#444', '#ccc');
         const btnValidate = makeBtn('Validate', '#3a3a3a', '#9cdcfe');
-        const btnCancel = makeBtn('Cancel', '#333', '#ccc');
+        const btnCancel = makeBtn('Close', '#333', '#ccc');
         const btnSave = makeBtn('Save', '#1f6fad');
         const btnSaveReload = makeBtn('Save & Reload', '#0e639c');
+        btnCancel.title = 'Close (Esc) — asks first if there are unsaved changes';
+        btnSave.title = 'Save this file and keep editing (Ctrl+S) — applies on next page load';
+        btnSaveReload.title = 'Save this file and reload — re-evaluates rules on the current page';
 
-        btnSave.title = 'Save — applies on next page load; current page not re-evaluated';
-        btnSaveReload.title = 'Save and reload — re-evaluates rules on the current page';
+        // --- state ---
+        const REF_ID = '\0reference'; // select value of the built-in reference file
+        let files = [];
+        let selId = REF_ID;
+        let savedValue = DEFAULT_RULES;
+        const sel = () => files.find((f) => f.id === selId) ?? null; // null = reference
+        const isDirty = () => !!sel() && textarea.value !== savedValue;
+        // In-dialog prompt for unsaved changes — a browser confirm() only offers
+        // two choices. Resolves 'save' | 'discard' | 'stay' (Esc / backdrop = stay).
+        let promptOpen = false;
+        const askUnsaved = () =>
+            new Promise((resolve) => {
+                promptOpen = true;
+                const layer = document.createElement('div');
+                Object.assign(layer.style, {
+                    position: 'fixed',
+                    inset: '0',
+                    background: 'rgba(0,0,0,0.45)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                });
+                const box = document.createElement('div');
+                Object.assign(box.style, {
+                    background: '#252526',
+                    border: '1px solid #555',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    maxWidth: '90vw',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                });
+                const msg = document.createElement('div');
+                msg.textContent = `"${sel().name}" has unsaved changes.`;
+                Object.assign(msg.style, { color: '#fff', margin: '0 0 12px' });
+                const row = document.createElement('div');
+                Object.assign(row.style, { display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'flex-end' });
+                const done = (choice) => {
+                    promptOpen = false;
+                    layer.remove();
+                    resolve(choice);
+                };
+                const bStay = makeBtn('Stay', '#333', '#ccc');
+                const bDiscard = makeBtn('Discard & continue', '#6e2a2a');
+                const bSave = makeBtn('Save & continue', '#0e639c');
+                bStay.addEventListener('click', () => done('stay'));
+                bDiscard.addEventListener('click', () => done('discard'));
+                bSave.addEventListener('click', () => done('save'));
+                layer.addEventListener('click', (e) => e.target === layer && done('stay'));
+                layer.addEventListener('keydown', (e) => {
+                    if (e.key !== 'Escape') return;
+                    e.stopPropagation();
+                    done('stay');
+                });
+                row.append(bStay, bDiscard, bSave);
+                box.append(msg, row);
+                layer.append(box);
+                overlay.append(layer);
+                bSave.focus();
+            });
+        // Before leaving the current file (switch, new, import, close): true when it
+        // is clean, was saved, or the user chose to discard. A save with errors
+        // stays (the status line shows them).
+        const proceedIfClean = async () => {
+            if (!isDirty()) return true;
+            const choice = await askUnsaved();
+            if (choice === 'save') return saveSelected();
+            return choice === 'discard';
+        };
+        const confirmClose = async () => {
+            if (await proceedIfClean()) overlay.remove();
+        };
 
-        btnReset.addEventListener('click', () => {
-            textarea.value = DEFAULT_RULES;
-            statusLine.textContent = '';
-        });
+        // Grouped by kind; within a group by name (= run order, see sortFiles).
+        // Every mark is one monospace cell so the names line up.
+        const renderSelect = () => {
+            const option = (value, mark, label) => {
+                const o = document.createElement('option');
+                o.value = value;
+                o.textContent = `${mark} ${label}`;
+                return o;
+            };
+            const group = (label, opts) => {
+                const g = document.createElement('optgroup');
+                g.label = label;
+                g.append(...opts);
+                return g;
+            };
+            const runnable = [];
+            const libs = [];
+            for (const f of sortFiles([...files])) {
+                const hdr = fileHeader(f.text);
+                if (!hdr.match.length) libs.push(option(f.id, '○', f.name));
+                else if (!f.enabled) runnable.push(option(f.id, '×', `${f.name}  (disabled)`));
+                else runnable.push(option(f.id, fileRunsOn(hdr) ? '●' : '·', f.name));
+            }
+            const groups = [];
+            if (runnable.length) groups.push(group('Files (in run order)', runnable));
+            if (libs.length) groups.push(group('Libraries', libs));
+            groups.push(group('Reference', [option(REF_ID, '≡', `${REFERENCE_NAME}  (read-only)`)]));
+            fileSel.replaceChildren(...groups);
+            fileSel.value = selId;
+        };
+        const updateControls = () => {
+            const f = sel();
+            textarea.readOnly = !f;
+            textarea.style.opacity = f ? '1' : '0.8';
+            enabledCb.checked = f?.enabled ?? false;
+            enabledCb.disabled = !f;
+            btnDup.textContent = f ? 'Duplicate' : 'Copy to new file';
+            for (const b of [btnRename, btnDelete, btnExportFile, btnValidate, btnSave, btnSaveReload])
+                setEnabled(b, !!f);
+            setEnabled(btnExportAll, files.length > 0);
+        };
+        const selectFile = (id) => {
+            selId = files.some((f) => f.id === id) ? id : REF_ID;
+            savedValue = sel()?.text ?? DEFAULT_RULES;
+            textarea.value = savedValue;
+            textarea.scrollTop = 0;
+            renderSelect();
+            updateControls();
+            if (sel()) validateInto();
+            else setStatus('Read-only reference — use "Copy to new file" to start from it.');
+        };
+        // Apply a file-bar change to the CURRENT stored files (so concurrent
+        // quick-adds are not overwritten), store it, and re-render.
+        const mutate = async (fn) => {
+            files = await getFiles();
+            const res = fn(files);
+            sortFiles(files);
+            await saveFiles(files);
+            renderSelect();
+            updateControls();
+            return res;
+        };
+        // Prompt for a valid, unused file name; null when cancelled.
+        const askName = (msg, def, except = null) => {
+            let name = def;
+            let err = '';
+            for (;;) {
+                name = prompt(err + msg, name);
+                if (name === null) return null;
+                name = name.trim().toLowerCase();
+                if (!FILE_NAME_RE.test(name)) err = `"${name}": use a-z, 0-9, _ . - (no spaces or /).\n`;
+                else if (name === REFERENCE_NAME) err = `"${name}" is reserved.\n`;
+                else if (files.some((f) => f.name === name && f.id !== except)) err = `"${name}" already exists.\n`;
+                else return name;
+            }
+        };
 
-        // Parse the textarea, render a summary + first issues into the status line,
-        // and return the number of error-severity issues. Shared by Validate + Save
-        // so a faulty config is never persisted.
-        const validateInto = (parsed = parseConfig(textarea.value)) => {
-            const errs = parsed.issues.filter((i) => i.severity === 'error');
-            const warns = parsed.issues.filter((i) => i.severity === 'warning');
+        // Parse the textarea (in the context of all files, for [use]), render a
+        // summary + first issues into the status line, and return the number of
+        // error-severity issues. Shared by Validate + Save so a faulty file is
+        // never stored. For a library, also re-checks the files importing it.
+        const validateInto = () => {
+            const f = sel();
+            if (!f) return 0;
+            const draft = { ...f, text: textarea.value };
+            const ctxFiles = files.map((x) => (x.id === f.id ? draft : x));
+            const parsed = parseFile(draft, ctxFiles);
+            const issues = [...parsed.issues];
+            const ownLists = [...parsed.lists.keys()].filter((n) => !n.includes('/')).length;
             const count = parsed.rules.length;
-            const active = parsed.rules.filter((r) => r.urlPattern.regex.test(location.href)).length;
-            const summary =
-                `${count} rule${count !== 1 ? 's' : ''}, ${parsed.lists.size} list${parsed.lists.size !== 1 ? 's' : ''}, ` +
-                `${active} match${active !== 1 ? '' : 'es'} the current URL (${location.hostname})`;
+            let summary = `${count} rule${count !== 1 ? 's' : ''}, ${ownLists} list${ownLists !== 1 ? 's' : ''}`;
+            if (parsed.isLibrary) {
+                const users = importersOf(f.name, ctxFiles);
+                summary += ` — library, used by: ${users.length ? users.join(', ') : 'none'}`;
+                const libCache = new Map();
+                for (const name of users) {
+                    const errs = parseFile(
+                        ctxFiles.find((x) => x.name === name),
+                        ctxFiles,
+                        libCache
+                    ).issues.filter((i) => i.severity === 'error').length;
+                    if (errs)
+                        issues.push({
+                            severity: 'warning',
+                            message: `importing file "${name}" has ${errs} error${errs !== 1 ? 's' : ''}`,
+                        });
+                }
+            } else {
+                if (parsed.libs.length) summary += ` (+ ${parsed.libs.map((l) => l.name).join(', ')})`;
+                const runs = f.enabled && fileRunsOn(parsed);
+                const active = runs ? parsed.rules.filter((r) => r.urlPattern.regex.test(location.href)).length : 0;
+                summary += runs
+                    ? ` — runs here, ${active} rule${active !== 1 ? 's' : ''} match ${location.hostname}`
+                    : ` — does not run on ${location.hostname}${f.enabled ? '' : ' (disabled)'}`;
+            }
+            const errs = issues.filter((i) => i.severity === 'error');
+            const warns = issues.filter((i) => i.severity === 'warning');
             const shown = (errs.length ? errs : warns).slice(0, 2);
             const detail = shown.map((i) => (i.line ? `line ${i.line}: ` : '') + i.message).join('  •  ');
-            statusLine.style.color = errs.length ? '#f14c4c' : warns.length ? '#d7ba7d' : '#4ec9b0';
-            statusLine.textContent =
+            setStatus(
                 `${errs.length} error${errs.length !== 1 ? 's' : ''}, ${warns.length} warning${warns.length !== 1 ? 's' : ''} — ${summary}.` +
-                (detail ? `  (${detail}${(errs.length || warns.length) > 2 ? ', …' : ''})` : '');
+                    (detail ? `  (${detail}${(errs.length || warns.length) > 2 ? ', …' : ''})` : ''),
+                errs.length ? '#f14c4c' : warns.length ? '#d7ba7d' : '#4ec9b0'
+            );
             return errs.length;
         };
 
-        btnValidate.addEventListener('click', () => validateInto());
-
-        btnCancel.addEventListener('click', confirmClose);
-
-        btnSave.addEventListener('click', async () => {
-            if (validateInto() > 0) return; // errors → stay in the dialog, do not persist
-            await GM.setValue(STORAGE_KEY, textarea.value);
-            overlay.remove();
-            await loadRules();
+        // --- file bar actions ---
+        fileSel.addEventListener('change', async () => {
+            const target = fileSel.value;
+            fileSel.value = selId; // stays on the current file until it is clean
+            if (await proceedIfClean()) selectFile(target);
         });
 
+        enabledCb.addEventListener('change', async () => {
+            const id = selId;
+            const on = enabledCb.checked;
+            await mutate((fs) => {
+                const f = fs.find((x) => x.id === id);
+                if (f) f.enabled = on;
+            });
+            validateInto();
+        });
+
+        btnNew.addEventListener('click', async () => {
+            if (!(await proceedIfClean())) return;
+            const name = askName('Name of the new settings file:', uniqueFileName(hostFileName(), files));
+            if (!name) return;
+            const f = { id: newFileId(), name, enabled: true, text: hostFileText(name) };
+            await mutate((fs) => fs.push(f));
+            selectFile(f.id);
+        });
+
+        btnDup.addEventListener('click', async () => {
+            if (!(await proceedIfClean())) return;
+            const src = sel();
+            const name = askName(
+                src ? `Name of the copy of "${src.name}":` : 'Name of the new settings file:',
+                uniqueFileName(src ? `${src.name}-copy` : hostFileName(), files)
+            );
+            if (!name) return;
+            // A copy of a running file starts disabled so it doesn't double every
+            // effect; a copy of the reference gets a [match] for this host.
+            const f = src
+                ? { id: newFileId(), name, enabled: false, text: src.text }
+                : {
+                      id: newFileId(),
+                      name,
+                      enabled: true,
+                      text: DEFAULT_RULES.replace(/\[rules\]\s*$/, `[match]\n*://${location.hostname}/*\n\n[rules]\n`),
+                  };
+            await mutate((fs) => fs.push(f));
+            selectFile(f.id);
+        });
+
+        btnRename.addEventListener('click', async () => {
+            const f = sel();
+            if (!f) return;
+            if (!(await proceedIfClean())) return;
+            const name = askName(`New name for "${f.name}":`, f.name, f.id);
+            if (!name || name === f.name) return;
+            const users = importersOf(f.name, files);
+            const id = f.id;
+            const old = f.name;
+            await mutate((fs) => {
+                for (const x of fs) {
+                    if (x.id === id) x.name = name;
+                    else if (users.includes(x.name)) x.text = renameImports(x.text, old, name);
+                }
+            });
+            selectFile(id);
+            if (users.length)
+                setStatus(`Renamed; updated [use] and @${old}/ references in: ${users.join(', ')}.`, '#4ec9b0');
+        });
+
+        btnDelete.addEventListener('click', async () => {
+            const f = sel();
+            if (!f) return;
+            const users = importersOf(f.name, files);
+            const msg =
+                `Delete settings file "${f.name}"? This cannot be undone — use "Export file" first to keep a copy.` +
+                (users.length ? `\n\nThese files [use] it and will report errors: ${users.join(', ')}` : '');
+            if (!confirm(msg)) return;
+            const i = files.indexOf(f);
+            await mutate((fs) =>
+                fs.splice(
+                    fs.findIndex((x) => x.id === f.id),
+                    1
+                )
+            );
+            selectFile(files[Math.min(i, files.length - 1)]?.id ?? REF_ID);
+        });
+
+        btnExportFile.addEventListener('click', () => {
+            const f = sel();
+            if (!f) return;
+            const libs = indexConfigRaw(f.text.split('\n'))
+                .use.map((n) => files.find((x) => x.name === n))
+                .filter((x) => x && !fileHeader(x.text).match.length);
+            downloadJson(`content-blur-${f.name}.json`, [f, ...new Set(libs)]);
+            setStatus(
+                `Exported "${f.name}"` +
+                    (libs.length
+                        ? ` + librar${libs.length !== 1 ? 'ies' : 'y'} ${libs.map((x) => x.name).join(', ')}`
+                        : '') +
+                    (isDirty() ? ' (stored version — unsaved changes not included)' : '') +
+                    '.',
+                '#4ec9b0'
+            );
+        });
+
+        btnExportAll.addEventListener('click', () => {
+            downloadJson(`content-blur-all-${new Date().toISOString().slice(0, 10)}.json`, files);
+            setStatus(`Exported ${files.length} file${files.length !== 1 ? 's' : ''}.`, '#4ec9b0');
+        });
+
+        btnImport.addEventListener('click', async () => {
+            if (!(await proceedIfClean())) return;
+            importInput.value = '';
+            importInput.click();
+        });
+        importInput.addEventListener('change', async () => {
+            const file = importInput.files?.[0];
+            if (!file) return;
+            let incoming;
+            try {
+                incoming = parseImport(await file.text());
+            } catch (e) {
+                setStatus(`Import failed: ${e.message}`, '#f14c4c');
+                return;
+            }
+            const counts = { added: 0, replaced: 0, unchanged: 0, skipped: [] };
+            let lastId = null;
+            await mutate((fs) => {
+                for (const inc of incoming) {
+                    if (!FILE_NAME_RE.test(inc.name) || inc.name === REFERENCE_NAME) {
+                        counts.skipped.push(inc.name);
+                        continue;
+                    }
+                    const existing = fs.find((x) => x.name === inc.name);
+                    if (existing && existing.text === inc.text) {
+                        counts.unchanged++;
+                        continue;
+                    }
+                    if (existing) {
+                        const alt = uniqueFileName(inc.name, fs);
+                        if (confirm(`"${inc.name}" already exists.\n\nOK = replace it\nCancel = import as "${alt}"`)) {
+                            Object.assign(existing, { enabled: inc.enabled, text: inc.text });
+                            counts.replaced++;
+                            lastId = existing.id;
+                            continue;
+                        }
+                        inc.name = alt;
+                    }
+                    const f = { id: newFileId(), ...inc };
+                    fs.push(f);
+                    counts.added++;
+                    lastId = f.id;
+                }
+            });
+            selectFile(lastId ?? selId);
+            setStatus(
+                `Imported: ${counts.added} added, ${counts.replaced} replaced, ${counts.unchanged} unchanged` +
+                    (counts.skipped.length ? `, skipped invalid names: ${counts.skipped.join(', ')}` : '') +
+                    ' — reload the page to apply.',
+                '#4ec9b0'
+            );
+        });
+
+        // --- save / close ---
+        btnValidate.addEventListener('click', () => validateInto());
+        btnCancel.addEventListener('click', confirmClose);
+
+        const saveSelected = async () => {
+            if (validateInto() > 0) return false; // errors → stay in the dialog, do not persist
+            const id = selId;
+            const text = textarea.value;
+            await mutate((fs) => {
+                const f = fs.find((x) => x.id === id);
+                if (f) f.text = text;
+            });
+            savedValue = text;
+            await loadRules();
+            setStatus(
+                `Saved "${sel()?.name}" — applies on next page load. ${statusLine.textContent}`,
+                statusLine.style.color
+            );
+            return true;
+        };
+        btnSave.addEventListener('click', () => saveSelected());
         btnSaveReload.addEventListener('click', async () => {
-            if (validateInto() > 0) return; // errors → stay in the dialog, do not persist
-            await GM.setValue(STORAGE_KEY, textarea.value);
-            location.reload();
+            if (await saveSelected()) location.reload();
         });
 
         // Close on backdrop click only when the press STARTED on the backdrop and
@@ -2594,14 +3415,33 @@ ${customCss || ''}
             pressedOnBackdrop = false;
         });
         overlay.addEventListener('keydown', (e) => {
+            if (promptOpen) return;
             if (e.key === 'Escape') confirmClose();
+            // Ctrl/Cmd+S saves (and keeps the dialog open) instead of the
+            // browser's "save page as".
+            if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
+                e.preventDefault();
+                e.stopPropagation();
+                if (sel()) saveSelected();
+            }
         });
 
-        btnRow.append(btnReset, btnValidate, btnCancel, btnSave, btnSaveReload);
-        panel.append(header, hint, textarea, statusLine, btnRow);
+        btnRow.append(btnValidate, btnCancel, btnSave, btnSaveReload);
+        panel.append(header, hint, fileBar, textarea, statusLine, btnRow);
         overlay.append(panel);
         (document.body ?? document.documentElement).append(overlay);
         textarea.focus();
+
+        // Initial file: the requested one, else the first enabled file running
+        // here, else the first file, else the reference.
+        getFiles().then((fs) => {
+            files = fs;
+            const pick =
+                fs.find((f) => f.name === fileName) ??
+                fs.find((f) => f.enabled && fileRunsOn(fileHeader(f.text))) ??
+                fs[0];
+            selectFile(pick?.id ?? REF_ID);
+        });
     }
 
     // -----------------------------------------------------------------------
@@ -2794,7 +3634,7 @@ ${customCss || ''}
     //  INIT
     // -----------------------------------------------------------------------
 
-    GM_registerMenuCommand(`⚙️ Content Blur Settings (${keyLabel(KEYS.openSettings)})`, openSettings);
+    GM_registerMenuCommand(`⚙️ Content Blur Settings (${keyLabel(KEYS.openSettings)})`, () => openSettings());
     GM_registerMenuCommand(
         `➕ Quick-add: ${keyLabel(KEYS.quickAddSilent)} (silent) / ${keyLabel(KEYS.quickAddPanel)} (panel)`,
         quickAddPanel

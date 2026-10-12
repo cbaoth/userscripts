@@ -40,21 +40,28 @@ See [Deprecated & Legacy Scripts](#deprecated--legacy-scripts) for older scripts
 
 [any-content-blur.user.js](any-content-blur.user.js) blurs disturbing or unwanted content on any site by configurable rules, with reveal-on-hover so you can decide whether to peek. A general, config-file-driven approach to filtering unwanted content.
 
-- A single plain-text config (one rule per line, edited in one textarea — no fiddly multi-tab GUI, no JSON export/import):
+- Plain-text **settings files** (one rule per line, edited in a textarea — no fiddly multi-tab GUI). Each file works like its own userscript: it runs on the URLs in its `[match]` section (several glob or `/regex/` lines, minus `[exclude]`), and its lists and CSS are private. One file per site or app (e.g. one regex covering all Jenkins hosts) stays small, can be toggled on/off, and can be shared on its own:
 
   ```
-[list:words_violent]
+  [match]
+  *://*/*
+
+  [list:words_violent]
   gore
   /blood(y)?/
   /murder|kill(ed|ing)?/
 
   [rules]
   # url-pattern | source | patterns | action | scope | options
-  *://*/*        | text | @words_* | blur | self | hover
+  *              | text | @words_* | blur | self | hover
   *://site.com/* | user | @users   | blur | row  | hover
   ```
 
-- **Per-rule URL patterns** (glob `*://host/*` or `/regex/flags`) — rules only run where you configure them, not globally.
+- **Libraries:** a file without `[match]` never runs by itself; other files import it with `[use]` and reference its lists as `@LIB/NAME` (its `[css]` comes along). Imports are explicit, so a file never silently depends on another.
+- **Read-only reference:** the full syntax docs and examples are a built-in, read-only `reference` file that is updated with the script ("Copy to new file" starts from it).
+- **Export / import** all files, or one file plus the libraries it uses, as a single `.json`.
+
+- **Per-rule URL patterns** (glob `*://host/*` or `/regex/flags`) narrow a file's `[match]` further; `*` means wherever the file runs.
 - **Sources:** visible `text`, image `alt`/`title`, link/image `url`, `user` (username extracted from profile-style URLs), or `class` (CSS class names, tested per class — catch marker classes like interest/genre/status icons that say more than the visible content; explicit opt-in, not part of `*`).
 - **Pattern syntax:** bare words match **whole-word and literally** (`test` ≠ `tested`), with simple `*`/`?` wildcards (`\*`/`\?` for literals). Wrap in `"…"` for an **exact full-value** match (e.g. usernames: `"mike"` ≠ `mike2`), or in `/…/` for full regex (matches as a **substring**; add `\b…\b`/`^…$` as needed). A `,` or `|` inside `"…"` is literal (not a field/token separator). Prefix any rule pattern with `!` to **exclude** (`!word`, `!/regex/`, `!@list`): a text matches only if a plain pattern matches and no `!` pattern matches that same text.
 - **Reusable pattern lists** (`[list:NAME]`, referenced as `@NAME` or `@glob*`) shared across rules. Lists can **reference other lists** by name or by glob wildcard (`@text_*` expands to every list whose name matches), and wildcards also work directly in a rule's patterns field. Duplicate fragments across overlapping lists are deduplicated automatically. Nesting up to 5 levels deep; self-references and cycles are silently skipped. Lists are the place for complex regex with alternation (e.g. `/kill(ed|ing)?/`) — inside a rule line `|` is the field separator, so inline `/regex/` tokens use commas for alternatives instead.
@@ -69,12 +76,12 @@ See [Deprecated & Legacy Scripts](#deprecated--legacy-scripts) for older scripts
   | Keys          | Action |
   |---------------|--------|
   | Alt-R         | Quick-add a blur rule from the selection/hovered link (applies immediately) |
-  | Alt-Shift-R   | Quick-add via a small panel: create a **new rule** (choose source, scope, hover), or add the value to an **existing rule** or **existing list** — the chosen destination is remembered across reloads for adding several in a row |
+  | Alt-Shift-R   | Quick-add via a small panel: create a **new rule** (choose file, source, scope, hover), or add the value to an **existing rule** or **existing list** — the chosen destination is remembered across reloads for adding several in a row |
   | Alt-A         | Quick-block: fold the selection/username into the rule/list last used via Alt-Shift-R or Alt-A (if it still applies to the page), else the first matching rule's list (or create a new rule if none matches) — one-keypress user blocking. Usernames are captured as `"name"` (exact) so similar names aren't caught |
-  | Alt-Shift-S   | Open the rules settings (edit/validate/bulk-edit) |
+  | Alt-Shift-S   | Open the settings (pick/add/rename/delete files, edit/validate/save, import/export) |
   | Hold Shift / Alt | **Peek:** temporarily suspend effects to see the page as-is (reveal blurred content, drop highlights); restores on release. Skips effects that change **layout** (e.g. a custom `hide`/resize — detected best-effort from your `[css]`, overridable per class via `--ucb-peek: on\|off`) so the page never jumps or scrolls under the cursor mid-peek. Configurable as hold-to-peek or tap-to-toggle, with a hold delay so it ignores Shift-for-capitals; ignored while typing in a field |
   | Alt-Z         | **Toggle all effects on/off** (also in the userscript menu): a persistent reveal that — unlike peek — includes layout-changing effects; stays off until toggled back on or the page reloads |
-  | Alt-Shift-D   | **Debug overlay** (also in the userscript menu): reveals all effects and outlines every affected area with a `#N` badge (rule number as ordered in the settings) plus the matched text. A corner legend maps each `#N` to its full rule line and a live hit count — click a row to open the settings. Page-local, resets on reload |
+  | Alt-Shift-D   | **Debug overlay** (also in the userscript menu): reveals all effects and outlines every affected area with a `FILE#N` badge (file name + rule number as ordered in that file) plus the matched text. A corner legend maps each badge to its full rule line and a live hit count — click a row to open that file in the settings. Page-local, resets on reload |
 
 - **Cloudflare-safe:** runs at `document-idle`, stays completely inert on pages with no matching rule, and bails on Cloudflare challenge pages (unlike some similar scripts that break the "are you human" check).
 
