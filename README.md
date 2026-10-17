@@ -58,8 +58,8 @@ See [Deprecated & Legacy Scripts](#deprecated--legacy-scripts) for older scripts
   ```
 
 - **Libraries:** a file without `[match]` never runs by itself; other files import it with `[use]` and reference its lists as `@LIB/NAME` (its `[css]` comes along). Imports are explicit, so a file never silently depends on another.
-- **Read-only reference:** the full syntax docs and examples are a built-in, read-only `reference` file that is updated with the script ("Copy to new file" starts from it).
-- **Export / import** all files, or one file plus the libraries it uses, as a single `.json`.
+- **Read-only reference:** the full syntax docs and examples are a built-in, read-only `reference` file that is updated with the script (📋 copies it into a new file).
+- **Export / import** all files, or one file plus the libraries it uses, as a single `.json`. Import shows what's new or would change and lets you keep both, replace clashing files, or restore a backup (replace all).
 
 - **Per-rule URL patterns** (glob `*://host/*` or `/regex/flags`) narrow a file's `[match]` further; `*` means wherever the file runs.
 - **Sources:** visible `text`, image `alt`/`title`, link/image `url`, `user` (username extracted from profile-style URLs), or `class` (CSS class names, tested per class — catch marker classes like interest/genre/status icons that say more than the visible content; explicit opt-in, not part of `*`).

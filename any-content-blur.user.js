@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Any Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-10-12T165403
+// @version      2026-10-12T184635
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -30,8 +30,11 @@
     const STORAGE_KEY = 'contentBlurRules';
     const FILES_KEY = 'contentBlurFiles'; // [{ id, name, enabled, text }]; run order = name order (sortFiles)
     const REFERENCE_NAME = 'reference'; // built-in read-only file (DEFAULT_RULES), never stored
-    const FILE_NAME_RE = /^[a-z0-9][a-z0-9_.-]*$/; // used in [use] and @file/list, so no / or spaces
+    const FILE_NAME_MAX = 50; // chars (names are ASCII-only, so also bytes)
+    // Used in [use] and @file/list, so no / or spaces.
+    const FILE_NAME_RE = new RegExp(`^[a-z0-9][a-z0-9_.-]{0,${FILE_NAME_MAX - 1}}$`);
     const PANEL_STATE_KEY = 'contentBlurPanelState'; // remembered quick-add destination
+    const DIALOG_STATE_KEY = 'contentBlurDialogState'; // remembered settings dialog size ({ maximized })
     const BLUR_CLASS = 'ucb-blur';
     const HOVER_CLASS = 'ucb-hover';
     const FREEZE_CLASS = 'ucb-freeze'; // pauses CSS animations inside a frozen target
@@ -137,7 +140,7 @@
 # ── Settings files ────────────────────────────────────────────────────────
 #
 # Config is split into settings files, each behaving like its own userscript.
-# Use "Copy to new file" to start from this text, or "New" for an empty file.
+# Use 📋 (copy) to start a new file from this text, or + for an empty file.
 #
 #   [match]       URL patterns (one per line, glob or /regex/, like @match) the
 #                 file runs on. All enabled files that match a page run, in
@@ -2734,22 +2737,151 @@ ${customCss || ''}
         return btn;
     }
 
-    // Settings-file name derived from this page's host (e.g. "example.com").
-    function hostFileName() {
-        return (
-            location.hostname
-                .toLowerCase()
-                .replace(/^www\./, '')
-                .replace(/[^a-z0-9_.-]+/g, '-')
-                .replace(/^[^a-z0-9]+/, '') || 'site'
-        );
+    // Coerce any string into a valid file name (FILE_NAME_RE): lowercase, runs of
+    // other characters become -, cut to FILE_NAME_MAX. '' when nothing is left.
+    function toFileName(raw) {
+        return String(raw)
+            .toLowerCase()
+            .replace(/[^a-z0-9_.-]+/g, '-')
+            .replace(/^[^a-z0-9]+/, '')
+            .slice(0, FILE_NAME_MAX);
     }
 
-    // `base`, or base-2, base-3, … — the first name no file in `files` uses.
+    // Settings-file name derived from this page's host (e.g. "example.com").
+    function hostFileName() {
+        return toFileName(location.hostname.replace(/^www\./, '')) || 'site';
+    }
+
+    // `base`, or base-2, base-3, … — the first name no file in `files` uses. The
+    // base is cut so that name + suffix stays within FILE_NAME_MAX.
     function uniqueFileName(base, files) {
-        let name = base;
-        for (let n = 2; name === REFERENCE_NAME || files.some((x) => x.name === name); n++) name = `${base}-${n}`;
+        const taken = (n) => n === REFERENCE_NAME || files.some((x) => x.name === n);
+        let name = base.slice(0, FILE_NAME_MAX);
+        for (let n = 2; taken(name); n++) name = base.slice(0, FILE_NAME_MAX - `-${n}`.length) + `-${n}`;
         return name;
+    }
+
+    // "a, b, c and 4 more" — keeps long name lists in prompts short.
+    function nameList(names, max = 8) {
+        const shown = names.slice(0, max).join(', ');
+        return names.length > max ? `${shown} and ${names.length - max} more` : shown;
+    }
+
+    // Modal prompt inside `host` (an overlay element), replacing the browser's
+    // confirm()/prompt(), which offer only two choices and can't be styled.
+    //   message  headline text
+    //   details  extra lines (plain text) shown below it
+    //   input    { value, maxLength, validate(v) → error message | null } for a
+    //            text field; Enter presses the primary button
+    //   buttons  [{ label, value, bg?, color?, primary? }], left to right
+    // Resolves { choice, value }: choice = the pressed button's value, or null
+    // for Esc / a click on the backdrop. A button with validate errors stays open.
+    function modalPrompt(host, { message, details = [], input = null, buttons }) {
+        return new Promise((resolve) => {
+            const layer = document.createElement('div');
+            Object.assign(layer.style, {
+                position: 'fixed',
+                inset: '0',
+                zIndex: '2147483647',
+                background: 'rgba(0,0,0,0.45)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+            });
+            const box = document.createElement('div');
+            Object.assign(box.style, {
+                background: '#252526',
+                color: '#d4d4d4',
+                border: '1px solid #555',
+                borderRadius: '8px',
+                padding: '16px',
+                width: '460px',
+                maxWidth: '90vw',
+                maxHeight: '80vh',
+                overflowY: 'auto',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                fontFamily: 'sans-serif',
+                fontSize: '13px',
+            });
+            const msg = document.createElement('div');
+            msg.textContent = message;
+            Object.assign(msg.style, { color: '#fff', margin: '0 0 10px', fontWeight: 'bold' });
+            box.append(msg);
+            for (const line of details) {
+                const d = document.createElement('div');
+                d.textContent = line;
+                Object.assign(d.style, { color: '#aaa', fontSize: '12px', margin: '0 0 6px', wordBreak: 'break-word' });
+                box.append(d);
+            }
+            let field = null;
+            const err = document.createElement('div');
+            Object.assign(err.style, { color: '#f14c4c', fontSize: '12px', minHeight: '16px', margin: '4px 0 0' });
+            if (input) {
+                field = document.createElement('input');
+                field.type = 'text';
+                field.value = input.value ?? '';
+                if (input.maxLength) field.maxLength = input.maxLength;
+                Object.assign(field.style, {
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: '#1e1e1e',
+                    color: '#d4d4d4',
+                    border: '1px solid #444',
+                    borderRadius: '4px',
+                    padding: '6px 8px',
+                    fontFamily: 'monospace',
+                    fontSize: '13px',
+                });
+                field.addEventListener('input', () => (err.textContent = ''));
+                box.append(field, err);
+            }
+            const row = document.createElement('div');
+            Object.assign(row.style, {
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '8px',
+                justifyContent: 'flex-end',
+                marginTop: '12px',
+            });
+            const done = (choice) => {
+                layer.remove();
+                resolve({ choice, value: field?.value.trim() });
+            };
+            let primary = null;
+            for (const b of buttons) {
+                const btn = makeBtn(b.label, b.bg ?? '#333', b.color ?? (b.bg ? '#fff' : '#ccc'));
+                btn.addEventListener('click', () => {
+                    // Only a confirming button needs a valid value; cancel always works.
+                    if (field && input.validate && b.primary) {
+                        const e = input.validate(field.value.trim());
+                        if (e) {
+                            err.textContent = e;
+                            field.focus();
+                            return;
+                        }
+                    }
+                    done(b.value);
+                });
+                if (b.primary) primary = btn;
+                row.append(btn);
+            }
+            box.append(row);
+            layer.addEventListener('click', (e) => e.target === layer && done(null));
+            layer.addEventListener('keydown', (e) => {
+                e.stopPropagation(); // the dialog's own Esc / Ctrl+S must not fire underneath
+                if (e.key === 'Escape') done(null);
+                else if (e.key === 'Enter' && e.target === field) {
+                    e.preventDefault();
+                    primary?.click();
+                }
+            });
+            layer.append(box);
+            host.append(layer);
+            if (field) {
+                field.focus();
+                field.select();
+            } else (primary ?? row.lastChild)?.focus();
+        });
     }
 
     // The text of a new settings file running on this host.
@@ -2823,7 +2955,12 @@ ${customCss || ''}
         }
         return data.files
             .filter((f) => typeof f?.name === 'string' && typeof f?.text === 'string')
-            .map((f) => ({ name: f.name.trim().toLowerCase(), enabled: f.enabled !== false, text: f.text }));
+            .map((f) => ({
+                name: toFileName(f.name.trim()) || 'imported',
+                original: f.name,
+                enabled: f.enabled !== false,
+                text: f.text,
+            }));
     }
 
     // Settings dialog: a file bar (select, enabled, New/Duplicate/Rename/Delete,
@@ -2884,7 +3021,45 @@ ${customCss || ''}
         btnClose.addEventListener('mouseenter', () => (btnClose.style.color = '#fff'));
         btnClose.addEventListener('mouseleave', () => (btnClose.style.color = '#888'));
         btnClose.addEventListener('click', () => confirmClose());
-        header.append(title, btnClose);
+
+        // Maximize / restore: maximized = almost the whole viewport height (a small
+        // margin keeps it looking like a dialog) with a wider, but capped, width —
+        // very long lines don't help an editor. Both sizes still shrink with the
+        // viewport. The choice is remembered (DIALOG_STATE_KEY).
+        const btnMax = document.createElement('button');
+        Object.assign(btnMax.style, {
+            background: 'none',
+            border: 'none',
+            color: '#888',
+            cursor: 'pointer',
+            fontSize: '15px',
+            lineHeight: '1',
+            padding: '2px 6px',
+        });
+        btnMax.addEventListener('mouseenter', () => (btnMax.style.color = '#fff'));
+        btnMax.addEventListener('mouseleave', () => (btnMax.style.color = '#888'));
+
+        // Help: an ⓘ toggle right after the title opens a popover over the editor.
+        // Click/tap toggles it (works on touch, unlike hover); its ✕ or a click
+        // anywhere else in the panel closes it. Esc stays reserved for the dialog.
+        Object.assign(title.style, { flex: '0 1 auto' });
+        const btnInfo = document.createElement('button');
+        btnInfo.textContent = 'ⓘ';
+        btnInfo.title = 'Help';
+        btnInfo.setAttribute('aria-label', 'Help');
+        btnInfo.setAttribute('aria-expanded', 'false');
+        Object.assign(btnInfo.style, {
+            background: 'none',
+            border: 'none',
+            color: '#9cdcfe',
+            cursor: 'pointer',
+            fontSize: '16px',
+            lineHeight: '1',
+            padding: '2px 6px',
+            margin: '0 auto 0 4px', // pushes the close button to the right edge
+        });
+        header.style.position = 'relative';
+        header.append(title, btnInfo, btnMax, btnClose);
 
         const hint = document.createElement('div');
         hint.innerHTML =
@@ -2897,9 +3072,54 @@ ${customCss || ''}
             'One rule per line: ' +
             '<code style="color:#9cdcfe">url-pattern | source | patterns | action | scope | options</code> ' +
             '(url <code style="color:#9cdcfe">*</code> = wherever the file runs). ' +
-            'Files run in name order (prefix 10-…, 50-… to order them). ● runs here · · not here · × disabled · ○ library. ' +
-            'See the read-only <code style="color:#9cdcfe">reference</code> file for full docs and examples.';
-        Object.assign(hint.style, { margin: '0 0 10px', color: '#888', fontSize: '11px', lineHeight: '1.5' });
+            'Files run in name order (prefix 10-…, 50-… to order them). ' +
+            'In the list: ► runs on this page · ✓ enabled (other pages) · ✗ disabled · ○ library · ≡ reference. ' +
+            'See the read-only <code style="color:#9cdcfe">reference</code> file for full docs and examples.' +
+            '<br><br>File buttons: ✅/❌ enabled/disabled (click to toggle) · + new · 📋 duplicate (or copy the ' +
+            'reference) · ✏️ rename · 🗑️ delete. □/❐ in the title bar maximizes/restores the dialog. ' +
+            'Save keeps the dialog open (Ctrl+S); Save &amp; Reload re-applies the rules to this page.';
+        Object.assign(hint.style, { color: '#bbb', fontSize: '12px', lineHeight: '1.55', paddingRight: '18px' });
+        const helpPop = document.createElement('div');
+        Object.assign(helpPop.style, {
+            display: 'none',
+            position: 'absolute',
+            top: '100%',
+            left: '0',
+            right: '0',
+            zIndex: '1',
+            marginTop: '6px',
+            background: '#2d2d2d',
+            border: '1px solid #555',
+            borderRadius: '6px',
+            padding: '10px 12px',
+            boxShadow: '0 6px 20px rgba(0,0,0,0.6)',
+        });
+        const helpClose = document.createElement('button');
+        helpClose.textContent = '✕';
+        helpClose.title = 'Close help';
+        helpClose.setAttribute('aria-label', 'Close help');
+        Object.assign(helpClose.style, {
+            position: 'absolute',
+            top: '6px',
+            right: '6px',
+            background: 'none',
+            border: 'none',
+            color: '#888',
+            cursor: 'pointer',
+            fontSize: '13px',
+            padding: '2px 4px',
+        });
+        helpPop.append(hint, helpClose);
+        header.append(helpPop);
+        const showHelp = (on) => {
+            helpPop.style.display = on ? 'block' : 'none';
+            btnInfo.setAttribute('aria-expanded', String(on));
+        };
+        btnInfo.addEventListener('click', () => showHelp(helpPop.style.display === 'none'));
+        helpClose.addEventListener('click', () => showHelp(false));
+        panel.addEventListener('pointerdown', (e) => {
+            if (!helpPop.contains(e.target) && e.target !== btnInfo) showHelp(false);
+        });
 
         // --- file bar ---
         const smallBtn = (label, tip) => {
@@ -2930,44 +3150,58 @@ ${customCss || ''}
             padding: '4px 6px',
             fontSize: '12px',
             fontFamily: 'monospace',
-            minWidth: '220px',
+            // Fixed width so the buttons never shift with the selected name; a
+            // longer name is cut off here (full name in the tooltip) while the
+            // open list is as wide as its longest entry.
+            width: '32ch',
+            maxWidth: '100%',
         });
-        const enabledCb = document.createElement('input');
-        enabledCb.type = 'checkbox';
-        const enabledLabel = document.createElement('label');
-        Object.assign(enabledLabel.style, {
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            fontSize: '12px',
-            color: '#999',
-        });
-        enabledLabel.title = 'Disabled files never run (an imported library is used regardless)';
-        enabledLabel.append(enabledCb, 'enabled');
-        const btnNew = smallBtn('New', `New file running on ${location.hostname}`);
-        const btnDup = smallBtn('Duplicate', 'Copy this file (the copy starts disabled)');
-        const btnRename = smallBtn('Rename', 'Rename this file (also updates files that [use] it)');
-        const btnDelete = smallBtn('Delete', 'Delete this file');
+        // Enabled toggle for the selected file (the list marks show it for all).
+        const btnEnabled = smallBtn('✅', '');
+        btnEnabled.setAttribute('aria-pressed', 'true');
+        const btnNew = smallBtn('+', `New file running on ${location.hostname}`);
+        // A plain colored glyph: the gray ➕ emoji looked like a disabled button.
+        Object.assign(btnNew.style, { color: '#4ec9b0', fontWeight: 'bold', fontSize: '17px' });
+        const btnDup = smallBtn('📋', 'Duplicate this file (the copy starts disabled)');
+        const btnRename = smallBtn('✏️', 'Rename this file (also updates files that [use] it)');
+        const btnDelete = smallBtn('🗑️', 'Delete this file');
+        // Icon buttons share one fixed box, whatever their glyph's size.
+        for (const [b, label] of [
+            [btnEnabled, 'Enabled'],
+            [btnNew, 'New file'],
+            [btnDup, 'Duplicate file'],
+            [btnRename, 'Rename file'],
+            [btnDelete, 'Delete file'],
+        ]) {
+            b.setAttribute('aria-label', label);
+            Object.assign(b.style, {
+                width: '34px',
+                height: '28px',
+                padding: '0',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                lineHeight: '1',
+            });
+        }
         const spacer = document.createElement('div');
         spacer.style.flex = '1';
         const btnImport = smallBtn('Import…', 'Import files from an exported .json');
-        const btnExportFile = smallBtn('Export file', 'Download this file and the libraries it uses as .json');
-        const btnExportAll = smallBtn('Export all', 'Download all settings files as .json');
+        const btnExport = smallBtn('Export…', 'Download this file (+ the libraries it uses) or all files as .json');
         const importInput = document.createElement('input');
         importInput.type = 'file';
         importInput.accept = '.json,application/json';
         importInput.style.display = 'none';
         fileBar.append(
             fileSel,
-            enabledLabel,
+            btnEnabled,
             btnNew,
             btnDup,
             btnRename,
             btnDelete,
             spacer,
             btnImport,
-            btnExportFile,
-            btnExportAll,
+            btnExport,
             importInput
         );
 
@@ -3007,63 +3241,26 @@ ${customCss || ''}
 
         // --- state ---
         const REF_ID = '\0reference'; // select value of the built-in reference file
+        const COLOR_ON = '#5cb85c'; // enabled files in the list
+        const COLOR_OFF = '#e5534b'; // disabled files in the list
         let files = [];
         let selId = REF_ID;
         let savedValue = DEFAULT_RULES;
         const sel = () => files.find((f) => f.id === selId) ?? null; // null = reference
         const isDirty = () => !!sel() && textarea.value !== savedValue;
-        // In-dialog prompt for unsaved changes — a browser confirm() only offers
-        // two choices. Resolves 'save' | 'discard' | 'stay' (Esc / backdrop = stay).
-        let promptOpen = false;
-        const askUnsaved = () =>
-            new Promise((resolve) => {
-                promptOpen = true;
-                const layer = document.createElement('div');
-                Object.assign(layer.style, {
-                    position: 'fixed',
-                    inset: '0',
-                    background: 'rgba(0,0,0,0.45)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                });
-                const box = document.createElement('div');
-                Object.assign(box.style, {
-                    background: '#252526',
-                    border: '1px solid #555',
-                    borderRadius: '8px',
-                    padding: '16px',
-                    maxWidth: '90vw',
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-                });
-                const msg = document.createElement('div');
-                msg.textContent = `"${sel().name}" has unsaved changes.`;
-                Object.assign(msg.style, { color: '#fff', margin: '0 0 12px' });
-                const row = document.createElement('div');
-                Object.assign(row.style, { display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'flex-end' });
-                const done = (choice) => {
-                    promptOpen = false;
-                    layer.remove();
-                    resolve(choice);
-                };
-                const bStay = makeBtn('Stay', '#333', '#ccc');
-                const bDiscard = makeBtn('Discard & continue', '#6e2a2a');
-                const bSave = makeBtn('Save & continue', '#0e639c');
-                bStay.addEventListener('click', () => done('stay'));
-                bDiscard.addEventListener('click', () => done('discard'));
-                bSave.addEventListener('click', () => done('save'));
-                layer.addEventListener('click', (e) => e.target === layer && done('stay'));
-                layer.addEventListener('keydown', (e) => {
-                    if (e.key !== 'Escape') return;
-                    e.stopPropagation();
-                    done('stay');
-                });
-                row.append(bStay, bDiscard, bSave);
-                box.append(msg, row);
-                layer.append(box);
-                overlay.append(layer);
-                bSave.focus();
+        // Unsaved changes: three choices, so a browser confirm() won't do.
+        // Resolves 'save' | 'discard' | 'stay' (Esc / backdrop = stay).
+        const askUnsaved = async () => {
+            const { choice } = await modalPrompt(overlay, {
+                message: `"${sel().name}" has unsaved changes.`,
+                buttons: [
+                    { label: 'Stay', value: 'stay' },
+                    { label: 'Discard & continue', value: 'discard', bg: '#6e2a2a' },
+                    { label: 'Save & continue', value: 'save', bg: '#0e639c', primary: true },
+                ],
             });
+            return choice ?? 'stay';
+        };
         // Before leaving the current file (switch, new, import, close): true when it
         // is clean, was saved, or the user chose to discard. A save with errors
         // stays (the status line shows them).
@@ -3080,15 +3277,19 @@ ${customCss || ''}
         // Grouped by kind; within a group by name (= run order, see sortFiles).
         // Every mark is one monospace cell so the names line up.
         const renderSelect = () => {
-            const option = (value, mark, label) => {
+            // Colors match the ✅/❌ toggle. A native option can only be colored as
+            // a whole (not just its mark); mobile pickers may ignore the color.
+            const option = (value, mark, label, color = '#d4d4d4') => {
                 const o = document.createElement('option');
                 o.value = value;
                 o.textContent = `${mark} ${label}`;
+                o.style.color = color;
                 return o;
             };
             const group = (label, opts) => {
                 const g = document.createElement('optgroup');
                 g.label = label;
+                g.style.color = '#999'; // not the select's (selection-colored) text color
                 g.append(...opts);
                 return g;
             };
@@ -3097,26 +3298,42 @@ ${customCss || ''}
             for (const f of sortFiles([...files])) {
                 const hdr = fileHeader(f.text);
                 if (!hdr.match.length) libs.push(option(f.id, '○', f.name));
-                else if (!f.enabled) runnable.push(option(f.id, '×', `${f.name}  (disabled)`));
-                else runnable.push(option(f.id, fileRunsOn(hdr) ? '●' : '·', f.name));
+                else if (!f.enabled) runnable.push(option(f.id, '✗', f.name, COLOR_OFF));
+                else runnable.push(option(f.id, fileRunsOn(hdr) ? '►' : '✓', f.name, COLOR_ON));
             }
             const groups = [];
             if (runnable.length) groups.push(group('Files (in run order)', runnable));
             if (libs.length) groups.push(group('Libraries', libs));
-            groups.push(group('Reference', [option(REF_ID, '≡', `${REFERENCE_NAME}  (read-only)`)]));
+            groups.push(group('Reference', [option(REF_ID, '≡', `${REFERENCE_NAME}  (read-only)`, '#999')]));
             fileSel.replaceChildren(...groups);
             fileSel.value = selId;
+            // The closed select shows the selected entry in its color too.
+            fileSel.style.color = fileSel.selectedOptions[0]?.style.color ?? '#d4d4d4';
+            fileSel.title = sel()?.name ?? `${REFERENCE_NAME} (read-only)`;
         };
         const updateControls = () => {
             const f = sel();
             textarea.readOnly = !f;
             textarea.style.opacity = f ? '1' : '0.8';
-            enabledCb.checked = f?.enabled ?? false;
-            enabledCb.disabled = !f;
-            btnDup.textContent = f ? 'Duplicate' : 'Copy to new file';
-            for (const b of [btnRename, btnDelete, btnExportFile, btnValidate, btnSave, btnSaveReload])
-                setEnabled(b, !!f);
-            setEnabled(btnExportAll, files.length > 0);
+            // Libraries ignore the flag (an imported library is always used), so
+            // the toggle only applies to files with [match].
+            const lib = f && !fileHeader(f.text).match.length;
+            const on = !!f?.enabled;
+            btnEnabled.textContent = on || !f || lib ? '✅' : '❌';
+            btnEnabled.setAttribute('aria-pressed', String(on));
+            btnEnabled.title = !f
+                ? 'The reference never runs'
+                : lib
+                  ? 'Library: always used by the files that [use] it (no enabled flag)'
+                  : on
+                    ? 'Enabled — click to disable'
+                    : 'Disabled — click to enable';
+            setEnabled(btnEnabled, !!f && !lib);
+            btnDup.title = f
+                ? 'Duplicate this file (the copy starts disabled)'
+                : 'Copy the reference into a new file for this host';
+            for (const b of [btnRename, btnDelete, btnValidate, btnSave, btnSaveReload]) setEnabled(b, !!f);
+            setEnabled(btnExport, files.length > 0);
         };
         const selectFile = (id) => {
             selId = files.some((f) => f.id === id) ? id : REF_ID;
@@ -3126,7 +3343,7 @@ ${customCss || ''}
             renderSelect();
             updateControls();
             if (sel()) validateInto();
-            else setStatus('Read-only reference — use "Copy to new file" to start from it.');
+            else setStatus('Read-only reference — use 📋 to copy it into a new file.');
         };
         // Apply a file-bar change to the CURRENT stored files (so concurrent
         // quick-adds are not overwritten), store it, and re-render.
@@ -3139,19 +3356,29 @@ ${customCss || ''}
             updateControls();
             return res;
         };
-        // Prompt for a valid, unused file name; null when cancelled.
-        const askName = (msg, def, except = null) => {
-            let name = def;
-            let err = '';
-            for (;;) {
-                name = prompt(err + msg, name);
-                if (name === null) return null;
-                name = name.trim().toLowerCase();
-                if (!FILE_NAME_RE.test(name)) err = `"${name}": use a-z, 0-9, _ . - (no spaces or /).\n`;
-                else if (name === REFERENCE_NAME) err = `"${name}" is reserved.\n`;
-                else if (files.some((f) => f.name === name && f.id !== except)) err = `"${name}" already exists.\n`;
-                else return name;
-            }
+        // Prompt for a valid, unused file name; null when cancelled. The field is
+        // capped at FILE_NAME_MAX; the name is lowercased before checking.
+        const askName = async (message, def, except = null) => {
+            const { choice, value } = await modalPrompt(overlay, {
+                message,
+                details: [`a-z, 0-9, _ . - (no spaces or /), up to ${FILE_NAME_MAX} characters.`],
+                input: {
+                    value: def,
+                    maxLength: FILE_NAME_MAX,
+                    validate: (v) => {
+                        const name = v.toLowerCase();
+                        if (!FILE_NAME_RE.test(name)) return 'Use a-z, 0-9, _ . - and start with a letter or digit.';
+                        if (name === REFERENCE_NAME) return `"${name}" is reserved.`;
+                        if (files.some((f) => f.name === name && f.id !== except)) return `"${name}" already exists.`;
+                        return null;
+                    },
+                },
+                buttons: [
+                    { label: 'Cancel', value: null },
+                    { label: 'OK', value: 'ok', bg: '#0e639c', primary: true },
+                ],
+            });
+            return choice === 'ok' ? value.toLowerCase() : null;
         };
 
         // Parse the textarea (in the context of all files, for [use]), render a
@@ -3211,19 +3438,18 @@ ${customCss || ''}
             if (await proceedIfClean()) selectFile(target);
         });
 
-        enabledCb.addEventListener('change', async () => {
+        btnEnabled.addEventListener('click', async () => {
             const id = selId;
-            const on = enabledCb.checked;
             await mutate((fs) => {
                 const f = fs.find((x) => x.id === id);
-                if (f) f.enabled = on;
+                if (f) f.enabled = !f.enabled;
             });
             validateInto();
         });
 
         btnNew.addEventListener('click', async () => {
             if (!(await proceedIfClean())) return;
-            const name = askName('Name of the new settings file:', uniqueFileName(hostFileName(), files));
+            const name = await askName('Name of the new settings file:', uniqueFileName(hostFileName(), files));
             if (!name) return;
             const f = { id: newFileId(), name, enabled: true, text: hostFileText(name) };
             await mutate((fs) => fs.push(f));
@@ -3233,7 +3459,7 @@ ${customCss || ''}
         btnDup.addEventListener('click', async () => {
             if (!(await proceedIfClean())) return;
             const src = sel();
-            const name = askName(
+            const name = await askName(
                 src ? `Name of the copy of "${src.name}":` : 'Name of the new settings file:',
                 uniqueFileName(src ? `${src.name}-copy` : hostFileName(), files)
             );
@@ -3256,7 +3482,7 @@ ${customCss || ''}
             const f = sel();
             if (!f) return;
             if (!(await proceedIfClean())) return;
-            const name = askName(`New name for "${f.name}":`, f.name, f.id);
+            const name = await askName(`New name for "${f.name}":`, f.name, f.id);
             if (!name || name === f.name) return;
             const users = importersOf(f.name, files);
             const id = f.id;
@@ -3276,10 +3502,18 @@ ${customCss || ''}
             const f = sel();
             if (!f) return;
             const users = importersOf(f.name, files);
-            const msg =
-                `Delete settings file "${f.name}"? This cannot be undone — use "Export file" first to keep a copy.` +
-                (users.length ? `\n\nThese files [use] it and will report errors: ${users.join(', ')}` : '');
-            if (!confirm(msg)) return;
+            const { choice } = await modalPrompt(overlay, {
+                message: `Delete settings file "${f.name}"?`,
+                details: [
+                    'This cannot be undone — use Export… first to keep a copy.',
+                    ...(users.length ? [`These files [use] it and will report errors: ${nameList(users)}`] : []),
+                ],
+                buttons: [
+                    { label: 'Cancel', value: null, primary: true },
+                    { label: 'Delete', value: 'delete', bg: '#6e2a2a' },
+                ],
+            });
+            if (choice !== 'delete') return;
             const i = files.indexOf(f);
             await mutate((fs) =>
                 fs.splice(
@@ -3290,27 +3524,45 @@ ${customCss || ''}
             selectFile(files[Math.min(i, files.length - 1)]?.id ?? REF_ID);
         });
 
-        btnExportFile.addEventListener('click', () => {
-            const f = sel();
-            if (!f) return;
-            const libs = indexConfigRaw(f.text.split('\n'))
-                .use.map((n) => files.find((x) => x.name === n))
+        // Libraries a file imports (existing files without [match]).
+        const libsOf = (f) =>
+            [...new Set(indexConfigRaw(f.text.split('\n')).use)]
+                .map((n) => files.find((x) => x.name === n))
                 .filter((x) => x && !fileHeader(x.text).match.length);
-            downloadJson(`content-blur-${f.name}.json`, [f, ...new Set(libs)]);
-            setStatus(
-                `Exported "${f.name}"` +
-                    (libs.length
-                        ? ` + librar${libs.length !== 1 ? 'ies' : 'y'} ${libs.map((x) => x.name).join(', ')}`
-                        : '') +
-                    (isDirty() ? ' (stored version — unsaved changes not included)' : '') +
-                    '.',
-                '#4ec9b0'
-            );
-        });
 
-        btnExportAll.addEventListener('click', () => {
-            downloadJson(`content-blur-all-${new Date().toISOString().slice(0, 10)}.json`, files);
-            setStatus(`Exported ${files.length} file${files.length !== 1 ? 's' : ''}.`, '#4ec9b0');
+        btnExport.addEventListener('click', async () => {
+            const f = sel();
+            const libs = f ? libsOf(f) : [];
+            const { choice } = await modalPrompt(overlay, {
+                message: 'Export settings as .json',
+                details: [
+                    ...(f
+                        ? [
+                              `This file: "${f.name}"` +
+                                  (libs.length
+                                      ? ` + the libraries it uses (${nameList(libs.map((x) => x.name))})`
+                                      : '') +
+                                  (isDirty() ? ' — stored version, unsaved changes are not included' : ''),
+                          ]
+                        : []),
+                    `All files: ${files.length} (${nameList(files.map((x) => x.name))})`,
+                ],
+                buttons: [
+                    { label: 'Cancel', value: null },
+                    ...(f ? [{ label: 'This file', value: 'file', bg: '#1f6fad', primary: true }] : []),
+                    { label: 'All files', value: 'all', bg: '#1f6fad', primary: !f },
+                ],
+            });
+            if (choice === 'file') {
+                downloadJson(`content-blur-${f.name}.json`, [f, ...libs]);
+                setStatus(
+                    `Exported "${f.name}"${libs.length ? ` + ${libs.length} librar${libs.length !== 1 ? 'ies' : 'y'}` : ''}.`,
+                    '#4ec9b0'
+                );
+            } else if (choice === 'all') {
+                downloadJson(`content-blur-all-${new Date().toISOString().slice(0, 10)}.json`, files);
+                setStatus(`Exported ${files.length} file${files.length !== 1 ? 's' : ''}.`, '#4ec9b0');
+            }
         });
 
         btnImport.addEventListener('click', async () => {
@@ -3318,6 +3570,12 @@ ${customCss || ''}
             importInput.value = '';
             importInput.click();
         });
+        // Import: show what the file contains compared to the stored files, then
+        // let the user pick how to handle names that already exist:
+        //   keep both    existing files stay; clashing imports get a -2, -3 … suffix
+        //   replace      clashing files are overwritten by the imported version
+        //   replace all  restore a backup: afterwards exactly the imported files exist
+        // Identical files (same name + text) are skipped in the first two modes.
         importInput.addEventListener('change', async () => {
             const file = importInput.files?.[0];
             if (!file) return;
@@ -3328,30 +3586,73 @@ ${customCss || ''}
                 setStatus(`Import failed: ${e.message}`, '#f14c4c');
                 return;
             }
-            const counts = { added: 0, replaced: 0, unchanged: 0, skipped: [] };
+            if (!incoming.length) {
+                setStatus('Import: the file contains no settings files.', '#d7ba7d');
+                return;
+            }
+            // Names unique within the import itself (reserved/duplicate → suffixed).
+            const seen = [];
+            for (const inc of incoming) {
+                inc.name = uniqueFileName(inc.name, seen);
+                seen.push(inc);
+            }
+            const renamed = incoming.filter((x) => x.name !== x.original);
+            const isNew = incoming.filter((x) => !files.some((f) => f.name === x.name));
+            const same = incoming.filter((x) => files.some((f) => f.name === x.name && f.text === x.text));
+            const clash = incoming.filter((x) => files.some((f) => f.name === x.name && f.text !== x.text));
+            const dropped = files.filter((f) => !incoming.some((x) => x.name === f.name));
+            const names = (list) => nameList(list.map((x) => x.name));
+            const { choice } = await modalPrompt(overlay, {
+                message: `Import ${incoming.length} file${incoming.length !== 1 ? 's' : ''} from "${file.name}"`,
+                details: [
+                    ...(isNew.length ? [`New: ${names(isNew)}`] : []),
+                    ...(clash.length ? [`Already exist with different content: ${names(clash)}`] : []),
+                    ...(same.length ? [`Identical, skipped: ${names(same)}`] : []),
+                    ...(renamed.length
+                        ? [
+                              'Names changed (invalid, too long or duplicate): ' +
+                                  nameList(
+                                      renamed.map((x) => `"${x.original}" → ${x.name}`),
+                                      5
+                                  ),
+                          ]
+                        : []),
+                    'Replace all = restore a backup: afterwards exactly the imported files exist' +
+                        (dropped.length ? `; deletes ${dropped.length} not in the import (${names(dropped)}).` : '.'),
+                ],
+                buttons: [
+                    { label: 'Cancel', value: null },
+                    { label: 'Replace all', value: 'all', bg: '#6e2a2a' },
+                    ...(clash.length
+                        ? [
+                              { label: 'Replace existing', value: 'replace', bg: '#8a5a00' },
+                              { label: 'Keep both', value: 'copy', bg: '#0e639c', primary: true },
+                          ]
+                        : isNew.length
+                          ? [{ label: 'Import', value: 'copy', bg: '#0e639c', primary: true }]
+                          : []),
+                ],
+            });
+            if (!choice) return;
+            const counts = { added: 0, replaced: 0 };
             let lastId = null;
             await mutate((fs) => {
+                if (choice === 'all') fs.splice(0, fs.length);
                 for (const inc of incoming) {
-                    if (!FILE_NAME_RE.test(inc.name) || inc.name === REFERENCE_NAME) {
-                        counts.skipped.push(inc.name);
-                        continue;
-                    }
                     const existing = fs.find((x) => x.name === inc.name);
-                    if (existing && existing.text === inc.text) {
-                        counts.unchanged++;
+                    if (existing && existing.text === inc.text) continue;
+                    if (existing && choice === 'replace') {
+                        Object.assign(existing, { enabled: inc.enabled, text: inc.text });
+                        counts.replaced++;
+                        lastId = existing.id;
                         continue;
                     }
-                    if (existing) {
-                        const alt = uniqueFileName(inc.name, fs);
-                        if (confirm(`"${inc.name}" already exists.\n\nOK = replace it\nCancel = import as "${alt}"`)) {
-                            Object.assign(existing, { enabled: inc.enabled, text: inc.text });
-                            counts.replaced++;
-                            lastId = existing.id;
-                            continue;
-                        }
-                        inc.name = alt;
-                    }
-                    const f = { id: newFileId(), ...inc };
+                    const f = {
+                        id: newFileId(),
+                        name: existing ? uniqueFileName(inc.name, fs) : inc.name,
+                        enabled: inc.enabled,
+                        text: inc.text,
+                    };
                     fs.push(f);
                     counts.added++;
                     lastId = f.id;
@@ -3359,8 +3660,9 @@ ${customCss || ''}
             });
             selectFile(lastId ?? selId);
             setStatus(
-                `Imported: ${counts.added} added, ${counts.replaced} replaced, ${counts.unchanged} unchanged` +
-                    (counts.skipped.length ? `, skipped invalid names: ${counts.skipped.join(', ')}` : '') +
+                (choice === 'all'
+                    ? `Restored ${incoming.length} file${incoming.length !== 1 ? 's' : ''} (all others deleted)`
+                    : `Imported: ${counts.added} added, ${counts.replaced} replaced, ${same.length} identical skipped`) +
                     ' — reload the page to apply.',
                 '#4ec9b0'
             );
@@ -3415,7 +3717,6 @@ ${customCss || ''}
             pressedOnBackdrop = false;
         });
         overlay.addEventListener('keydown', (e) => {
-            if (promptOpen) return;
             if (e.key === 'Escape') confirmClose();
             // Ctrl/Cmd+S saves (and keeps the dialog open) instead of the
             // browser's "save page as".
@@ -3426,8 +3727,56 @@ ${customCss || ''}
             }
         });
 
+        // Maximized: a flex column whose textarea takes the remaining height. Sizes
+        // are px/vw, not rem: rem follows the PAGE's root font size (often 10px),
+        // so 70rem came out narrower than the restored dialog on some sites. The
+        // max() keeps maximized at least as wide as restored (860px + padding).
+        let maximized = false;
+        const applySize = (max) => {
+            maximized = max;
+            Object.assign(
+                panel.style,
+                max
+                    ? {
+                          width: 'max(min(1100px, calc(100vw - 16px)), min(896px, 96vw))',
+                          maxWidth: 'max(calc(100vw - 16px), 96vw)',
+                          height: 'calc(100vh - 16px)',
+                          maxHeight: 'calc(100vh - 16px)',
+                          boxSizing: 'border-box',
+                          display: 'flex',
+                          flexDirection: 'column',
+                      }
+                    : {
+                          width: '860px',
+                          maxWidth: '96vw',
+                          height: '',
+                          maxHeight: '92vh',
+                          boxSizing: '',
+                          display: '',
+                          flexDirection: '',
+                      }
+            );
+            // dvh follows mobile browser toolbars; ignored (vh kept) where unsupported.
+            if (max) panel.style.height = panel.style.maxHeight = 'calc(100dvh - 16px)';
+            Object.assign(
+                textarea.style,
+                max
+                    ? { height: 'auto', flex: '1 1 auto', minHeight: '160px', resize: 'none' }
+                    : { height: '420px', flex: '', minHeight: '', resize: 'vertical' }
+            );
+            btnMax.textContent = max ? '❐' : '□';
+            btnMax.title = max ? 'Restore size' : 'Maximize';
+            btnMax.setAttribute('aria-label', btnMax.title);
+        };
+        btnMax.addEventListener('click', () => {
+            applySize(!maximized);
+            GM.setValue(DIALOG_STATE_KEY, { maximized });
+        });
+        applySize(false);
+        GM.getValue(DIALOG_STATE_KEY, null).then((st) => st?.maximized && applySize(true));
+
         btnRow.append(btnValidate, btnCancel, btnSave, btnSaveReload);
-        panel.append(header, hint, fileBar, textarea, statusLine, btnRow);
+        panel.append(header, fileBar, textarea, statusLine, btnRow);
         overlay.append(panel);
         (document.body ?? document.documentElement).append(overlay);
         textarea.focus();
