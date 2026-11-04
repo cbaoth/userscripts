@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Any Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-10-12T184635
+// @version      2026-11-04
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -182,7 +182,10 @@
 #                 Wildcards (* / ?) are supported in list names: @text_* expands
 #                 to every list whose name matches that glob. This works both in
 #                 rule patterns and in list entries. Imported library lists
-#                 are named LIB/NAME, so @* matches them too.
+#                 are named LIB/NAME, so @* matches them too. [...] matches one
+#                 char from a set: with lists named LANG.TOPIC.LEVEL,
+#                 @words/*.sexual.[34] takes levels 3+4 of every language,
+#                 @words/de.*.[!1] everything German except level 1.
 #                 A line starting with @ is always a list reference — to match a
 #                 literal "@foo" use a regex, e.g. /^@foo$/ or /@foo/.
 #
@@ -235,9 +238,13 @@
 # patterns      Comma list of:
 #                 @NAME       reference a [list:NAME] block
 #                 word        literal, WHOLE-WORD match (auto-escaped): test
-#                             matches the word "test" but not "tested". Spaces are
-#                             literal (foo bar). Wildcards: * = any run, ? = one
-#                             char; write \\* \\? for a literal * or ?.
+#                             matches the word "test" but not "tested". Word edges
+#                             count letters incl. umlauts/accents, so digits and _
+#                             separate words (test_1 matches, Fußballs does not
+#                             match balls). A space matches whitespace, . _ - or
+#                             nothing: foo bar also matches foo-bar and foobar.
+#                             Wildcards: * = any run, ? = one char; write \\* \\?
+#                             for a literal * or ?.
 #                 "text"      EXACT full-value match (^...$): "mike" matches only
 #                             the whole value "mike", not "mike2". Wildcards still
 #                             work inside; \\" is a literal quote.
@@ -301,6 +308,14 @@
 #                                 container without any counted text is skipped.
 #                                 Runs after the normal rules, and like any rule
 #                                 skips an element an earlier rule already took.
+#                 partial         plain words of 4+ letters also match INSIDE
+#                                 other words (rape → rapemonster, but also grape) —
+#                                 for usernames, which have no spaces. partial:N sets
+#                                 the minimum (shorter words keep their edges, so
+#                                 ass never hits classic). Cancel known false hits
+#                                 with excludes: rape, !grape*. Too broad for normal
+#                                 text. The user source also splits camelCase
+#                                 (xXRapeMonsterXx), with or without partial.
 #                 in:SELECTOR     only match inside elements matching this CSS
 #                                 selector (the matched text / attribute element
 #                                 must have such an ancestor, or be one). Limits
@@ -477,13 +492,30 @@
         if (issues) issues.push({ line: lineNum, severity, message });
     }
 
-    // Convert a list-name glob (with * and ?) into a RegExp anchored to the full name.
+    // Convert a list-name glob into a RegExp anchored to the full name: * = any run,
+    // ? = one char, [abc] / [2-4] / [!x] = one char from (or, with !, not from) a set.
+    function isListNameGlob(name) {
+        return /[*?[]/.test(name);
+    }
     function listNameGlobToRegex(glob) {
-        const escaped = glob
-            .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-            .replace(/\*/g, '.*')
-            .replace(/\?/g, '.');
-        return new RegExp('^' + escaped + '$', 'i');
+        let src = '';
+        for (let i = 0; i < glob.length; i++) {
+            const c = glob[i];
+            const close = c === '[' ? glob.indexOf(']', i + 2) : -1;
+            if (close !== -1) {
+                let set = glob.slice(i + 1, close).replace(/\\/g, '\\\\');
+                if (set[0] === '!') set = '^' + set.slice(1);
+                src += '[' + set + ']';
+                i = close;
+            } else if (c === '*') src += '.*';
+            else if (c === '?') src += '.';
+            else src += escapeRegExp(c);
+        }
+        try {
+            return new RegExp('^' + src + '$', 'i');
+        } catch {
+            return /(?!)/; // invalid set such as [4-2]: matches nothing (caller warns)
+        }
     }
 
     // Glob (with *) or /regex/flags → { regex }. Mirrors any-image-resizer.
@@ -512,13 +544,29 @@
     //  CONFIG PARSING
     // -----------------------------------------------------------------------
 
-    function isWordChar(c) {
-        return /\w/.test(c);
+    // Word edges count LETTERS only — ASCII + Latin-1 + Latin Extended-A/B, so
+    // umlauts, ß and accents are part of a word. (JS \b only knows ASCII \w: it let
+    // "balls" match inside "Fußballs".) Digits and _ separate words for a letter
+    // edge ("rape_monster", "rape69"); a digit edge is only bounded by digits.
+    const LETTER_CLASS = '[A-Za-zÀ-ÖØ-öø-ɏ]';
+    const LETTER_RE = new RegExp(LETTER_CLASS);
+    const LETTERS_RE = new RegExp(LETTER_CLASS, 'g');
+    const EDGE_CLASS = { letter: LETTER_CLASS, digit: '[0-9]' };
+    // A space in a literal: any whitespace, . _ - or nothing (bring dich um also
+    // matches bring-dich-um and bringdichum).
+    const LITERAL_SPACE = '[\\s._-]{0,3}';
+    const PARTIAL_MIN_LETTERS = 4; // default N of the partial[:N] option
+
+    function edgeKind(c) {
+        if (!c) return '';
+        if (LETTER_RE.test(c)) return 'letter';
+        return /[0-9]/.test(c) ? 'digit' : '';
     }
 
     // Body of a literal pattern (no anchors/boundaries): escape regex specials,
-    // expand the simplified wildcards (* = any run, ? = one char), and honor
-    // \* \? \\ \" \/ \! as the literal characters. The caller decides anchoring.
+    // expand the simplified wildcards (* = any run, ? = one char), honor
+    // \* \? \\ \" \/ \! as the literal characters, and let a run of spaces match
+    // LITERAL_SPACE. The caller decides anchoring.
     function literalBody(text) {
         let body = '';
         for (let i = 0; i < text.length; i++) {
@@ -530,6 +578,9 @@
                 body += '.*';
             } else if (c === '?') {
                 body += '.';
+            } else if (/\s/.test(c)) {
+                while (/\s/.test(text[i + 1] ?? '')) i++;
+                body += LITERAL_SPACE;
             } else {
                 body += escapeRegExp(c);
             }
@@ -537,57 +588,97 @@
         return body;
     }
 
-    // A bare literal token → whole-word match: \b…\b where the matched edge is a
-    // literal word char (not a wildcard). So "test" matches only the whole word.
-    function literalToFragment(text) {
-        const body = literalBody(text);
+    // Edge kinds ('letter' | 'digit' | '') of a literal's first and last char. A
+    // wildcard or escaped special at an end leaves that end open.
+    function literalEdges(text) {
         const first = text[0];
         const last = text[text.length - 1];
-        const lead = first !== '*' && first !== '?' && first !== '\\' && isWordChar(first) ? '\\b' : '';
-        const tail = last !== '*' && last !== '?' && isWordChar(last) ? '\\b' : '';
-        return lead + body + tail;
+        const lead = first === '*' || first === '?' || first === '\\' ? '' : edgeKind(first);
+        const tail = last === '*' || last === '?' ? '' : edgeKind(last);
+        return [lead, tail];
     }
 
-    // A single regex *fragment* from one pattern token (@ref expanded by the caller):
-    //   "exact"   → ^…$ full-value match (wildcards active inside; \" is a literal ")
-    //   /regex/   → used verbatim (delimiters + flags dropped)
-    //   bare word → whole-word literal (see literalToFragment)
-    function patternTokenToFragment(token) {
+    // One pattern token (@ref expanded by the caller) → { type, text }:
+    //   "exact"   → exact: ^…$ full-value match (wildcards active inside; \" is a literal ")
+    //   /regex/   → raw: used verbatim (delimiters + flags dropped)
+    //   bare word → lit: whole-word literal
+    // Literals stay text until the rule compiles them, so rule options (partial,
+    // fold) can shape them.
+    function patternTokenToItem(token) {
         const t = token.trim();
         if (!t) return null;
-        if (t.length >= 2 && t.startsWith('"') && t.endsWith('"')) {
-            return '^' + literalBody(t.slice(1, -1)) + '$';
-        }
+        if (t.length >= 2 && t.startsWith('"') && t.endsWith('"')) return { type: 'exact', text: t.slice(1, -1) };
         if (t.startsWith('/')) {
             const lastSlash = t.lastIndexOf('/');
-            if (lastSlash > 0) return t.slice(1, lastSlash); // raw regex (drop delimiters + flags)
+            if (lastSlash > 0) return { type: 'raw', text: t.slice(1, lastSlash) };
         }
-        return literalToFragment(t);
+        return { type: 'lit', text: t };
     }
 
-    // Combine regex fragments into one case-insensitive RegExp. Each fragment
-    // already carries its own boundaries (literal terms are whole-word).
-    function buildCombinedRegex(fragments, issues, lineNum) {
-        const valid = [];
-        for (const frag of fragments) {
-            if (!frag) continue;
-            try {
-                new RegExp(frag); // validate in isolation
-                valid.push(frag);
-            } catch (e) {
-                reportIssue(issues, lineNum, 'warning', `skipping invalid pattern "${frag}": ${e.message}`);
+    // Pattern items collected for one rule side (include or exclude), deduplicated
+    // by type + text across all lists and inline tokens.
+    function newItemSet() {
+        return { items: [], seen: new Set() };
+    }
+    function addItem(set, item) {
+        if (!item) return;
+        const key = item.type + '\0' + item.text;
+        if (set.seen.has(key)) return;
+        set.seen.add(key);
+        set.items.push(item);
+    }
+
+    // The literal texts a rule matches for one list entry (fold adds variants).
+    function literalVariants(text) {
+        return [text];
+    }
+
+    // Compile pattern items into one case-insensitive RegExp. Whole-word literals
+    // are grouped by edge kind and each group gets ONE lookaround pair: per-entry
+    // boundaries (\b…\b|\b…\b|…) stop V8 from optimizing the alternation and made
+    // a 7,000-word list ~50× slower. options.partial = N drops the word edges of
+    // literals with at least N letters (substring match, e.g. for usernames).
+    function buildPatternRegex(items, options, issues, lineNum) {
+        const fragments = [];
+        const groups = new Map(); // 'lead|tail' → Set of literal bodies
+        for (const { type, text } of items) {
+            if (type === 'raw') {
+                try {
+                    new RegExp(text); // validate in isolation
+                    fragments.push(text);
+                } catch (e) {
+                    reportIssue(issues, lineNum, 'warning', `skipping invalid pattern "/${text}/": ${e.message}`);
+                }
+                continue;
+            }
+            for (const variant of literalVariants(text, options)) {
+                if (!variant) continue;
+                if (type === 'exact') {
+                    fragments.push('^' + literalBody(variant) + '$');
+                    continue;
+                }
+                let [lead, tail] = literalEdges(variant);
+                if (options.partial && (variant.match(LETTERS_RE) || []).length >= options.partial) lead = tail = '';
+                const key = lead + '|' + tail;
+                if (!groups.has(key)) groups.set(key, new Set());
+                groups.get(key).add(literalBody(variant));
             }
         }
-        if (!valid.length) return null;
-        try {
-            return new RegExp('(?:' + valid.join('|') + ')', 'i');
-        } catch (e) {
-            reportIssue(
-                issues,
-                lineNum,
-                'error',
-                `could not build combined regex from "${valid.join('|')}": ${e.message}`
+        for (const [key, bodies] of groups) {
+            const [lead, tail] = key.split('|');
+            fragments.push(
+                (lead ? `(?<!${EDGE_CLASS[lead]})` : '') +
+                    '(?:' +
+                    [...bodies].join('|') +
+                    ')' +
+                    (tail ? `(?!${EDGE_CLASS[tail]})` : '')
             );
+        }
+        if (!fragments.length) return null;
+        try {
+            return new RegExp('(?:' + fragments.join('|') + ')', 'i');
+        } catch (e) {
+            reportIssue(issues, lineNum, 'error', `could not build the combined regex: ${e.message}`);
             return null;
         }
     }
@@ -685,7 +776,7 @@
     // in:SEL takes the rest of the field (like closest:SEL in scope), so the
     // selector may contain commas and keeps its case.
     function parseOptions(field, issues, lineNum) {
-        const opts = { hover: true, freeze: false, within: null, ifNone: false };
+        const opts = { hover: true, freeze: false, within: null, ifNone: false, partial: 0 };
         if (!field) return opts;
         const inAt = field.search(/(?:^|,)\s*in:/i);
         if (inAt !== -1) {
@@ -705,25 +796,28 @@
             else if (t === 'no-hover') opts.hover = false;
             else if (t === 'freeze') opts.freeze = true;
             else if (t === 'if-none') opts.ifNone = true;
+            else if (/^partial(:\d+)?$/.test(t))
+                opts.partial = t.includes(':') ? Math.max(1, parseInt(t.slice(8), 10)) : PARTIAL_MIN_LETTERS;
             else reportIssue(issues, lineNum, 'warning', `unknown option "${t}"`);
         }
         return opts;
     }
 
-    // Flatten a [list:NAME] into regex fragments, following nested @refs (including
-    // wildcards such as @text_* or @*). seenFragments deduplicates pattern strings
-    // across all lists; visited guards against reference loops; depth caps nesting.
-    function expandListFragments(name, lists, out, seenFragments, visited, depth, issues, lineNum) {
+    // Flatten a [list:NAME] into pattern items (see patternTokenToItem), following
+    // nested @refs (including wildcards such as @text_* or @*). The item set
+    // deduplicates across all lists; visited guards against reference loops; depth
+    // caps nesting.
+    function expandListItems(name, lists, set, visited, depth, issues, lineNum) {
         // Wildcard: resolve horizontally to all matching list names at the same depth.
         // This means @text_* inside a rule and @text_* inside a list both expand each
         // match at the caller's depth — the wildcard itself is not a nesting level.
-        if (name.includes('*') || name.includes('?')) {
+        if (isListNameGlob(name)) {
             const re = listNameGlobToRegex(name);
             let anyMatch = false;
             for (const listName of lists.keys()) {
                 if (re.test(listName)) {
                     anyMatch = true;
-                    expandListFragments(listName, lists, out, seenFragments, visited, depth, issues, lineNum);
+                    expandListItems(listName, lists, set, visited, depth, issues, lineNum);
                 }
             }
             if (!anyMatch) reportIssue(issues, lineNum, 'warning', `wildcard @${name} matched no lists`);
@@ -759,22 +853,9 @@
                 continue;
             }
             if (t.startsWith('@')) {
-                expandListFragments(
-                    t.slice(1).toLowerCase(),
-                    lists,
-                    out,
-                    seenFragments,
-                    visited,
-                    depth + 1,
-                    issues,
-                    lineNum
-                );
+                expandListItems(t.slice(1).toLowerCase(), lists, set, visited, depth + 1, issues, lineNum);
             } else {
-                const frag = patternTokenToFragment(t);
-                if (frag !== null && !seenFragments.has(frag)) {
-                    seenFragments.add(frag);
-                    out.push(frag);
-                }
+                addItem(set, patternTokenToItem(t));
             }
         }
     }
@@ -1062,47 +1143,37 @@
 
         const options = parseOptions(rawOptions, issues, lineNum);
 
-        // Resolve patterns: @ref → (possibly nested/wildcard) list fragments, else
-        // inline token. seenFragments deduplicates across all refs + inline tokens so
+        // Resolve patterns: @ref → (possibly nested/wildcard) list items, else inline
+        // token. The item sets deduplicate across all refs + inline tokens so
         // overlapping lists (e.g. @dark and @text_* both yielding "gore") produce only
-        // one regex branch — unique by fragment string, not semantic equivalence.
-        // A leading ! puts the token into the exclude set instead (see scanText).
-        const include = { fragments: [], seen: new Set() };
-        const exclude = { fragments: [], seen: new Set() };
+        // one regex branch — unique by token text, not semantic equivalence.
+        // A leading ! puts the token into the exclude set instead (see matchRule).
+        const include = newItemSet();
+        const exclude = newItemSet();
         for (const tok of splitTopLevel(rawPatterns, ',')) {
             let t = tok.trim();
             const set = t.startsWith('!') ? exclude : include;
             if (set === exclude) t = t.slice(1).trim();
             if (!t) continue;
             if (t.startsWith('@')) {
-                expandListFragments(
-                    t.slice(1).toLowerCase(),
-                    lists,
-                    set.fragments,
-                    set.seen,
-                    new Set(),
-                    1,
-                    issues,
-                    lineNum
-                );
+                expandListItems(t.slice(1).toLowerCase(), lists, set, new Set(), 1, issues, lineNum);
             } else {
-                const frag = patternTokenToFragment(t);
-                if (frag !== null && !set.seen.has(frag)) {
-                    set.seen.add(frag);
-                    set.fragments.push(frag);
-                }
+                addItem(set, patternTokenToItem(t));
             }
         }
-        if (!include.fragments.length && exclude.fragments.length) {
+        if (!include.items.length && exclude.items.length) {
             reportIssue(issues, lineNum, 'error', `only ! (exclude) patterns, nothing to match: ${rawPatterns}`);
             return null;
         }
-        const regex = buildCombinedRegex(include.fragments, issues, lineNum);
+        const regex = buildPatternRegex(include.items, options, issues, lineNum);
         if (!regex) {
             reportIssue(issues, lineNum, 'error', `no valid patterns: ${rawPatterns}`);
             return null;
         }
-        const excludeRegex = exclude.fragments.length ? buildCombinedRegex(exclude.fragments, issues, lineNum) : null;
+        // partial never widens an exclusion: !grape stays a whole word.
+        const excludeRegex = exclude.items.length
+            ? buildPatternRegex(exclude.items, { ...options, partial: 0 }, issues, lineNum)
+            : null;
 
         const scope = parseScope(rawScope, issues, lineNum);
         if (options.ifNone) {
@@ -1118,6 +1189,14 @@
             sources.splice(0, sources.length, 'text');
         }
         return { urlPattern, sources, regex, excludeRegex, actions, scope, options };
+    }
+
+    // Usernames have no spaces, so camelCase humps mark the words: "xXRapeMonsterXx"
+    // → "x X Rape Monster Xx" (aB → a B, ABc → A Bc). Only adds word edges.
+    function splitCamelCase(s) {
+        return s
+            .replace(/([a-zß-öø-ÿ])([A-ZÀ-ÖØ-Þ])/g, '$1 $2')
+            .replace(/([A-ZÀ-ÖØ-Þ])([A-ZÀ-ÖØ-Þ][a-zß-öø-ÿ])/g, '$1 $2');
     }
 
     // A rule's match on one value: the include regex hits and no exclude pattern
@@ -1960,7 +2039,7 @@ ${customCss || ''}
                     else if (source === 'alt' && alt) hit = matchRule(rule, alt);
                     else if (source === 'title' && title) hit = matchRule(rule, title);
                     else if (source === 'user' && usernames) {
-                        for (const u of usernames) if ((hit = matchRule(rule, u))) break;
+                        for (const u of usernames) if ((hit = matchRule(rule, splitCamelCase(u)))) break;
                     } else if (source === 'class' && classes) {
                         for (const c of classes) if ((hit = matchRule(rule, c))) break;
                     }
