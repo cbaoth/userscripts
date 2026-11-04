@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Any Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-11-04
+// @version      2026-11-04T231711
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -316,6 +316,22 @@
 #                                 with excludes: rape, !grape*. Too broad for normal
 #                                 text. The user source also splits camelCase
 #                                 (xXRapeMonsterXx), with or without partial.
+#                 fold            spelling-tolerant: the text AND the plain list
+#                                 words are folded before matching — lowercase,
+#                                 ß → ss, accents/umlauts dropped (ä → a; a list
+#                                 word with ä also matches ae), leet inside a word
+#                                 (4@ → a, 3 → e, 1! → i, 0 → o, $5 → s, 7 → t:
+#                                 sh!t, a55hole; digits and $ also at a word start:
+#                                 4rsch), and 3+ equal letters → 1 (fuuuck). So haß
+#                                 and hass are the same word, has is not. Leet is
+#                                 ambiguous (f4ck → fack): list the vowel variants
+#                                 you care about. /regex/ entries see the FOLDED
+#                                 text — write them lowercase, without umlauts.
+#                 sound           fold + sound-alike spellings: v → f, ph → f,
+#                                 ck/c → k, tz/ts → z, dt → t, y → i, sh → sch
+#                                 (votze = fotze). Broader, so more false hits —
+#                                 meant for sites with deliberately misspelled
+#                                 insults.
 #                 in:SELECTOR     only match inside elements matching this CSS
 #                                 selector (the matched text / attribute element
 #                                 must have such an ancestor, or be one). Limits
@@ -628,9 +644,17 @@
         set.items.push(item);
     }
 
-    // The literal texts a rule matches for one list entry (fold adds variants).
-    function literalVariants(text) {
-        return [text];
+    // The literal texts a rule matches for one list entry. With fold the entry is
+    // folded like the text it is matched against, plus an ae/oe/ue variant for an
+    // umlaut (ärsche also catches aersche; arsche comes from folding ä → a).
+    function literalVariants(text, options) {
+        if (!options.fold) return [text];
+        const out = new Set([foldText(text, options.sound).text]);
+        if (/[äöü]/i.test(text)) {
+            const ae = text.replace(/[äöü]/gi, (c) => ({ ä: 'ae', ö: 'oe', ü: 'ue' })[c.toLowerCase()]);
+            out.add(foldText(ae, options.sound).text);
+        }
+        return [...out];
     }
 
     // Compile pattern items into one case-insensitive RegExp. Whole-word literals
@@ -776,7 +800,7 @@
     // in:SEL takes the rest of the field (like closest:SEL in scope), so the
     // selector may contain commas and keeps its case.
     function parseOptions(field, issues, lineNum) {
-        const opts = { hover: true, freeze: false, within: null, ifNone: false, partial: 0 };
+        const opts = { hover: true, freeze: false, within: null, ifNone: false, partial: 0, fold: false, sound: false };
         if (!field) return opts;
         const inAt = field.search(/(?:^|,)\s*in:/i);
         if (inAt !== -1) {
@@ -796,6 +820,8 @@
             else if (t === 'no-hover') opts.hover = false;
             else if (t === 'freeze') opts.freeze = true;
             else if (t === 'if-none') opts.ifNone = true;
+            else if (t === 'fold') opts.fold = true;
+            else if (t === 'sound') opts.fold = opts.sound = true;
             else if (/^partial(:\d+)?$/.test(t))
                 opts.partial = t.includes(':') ? Math.max(1, parseInt(t.slice(8), 10)) : PARTIAL_MIN_LETTERS;
             else reportIssue(issues, lineNum, 'warning', `unknown option "${t}"`);
@@ -1191,6 +1217,126 @@
         return { urlPattern, sources, regex, excludeRegex, actions, scope, options };
     }
 
+    // -- fold / sound: spelling-tolerant matching (rule options) --------------
+    // The TEXT is folded (not the patterns: expanding every letter into a class
+    // would bloat the regex and defeat V8's literal pre-filters), and literal list
+    // entries are folded the same way when the rule compiles. Raw /regex/ entries
+    // see the folded text as-is, so write them in folded form.
+    const FOLD_CHARS = { ß: 'ss', ẞ: 'ss', æ: 'ae', œ: 'oe', ø: 'o', ł: 'l', đ: 'd', þ: 'th' };
+    // Leet chars, read as letters only INSIDE a word (sh!t, a55hole) — or at its
+    // start for digits and $ (4rsch, $hit). Never at its end: shit! and user1 stay.
+    const LEET = { 4: 'a', '@': 'a', 3: 'e', 1: 'i', '!': 'i', 0: 'o', $: 's', 5: 's', 7: 't' };
+    const LEET_LEAD = new Set(['4', '3', '1', '0', '$', '5', '7']);
+    // sound: sound-alike spellings, longest match first. No double-letter collapse
+    // (hass → has would hit English "has").
+    const SOUND = [
+        ['sch', 'sch'],
+        ['sh', 'sch'],
+        ['ph', 'f'],
+        ['ck', 'k'],
+        ['tz', 'z'],
+        ['ts', 'z'],
+        ['dt', 't'],
+        ['c', 'k'],
+        ['v', 'f'],
+        ['y', 'i'],
+    ];
+    const SOUND_BY_FIRST = new Map();
+    for (const pair of SOUND) {
+        if (!SOUND_BY_FIRST.has(pair[0][0])) SOUND_BY_FIRST.set(pair[0][0], []);
+        SOUND_BY_FIRST.get(pair[0][0]).push(pair);
+    }
+    const FOLD_LETTER_RE = /\p{L}/u;
+
+    // s → { text, map }: lowercase, ß → ss, accents/umlauts stripped (ä → a, é →
+    // e), leet read as letters, runs of 3+ equal letters → 1 (fuuuck → fuck), and
+    // with sound the SOUND merges. map[i] = index in s of folded char i.
+    function foldText(s, sound = false) {
+        const isLetter = (c) => c !== undefined && FOLD_LETTER_RE.test(c);
+        let chars = [];
+        let map = [];
+        for (let i = 0; i < s.length; i++) {
+            const lc = s[i].toLowerCase();
+            const folded = lc < '\x80' ? lc : (FOLD_CHARS[lc] ?? lc.normalize('NFD').replace(/\p{M}/gu, ''));
+            for (const c of folded) {
+                chars.push(c);
+                map.push(i);
+            }
+        }
+        for (let i = 0; i < chars.length; i++) {
+            if (!Object.hasOwn(LEET, chars[i])) continue;
+            let j = i;
+            while (j < chars.length && Object.hasOwn(LEET, chars[j])) j++;
+            const before = chars[i - 1];
+            const run = chars.slice(i, j);
+            const inner = isLetter(before) && isLetter(chars[j]);
+            const lead =
+                !isLetter(before) &&
+                !/[0-9]/.test(before ?? '') &&
+                isLetter(chars[j]) &&
+                run.every((c) => LEET_LEAD.has(c));
+            if (inner || lead) for (let k = i; k < j; k++) chars[k] = LEET[chars[k]];
+            i = j - 1;
+        }
+        const outChars = [];
+        const outMap = [];
+        for (let i = 0; i < chars.length; i++) {
+            const c = chars[i];
+            let j = i + 1;
+            while (chars[j] === c) j++;
+            const keep = isLetter(c) && j - i >= 3 ? 1 : j - i;
+            for (let k = 0; k < keep; k++) {
+                outChars.push(c);
+                outMap.push(map[i + k]);
+            }
+            i = j - 1;
+        }
+        chars = outChars;
+        map = outMap;
+        if (sound) {
+            const sc = [];
+            const sm = [];
+            for (let i = 0; i < chars.length;) {
+                const pair = SOUND_BY_FIRST.get(chars[i])?.find(([from]) =>
+                    [...from].every((c, k) => chars[i + k] === c)
+                );
+                if (!pair) {
+                    sc.push(chars[i]);
+                    sm.push(map[i]);
+                    i++;
+                    continue;
+                }
+                const [from, to] = pair;
+                // Map each new char to a source char; an inserted char shares its
+                // left neighbor's (sh → sch: s,c ← s; h ← h).
+                const grow = Math.max(0, to.length - from.length);
+                for (let k = 0; k < to.length; k++) {
+                    sc.push(to[k]);
+                    sm.push(map[i + Math.min(Math.max(0, k - grow), from.length - 1)]);
+                }
+                i += from.length;
+            }
+            chars = sc;
+            map = sm;
+        }
+        return { text: chars.join(''), map };
+    }
+
+    // Rules test one value after the other, so caching the last fold per mode
+    // folds each text node once even with several fold rules.
+    const foldMemo = [
+        { s: null, text: '' },
+        { s: null, text: '' },
+    ];
+    function foldCached(s, sound) {
+        const memo = foldMemo[sound ? 1 : 0];
+        if (memo.s !== s) {
+            memo.s = s;
+            memo.text = foldText(s, sound).text;
+        }
+        return memo.text;
+    }
+
     // Usernames have no spaces, so camelCase humps mark the words: "xXRapeMonsterXx"
     // → "x X Rape Monster Xx" (aB → a B, ABc → A Bc). Only adds word edges.
     function splitCamelCase(s) {
@@ -1202,6 +1348,7 @@
     // A rule's match on one value: the include regex hits and no exclude pattern
     // does. Returns the exec result (for the debug label) or null.
     function matchRule(rule, value) {
+        if (rule.options.fold) value = foldCached(value, rule.options.sound);
         const m = rule.regex.exec(value); // exec (no /g flag) also yields the matched substring for debug
         return m && !rule.excludeRegex?.test(value) ? m : null;
     }
