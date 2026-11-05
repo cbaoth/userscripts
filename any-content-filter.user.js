@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Any Content Filter
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-11-05T192525
+// @version      2026-11-05T194736
 // @description  Blur, mask, hide or highlight page content (text, images, links, usernames) by per-site rules with regexes and word lists, plus reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -31,7 +31,7 @@
     // Used in [use] and @file/list, so no / or spaces.
     const FILE_NAME_RE = new RegExp(`^[a-z0-9][a-z0-9_.-]{0,${FILE_NAME_MAX - 1}}$`);
     const PANEL_STATE_KEY = 'contentFilterPanelState'; // remembered quick-add destination
-    const DIALOG_STATE_KEY = 'contentFilterDialogState'; // remembered settings dialog size ({ maximized })
+    const DIALOG_STATE_KEY = 'contentFilterDialogState'; // remembered settings dialog size + last file ({ maximized, fileId, fileName })
     const BLUR_CLASS = 'ucb-blur';
     const HOVER_CLASS = 'ucb-hover';
     const FREEZE_CLASS = 'ucb-freeze'; // pauses CSS animations inside a frozen target
@@ -3400,7 +3400,7 @@ ${customCss || ''}
             'In the list: ► runs on this page · ✓ enabled (other pages) · ✗ disabled · ○ library · ≡ reference. ' +
             'See the read-only <code style="color:#9cdcfe">reference</code> file for full docs and examples.' +
             '<br><br>File buttons: ✅/❌ enabled/disabled (click to toggle) · + new · 📋 duplicate (or copy the ' +
-            'reference) · ✏️ rename · 🗑️ delete. □/❐ in the title bar maximizes/restores the dialog. ' +
+            'reference) · ✏️ rename · 🗑️ delete. □/❐ in the title bar maximizes/restores the dialog; it reopens with the last size and file. ' +
             'Save keeps the dialog open (Ctrl+S); Save &amp; Reload re-applies the rules to this page.';
         Object.assign(hint.style, { color: '#bbb', fontSize: '12px', lineHeight: '1.55', paddingRight: '18px' });
         const helpPop = document.createElement('div');
@@ -3571,6 +3571,14 @@ ${customCss || ''}
         let selId = REF_ID;
         let savedValue = DEFAULT_RULES;
         const sel = () => files.find((f) => f.id === selId) ?? null; // null = reference
+        // Remembered across openings, tabs and sites (DIALOG_STATE_KEY):
+        // { maximized, fileId, fileName }. A change before the stored state has
+        // loaded wins over the loaded value (see the initial selection below).
+        let dialogState = {};
+        const saveDialogState = (patch) => {
+            Object.assign(dialogState, patch);
+            GM.setValue(DIALOG_STATE_KEY, dialogState);
+        };
         const isDirty = () => !!sel() && textarea.value !== savedValue;
         // Unsaved changes: three choices, so a browser confirm() won't do.
         // Resolves 'save' | 'discard' | 'stay' (Esc / backdrop = stay).
@@ -3661,6 +3669,9 @@ ${customCss || ''}
         };
         const selectFile = (id) => {
             selId = files.some((f) => f.id === id) ? id : REF_ID;
+            // Every selection is remembered: manual, requested (debug legend),
+            // after new/duplicate/delete/import, and the initial fallback pick.
+            saveDialogState({ fileId: selId, fileName: sel()?.name ?? REFERENCE_NAME });
             savedValue = sel()?.text ?? DEFAULT_RULES;
             textarea.value = savedValue;
             textarea.scrollTop = 0;
@@ -4094,10 +4105,9 @@ ${customCss || ''}
         };
         btnMax.addEventListener('click', () => {
             applySize(!maximized);
-            GM.setValue(DIALOG_STATE_KEY, { maximized });
+            saveDialogState({ maximized });
         });
         applySize(false);
-        GM.getValue(DIALOG_STATE_KEY, null).then((st) => st?.maximized && applySize(true));
 
         btnRow.append(btnValidate, btnCancel, btnSave, btnSaveReload);
         panel.append(header, fileBar, textarea, statusLine, btnRow);
@@ -4105,13 +4115,25 @@ ${customCss || ''}
         (document.body ?? document.documentElement).append(overlay);
         textarea.focus();
 
-        // Initial file: the requested one, else the first enabled file running
-        // here, else the first file, else the reference.
-        getFiles().then((fs) => {
+        // Initial file, first that exists: the requested one (debug legend), the
+        // last selected one (by id, else by name: ids change on import), the first
+        // enabled file running here, the first enabled file, the first file, the
+        // first library, the reference. "First" = top of the list (name order).
+        Promise.all([getFiles(), GM.getValue(DIALOG_STATE_KEY, null)]).then(([fs, st]) => {
             files = fs;
+            dialogState = { ...st, ...dialogState };
+            if (dialogState.maximized && !maximized) applySize(true);
+            const runnable = fs.filter((f) => fileHeader(f.text).match.length);
+            const last =
+                st?.fileId === REF_ID
+                    ? { id: REF_ID }
+                    : (fs.find((f) => f.id === st?.fileId) ?? fs.find((f) => f.name === st?.fileName));
             const pick =
                 fs.find((f) => f.name === fileName) ??
-                fs.find((f) => f.enabled && fileRunsOn(fileHeader(f.text))) ??
+                last ??
+                runnable.find((f) => f.enabled && fileRunsOn(fileHeader(f.text))) ??
+                runnable.find((f) => f.enabled) ??
+                runnable[0] ??
                 fs[0];
             selectFile(pick?.id ?? REF_ID);
         });
