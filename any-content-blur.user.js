@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Any Content Blur
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-11-04T231711
+// @version      2026-11-05
 // @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -38,6 +38,8 @@
     const BLUR_CLASS = 'ucb-blur';
     const HOVER_CLASS = 'ucb-hover';
     const FREEZE_CLASS = 'ucb-freeze'; // pauses CSS animations inside a frozen target
+    const WORD_CLASS = 'ucb-w'; // span wrapped around a match by the word scope
+    const MASK_CLASS = 'ucb-mask'; // built-in mask action (word scope): shows f***
     const FROZEN_CLASS = 'ucb-frozen'; // marks a canvas snapshot that replaced a GIF
     const BLUR_STRENGTH_PX = 9; // .ucb-blur { filter: blur(Npx) }
     const SCAN_DEBOUNCE_MS = 250;
@@ -268,6 +270,12 @@
 #                 blur            built-in filter blur (reveals on hover). Tune
 #                                 strength as blur:N px, e.g. blur:20 — bare
 #                                 "blur" uses the default BLUR_STRENGTH_PX.
+#                 mask            built-in, word scope only: shows the matched
+#                                 word as f*** — mask:N keeps N leading chars
+#                                 (default 1, mask:0 = all stars). The word stays
+#                                 in the page underneath (copy/paste and screen
+#                                 readers get it), so hover, peek and Alt+Z
+#                                 reveal it like any other effect.
 #                 NAME            any .ucb-NAME class you defined in a [css] block,
 #                                 e.g. "dark" applies your .ucb-dark rule. Writing
 #                                 the full "ucb-dark" works too (the prefix is
@@ -282,6 +290,14 @@
 #                 up:N            climb N ancestor elements (e.g. up:2)
 #                 closest:SEL     nearest ancestor matching CSS selector SEL
 #                 row             alias for closest:tr (old table layouts)
+#                 word            only the matched word(s): each match in a text
+#                                 is wrapped in its own <span class="ucb-w"> that
+#                                 gets the action — instead of the whole paragraph.
+#                                 Text source only (other sources act like self).
+#                                 Changes the page's DOM (splits text nodes):
+#                                 script-heavy sites may re-render or break —
+#                                 self is the safe default. Editable text
+#                                 (contenteditable) is never split.
 #               Optional modifiers, space-separated after the base scope:
 #                 prev:N next:N   also apply the effect to the N sibling elements
 #                                 before/after the scoped target — for layouts where
@@ -571,6 +587,11 @@
     // A space in a literal: any whitespace, . _ - or nothing (bring dich um also
     // matches bring-dich-um and bringdichum).
     const LITERAL_SPACE = '[\\s._-]{0,3}';
+    // A * at either END of a plain word continues the word only (fuck* → fucking,
+    // not the rest of the sentence). Same yes/no result as "any run" there, but
+    // the word scope marks just the word. Inside a word (or in "exact") * stays
+    // "any run".
+    const WORD_RUN = '[0-9_A-Za-zÀ-ÖØ-öø-ɏ]*';
     const PARTIAL_MIN_LETTERS = 4; // default N of the partial[:N] option
 
     function edgeKind(c) {
@@ -583,7 +604,7 @@
     // expand the simplified wildcards (* = any run, ? = one char), honor
     // \* \? \\ \" \/ \! as the literal characters, and let a run of spaces match
     // LITERAL_SPACE. The caller decides anchoring.
-    function literalBody(text) {
+    function literalBody(text, wordEdges = false) {
         let body = '';
         for (let i = 0; i < text.length; i++) {
             const c = text[i];
@@ -591,7 +612,7 @@
                 body += escapeRegExp(text[i + 1]); // literal *, ?, \, ", /, or !
                 i++;
             } else if (c === '*') {
-                body += '.*';
+                body += wordEdges && (i === 0 || i === text.length - 1) ? WORD_RUN : '.*';
             } else if (c === '?') {
                 body += '.';
             } else if (/\s/.test(c)) {
@@ -685,7 +706,7 @@
                 if (options.partial && (variant.match(LETTERS_RE) || []).length >= options.partial) lead = tail = '';
                 const key = lead + '|' + tail;
                 if (!groups.has(key)) groups.set(key, new Set());
-                groups.get(key).add(literalBody(variant));
+                groups.get(key).add(literalBody(variant, true));
             }
         }
         for (const [key, bodies] of groups) {
@@ -742,6 +763,7 @@
         }
         let base = null;
         if (!t || t === 'self') base = { kind: 'self' };
+        else if (t === 'word') base = { kind: 'word' };
         else if (t === 'row') base = { kind: 'closest', selector: 'tr' };
         else if (/^up:\d+$/i.test(t)) base = { kind: 'up', n: parseInt(t.slice(3), 10) };
         else if (/^closest:/i.test(t)) {
@@ -757,7 +779,7 @@
 
     // Class names the script uses internally — a custom action may not reuse them.
     // 'peek' is reserved because --ucb-peek is the per-class peek override in [css].
-    const RESERVED_ACTIONS = new Set(['hover', 'freeze', 'frozen', 'peek']);
+    const RESERVED_ACTIONS = new Set(['hover', 'freeze', 'frozen', 'peek', 'w']);
 
     // Parse the action field into a list of { name, value } effects. Each becomes a
     // CSS class .ucb-<name> on the scoped element; an optional :value is exposed as
@@ -1202,6 +1224,22 @@
             : null;
 
         const scope = parseScope(rawScope, issues, lineNum);
+        if (scope.kind === 'word') {
+            if (scope.prev || scope.next) {
+                reportIssue(issues, lineNum, 'warning', 'prev:/next: do not apply to the word scope, ignoring them');
+                scope.prev = scope.next = 0;
+            }
+            if (sources.some((s) => s !== 'text')) {
+                reportIssue(issues, lineNum, 'warning', 'word scope only splits text; other sources act like self');
+            }
+        } else if (actions.some((a) => a.name === 'mask')) {
+            reportIssue(
+                issues,
+                lineNum,
+                'warning',
+                'the built-in mask needs the word scope (here only your own .ucb-mask [css] applies, if any)'
+            );
+        }
         if (options.ifNone) {
             // if-none has no matched element to start from — the scope selector is
             // what defines the containers to check.
@@ -1498,6 +1536,16 @@
 .${BLUR_CLASS}.${HOVER_CLASS}:hover { filter: none !important; }
 .${FREEZE_CLASS}, .${FREEZE_CLASS} * { animation-play-state: paused !important; }
 .${FREEZE_CLASS}.${HOVER_CLASS}:hover, .${FREEZE_CLASS}.${HOVER_CLASS}:hover * { animation-play-state: running !important; }
+/* mask (word scope): the word stays in the DOM, invisible; ::before draws the
+   masked copy (data-ucb-mask) over it. Removing the class (hover, peek, Alt+Z)
+   shows the word again. */
+.${MASK_CLASS}[data-ucb-mask] { position: relative !important; -webkit-text-fill-color: transparent !important; }
+.${MASK_CLASS}[data-ucb-mask]::before {
+    content: attr(data-ucb-mask); position: absolute; left: 0; top: 0;
+    -webkit-text-fill-color: currentColor; white-space: pre; pointer-events: none;
+}
+.${MASK_CLASS}.${HOVER_CLASS}:hover { -webkit-text-fill-color: inherit !important; }
+.${MASK_CLASS}.${HOVER_CLASS}:hover::before { content: none; }
 /* DEBUG (Alt+Shift+D): outline every affected element and label it with its rule
    id + matched text. Gated on the root .ucb-debug-on class so it costs nothing
    until enabled. --ucb-r is stamped on each target by applyActions(). */
@@ -1726,7 +1774,7 @@ ${customCss || ''}
     // Both the styles-off toggle and debug mode fully reveal every effect. Peek is
     // the narrower, transient reveal (skips peek-exempt/layout effects).
     const revealAll = () => stylesOff || debugOn;
-    const NON_EFFECT_CLASSES = new Set([HOVER_CLASS, FREEZE_CLASS, FROZEN_CLASS]);
+    const NON_EFFECT_CLASSES = new Set([HOVER_CLASS, FREEZE_CLASS, FROZEN_CLASS, WORD_CLASS]);
 
     // Effect classes ('ucb-NAME') a peek must NOT strip: revealing an effect that
     // changes layout (a [css] hide/resize, …) makes content jump/scroll under the
@@ -2147,17 +2195,86 @@ ${customCss || ''}
 
     function scanText(root, textRules) {
         if (!textRules.length) return;
+        const wordRules = textRules.filter((r) => r.scope.kind === 'word');
+        const elRules = textRules.filter((r) => r.scope.kind !== 'word');
+        const wordJobs = []; // split AFTER the walk — splitting text nodes mid-walk would derail it
         const walker = textWalker(root);
         let node;
         while ((node = walker.nextNode())) {
             const text = node.nodeValue;
             const el = node.parentElement;
-            for (const rule of textRules) {
+            for (const rule of elRules) {
                 if (rule.options.within && !el.closest(rule.options.within)) continue;
                 const m = matchRule(rule, text);
                 if (m) applyActions(el, rule, { source: 'text', match: m[0] });
             }
+            // Never re-split our own spans (the observer re-scans them) or text
+            // someone is editing.
+            if (wordRules.length && !el.classList.contains(WORD_CLASS) && !el.isContentEditable) {
+                const ranges = findWordRanges(text, el, wordRules);
+                if (ranges.length) wordJobs.push([node, ranges]);
+            }
         }
+        for (const [textNode, ranges] of wordJobs) wrapWords(textNode, ranges);
+    }
+
+    // All matches of the word-scope rules in one text, as non-overlapping ranges
+    // of the ORIGINAL text sorted by start; an earlier rule wins an overlap. With
+    // fold, positions are mapped back through foldText's index map.
+    function findWordRanges(text, el, rules) {
+        const ranges = [];
+        for (const rule of rules) {
+            if (rule.options.within && !el.closest(rule.options.within)) continue;
+            const folded = rule.options.fold ? foldText(text, rule.options.sound) : null;
+            const value = folded ? folded.text : text;
+            if (rule.excludeRegex?.test(value)) continue;
+            rule.regexAll ??= new RegExp(rule.regex.source, 'gi');
+            const re = rule.regexAll;
+            re.lastIndex = 0;
+            let m;
+            while ((m = re.exec(value))) {
+                if (!m[0]) {
+                    re.lastIndex++;
+                    continue;
+                }
+                let start = m.index;
+                let end = start + m[0].length;
+                if (folded) {
+                    const map = folded.map;
+                    start = map[start];
+                    // end of the last matched char: start of the next one, unless
+                    // both come from the same source char (ß → ss)
+                    end = end < map.length && map[end] !== map[end - 1] ? map[end] : map[end - 1] + 1;
+                }
+                if (!ranges.some((r) => start < r.end && end > r.start)) ranges.push({ start, end, rule, match: m[0] });
+            }
+        }
+        return ranges.sort((a, b) => a.start - b.start);
+    }
+
+    // Wrap each range of a text node in its own span and apply the rule to it.
+    // Back to front, so the earlier offsets stay valid in the remaining node.
+    function wrapWords(node, ranges) {
+        if (!node.isConnected) return;
+        for (let i = ranges.length - 1; i >= 0; i--) {
+            const { start, end, rule, match } = ranges[i];
+            let word = node;
+            if (end < word.length) word.splitText(end);
+            if (start > 0) word = word.splitText(start);
+            const span = document.createElement('span');
+            span.className = WORD_CLASS;
+            word.replaceWith(span);
+            span.appendChild(word);
+            const mask = rule.actions.find((a) => a.name === 'mask');
+            if (mask) span.dataset.ucbMask = maskWord(word.nodeValue, mask.value);
+            applyActions(span, rule, { source: 'text', match });
+        }
+    }
+
+    // "fucking", mask:1 → "f******". Whitespace stays (phrases keep their shape).
+    function maskWord(word, value) {
+        const keep = value == null ? 1 : Math.max(0, parseInt(value, 10) || 0);
+        return [...word].map((c, i) => (i < keep || /\s/.test(c) ? c : '*')).join('');
     }
 
     function scanAttributes(root, attrRules) {
