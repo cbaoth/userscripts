@@ -307,7 +307,12 @@
 #                                 member reveals the whole group at once.
 #                                 Example: row prev:1 next:1
 #
-# options       Comma list (optional):
+# options       Comma list (optional). Options apply to every pattern of the
+#               rule. For different options per list, write one line per list
+#               with the same action and scope: the first line takes an
+#               element, the next only adds what it missed, e.g.
+#                   * | user | @names, @insults   | blur | self | fold
+#                   * | user | @insults_long      | blur | self | fold, partial
 #                 hover           reveal on mouse-over (default: ON)
 #                 no-hover        do not reveal on hover
 #                 freeze          stop motion inside the blurred area — pause
@@ -329,7 +334,9 @@
 #                                 for usernames, which have no spaces. partial:N sets
 #                                 the minimum (shorter words keep their edges, so
 #                                 fan never hits fancy). Cancel known false hits
-#                                 with excludes: troll, !trolley*. Too broad for normal
+#                                 with excludes: troll, !trolley* (an exclude skips
+#                                 the whole value), or keep such words in a list
+#                                 without partial (see options). Too broad for normal
 #                                 text. The user source also splits camelCase
 #                                 (xXTrollKingXx), with or without partial.
 #                 fold            spelling-tolerant: the text AND the plain list
