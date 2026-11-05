@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Any Content Filter
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-11-05T173403
+// @version      2026-11-05T182651
 // @description  Blur, mask, hide or highlight page content (text, images, links, usernames) by per-site rules with regexes and word lists, plus reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -335,7 +335,8 @@
 #                                 word with ä also matches ae), leet inside a word
 #                                 (4@ → a, 3 → e, 1! → i, 0 → o, $5 → s, 7 → t:
 #                                 sh!t, a55hole; digits and $ also at a word start:
-#                                 4rsch), and 3+ equal letters → 1 (fuuuck). So haß
+#                                 4rsch), and 3+ equal letters in a word → 1 (fuuuck;
+#                                 not a word of just one letter: kkk). So haß
 #                                 and hass are the same word, has is not. Leet is
 #                                 ambiguous (f4ck → fack): list the vowel variants
 #                                 you care about. /regex/ entries see the FOLDED
@@ -1284,7 +1285,7 @@
     const FOLD_LETTER_RE = /\p{L}/u;
 
     // s → { text, map }: lowercase, ß → ss, accents/umlauts stripped (ä → a, é →
-    // e), leet read as letters, runs of 3+ equal letters → 1 (fuuuck → fuck), and
+    // e), leet read as letters, runs of 3+ equal letters → 1 (fuuuck → fuck, but kkk stays), and
     // with sound the SOUND merges. map[i] = index in s of folded char i.
     function foldText(s, sound = false) {
         const isLetter = (c) => c !== undefined && FOLD_LETTER_RE.test(c);
@@ -1319,7 +1320,10 @@
             const c = chars[i];
             let j = i + 1;
             while (chars[j] === c) j++;
-            const keep = isLetter(c) && j - i >= 3 ? 1 : j - i;
+            // A word that is only the run (kkk, xxx, zzz) stays: collapsed it
+            // would match every lone letter.
+            const stretched = isLetter(c) && j - i >= 3 && (isLetter(chars[i - 1]) || isLetter(chars[j]));
+            const keep = stretched ? 1 : j - i;
             for (let k = 0; k < keep; k++) {
                 outChars.push(c);
                 outMap.push(map[i + k]);
