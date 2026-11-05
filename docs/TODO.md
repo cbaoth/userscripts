@@ -10,6 +10,7 @@
 ## Rename Migration
 
 - [ ] Delete the frozen copies at the old paths once all installs (all synced Violentmonkey devices) have updated to the new `@downloadURL` — renamed 2026-09-18, see `AGENTS.md` → Naming: `universal-content-blur`, `universal-emoji-replacer`, `universal-image-resizer`, `universal-redirector`, `copy-url-on-hover`, `amazon-links`, `auto-show-forum-spoilers`, `search-hotkey` (`*.user.js`)
+  - Note: `any-content-blur` was renamed again to `any-content-filter` (2026-11-05) without a frozen copy, so the `universal-content-blur` copy's `@downloadURL` now points to a removed path; such installs no longer update — reinstall from `any-content-filter.user.js`.
 
 ## Build Toolchain
 
@@ -21,7 +22,7 @@
   - Unit tests for pure functions (config parsers, pattern/regex builders) extracted from the script IIFE — extraction-by-function-name + eval already proven in a dev session for `parseScope`; cheap first step, runnable headless via `npm test`.
   - Playwright (or Puppeteer) driving Chromium with a small GM-API shim (`GM.getValue`/`setValue`, `GM_registerMenuCommand`, …) injected before the script — no extension needed, works headless; likely the pragmatic default for behavior tests (hover reveal, group reveal, observer rescans).
   - Real Violentmonkey/Tampermonkey extension loaded via Playwright `--load-extension` (headed) — closest to production, but automating extension setup + script install is awkward; only if the shim approach proves too far from reality.
-  - Local fixture pages under `dev/fixtures/` (e.g. old-style `<table>` gallery for content-blur sibling groups, image grid for the resizer, dynamic-insert page for observer logic) so tests don't depend on live sites.
+  - Local fixture pages under `dev/fixtures/` (e.g. old-style `<table>` gallery for content-filter sibling groups, image grid for the resizer, dynamic-insert page for observer logic) so tests don't depend on live sites.
   - Decide scope once the harness exists: one-shot verification helper for dev sessions vs. repeatable per-script regression tests.
   - Update agent instructions to include the test harness once it's in place.
 
@@ -61,9 +62,9 @@ Scripts that have not had functional updates in a long time — verify each stil
   - [ ] [S] Idea: guild items filter (cards with class `guild`, e.g. on the specials page)
   - [ ] [M] Idea: optionally load all pages up front when a non-native sort is active, so sorting covers items not loaded yet (currently they are sorted in as the infinite loader appends them)
 
-- [ ] `any-content-blur.user.js`
+- [ ] `any-content-filter.user.js`
   - [x] ~~Additional actions beyond `blur`: `hide` (display:none), `dim` (low opacity).~~ Done differently: actions are now arbitrary user-defined `.ucb-NAME` classes via a `[css]` section (`blur` is the built-in default, parameterizable as `blur:N`). `hide`/`dim`/`darken`/`grayscale`/`resize` etc. are plain CSS the user writes; `NAME:VALUE` exposes `--ucb-NAME` for per-rule tuning.
-  - [ ] [S] Remove the deprecated single-config migration (added 2026-10-12): `STORAGE_KEY` (`contentBlurRules`) and the legacy branch in `getFiles()` (both marked `DEPRECATED`) once every install has opened a page with the multi-file version (all synced Violentmonkey devices). Also delete the stored legacy value then (kept for rollback).
+  - [x] [S] ~~Remove the deprecated single-config migration (added 2026-10-12): `STORAGE_KEY` and the legacy branch in `getFiles()`.~~ Done with the rename to Any Content Filter (2026-11-05), which starts with fresh storage anyway (settings carried over by export/import).
   - [ ] [S] Settings files follow-ups (added 2026-10-12): verify on real configs that renaming a library rewrites the `[use]` lines and `@OLD/` refs in importing files; check the dialog on mobile (Firefox/Vivaldi on Android). Idea if needed later: per-file conflict choice on import (today one choice applies to all clashing names).
   - [ ] [M] Profanity lists follow-ups (added 2026-11-04; plan: grouped `LANG.TOPIC.LEVEL` lists in a local library, `partial` / `fold` / `sound` options, `word` scope):
     - [ ] [M] Per-entry exceptions for wildcard list entries (`ass*` but not `asset`, `assay`), like dsojevic/profanity-list `exceptions`. Rule-level `!` excludes drop the whole value, which is fine for usernames but not for text with a real hit next to an excepted word. Idea: iterate matches (`g` flag) and skip those whose word is in an allow set.

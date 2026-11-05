@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Any Content Blur
+// @name         Any Content Filter
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-11-05
-// @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
+// @version      2026-11-05T173403
+// @description  Blur, mask, hide or highlight page content (text, images, links, usernames) by per-site rules with regexes and word lists, plus reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
 //
@@ -14,7 +14,7 @@
 //
 // @run-at       document-idle
 //
-// @downloadURL  https://github.com/cbaoth/userscripts/raw/master/any-content-blur.user.js
+// @downloadURL  https://github.com/cbaoth/userscripts/raw/master/any-content-filter.user.js
 // ==/UserScript==
 
 (async function () {
@@ -25,16 +25,13 @@
     //  CONFIG (constants — tweak to taste)
     // -----------------------------------------------------------------------
 
-    // DEPRECATED (2026-10-12): legacy single config, only read by the one-time
-    // migration in getFiles(). Remove together with that migration (docs/TODO.md).
-    const STORAGE_KEY = 'contentBlurRules';
-    const FILES_KEY = 'contentBlurFiles'; // [{ id, name, enabled, text }]; run order = name order (sortFiles)
+    const FILES_KEY = 'contentFilterFiles'; // [{ id, name, enabled, text }]; run order = name order (sortFiles)
     const REFERENCE_NAME = 'reference'; // built-in read-only file (DEFAULT_RULES), never stored
     const FILE_NAME_MAX = 50; // chars (names are ASCII-only, so also bytes)
     // Used in [use] and @file/list, so no / or spaces.
     const FILE_NAME_RE = new RegExp(`^[a-z0-9][a-z0-9_.-]{0,${FILE_NAME_MAX - 1}}$`);
-    const PANEL_STATE_KEY = 'contentBlurPanelState'; // remembered quick-add destination
-    const DIALOG_STATE_KEY = 'contentBlurDialogState'; // remembered settings dialog size ({ maximized })
+    const PANEL_STATE_KEY = 'contentFilterPanelState'; // remembered quick-add destination
+    const DIALOG_STATE_KEY = 'contentFilterDialogState'; // remembered settings dialog size ({ maximized })
     const BLUR_CLASS = 'ucb-blur';
     const HOVER_CLASS = 'ucb-hover';
     const FREEZE_CLASS = 'ucb-freeze'; // pauses CSS animations inside a frozen target
@@ -43,7 +40,7 @@
     const FROZEN_CLASS = 'ucb-frozen'; // marks a canvas snapshot that replaced a GIF
     const BLUR_STRENGTH_PX = 9; // .ucb-blur { filter: blur(Npx) }
     const SCAN_DEBOUNCE_MS = 250;
-    const LOG_PREFIX = '[content-blur]';
+    const LOG_PREFIX = '[content-filter]';
 
     // Keyboard shortcuts. Each is { alt, shift, ctrl, meta, key } (key compared
     // lowercase).
@@ -137,7 +134,7 @@
     // -----------------------------------------------------------------------
 
     const DEFAULT_RULES = `\
-# Any Content Blur — reference (read-only; always matches the installed version)
+# Any Content Filter — reference (read-only; always matches the installed version)
 #
 # ── Settings files ────────────────────────────────────────────────────────
 #
@@ -1334,7 +1331,8 @@
         if (sound) {
             const sc = [];
             const sm = [];
-            for (let i = 0; i < chars.length;) {
+            let i = 0;
+            while (i < chars.length) {
                 const pair = SOUND_BY_FIRST.get(chars[i])?.find(([from]) =>
                     [...from].every((c, k) => chars[i + k] === c)
                 );
@@ -1405,31 +1403,10 @@
         return files.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     }
 
-    // Stored files in run order, migrating the legacy single config on first use:
-    // it becomes file "main" running everywhere (its rules keep their own url
-    // patterns, so behavior is unchanged). The legacy key is left untouched for
-    // rollback.
+    // Stored files in run order.
     async function getFiles() {
         const files = await GM.getValue(FILES_KEY, null);
-        if (Array.isArray(files)) return sortFiles(files);
-        // DEPRECATED (2026-10-12): legacy migration below — remove once all installs
-        // have run it (docs/TODO.md); then just return [] here.
-        const legacy = await GM.getValue(STORAGE_KEY, null);
-        const migrated = [];
-        if (legacy != null && legacy.trim() && legacy.trim() !== DEFAULT_RULES.trim()) {
-            // Rule lines may precede the first section header (allowed in the old
-            // format); keep them rules once [match] is prepended.
-            const firstContent = legacy.split('\n').find((l) => {
-                const t = l.trim();
-                return t && !t.startsWith('#') && !t.startsWith('//');
-            });
-            const needRules = firstContent !== undefined && !sectionHeader(firstContent.trim());
-            const head =
-                '# migrated from the single-config version\n[match]\n*://*/*\n' + (needRules ? '\n[rules]\n' : '\n');
-            migrated.push({ id: newFileId(), name: 'main', enabled: true, text: head + legacy });
-        }
-        await GM.setValue(FILES_KEY, migrated);
-        return migrated;
+        return Array.isArray(files) ? sortFiles(files) : [];
     }
 
     async function saveFiles(files) {
@@ -1961,7 +1938,7 @@ ${customCss || ''}
 
     function toggleStyles() {
         setStylesOff(!stylesOff);
-        toast('Content Blur: all effects ' + (stylesOff ? 'OFF' : 'ON'));
+        toast('Content Filter: all effects ' + (stylesOff ? 'OFF' : 'ON'));
     }
 
     // -----------------------------------------------------------------------
@@ -1992,7 +1969,7 @@ ${customCss || ''}
     function toggleDebug() {
         ensureStyles(); // debug CSS lives in the main style block; make sure it's injected
         setDebug(!debugOn);
-        toast('Content Blur: debug ' + (debugOn ? 'ON — effects revealed, areas labelled' : 'OFF'));
+        toast('Content Filter: debug ' + (debugOn ? 'ON — effects revealed, areas labelled' : 'OFF'));
     }
 
     // A fixed corner legend mapping the FILE#N badges to their rules: id, the raw
@@ -2025,7 +2002,7 @@ ${customCss || ''}
         const head = document.createElement('div');
         Object.assign(head.style, { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' });
         const title = document.createElement('strong');
-        title.textContent = 'Content Blur — debug';
+        title.textContent = 'Content Filter — debug';
         Object.assign(title.style, { color: '#fff', flex: '1', fontSize: '13px' });
         const close = document.createElement('span');
         close.textContent = '✕';
@@ -2580,15 +2557,15 @@ ${customCss || ''}
     async function quickAddSilent() {
         const ctx = captureContext();
         if (!ctx) {
-            toast('Content Blur: select text or hover a link first', false);
+            toast('Content Filter: select text or hover a link first', false);
             return;
         }
         const saved = (await GM.getValue(PANEL_STATE_KEY, null)) || {};
         const res = await addNewRuleFromContext(ctx, newRuleFile(await editTargets(), saved));
         toast(
             res.changed
-                ? `Content Blur: added rule for "${truncate(ctx.label, 40)}" to ${res.file}`
-                : `Content Blur: rule for "${truncate(ctx.label, 40)}" already exists in ${res.file}`
+                ? `Content Filter: added rule for "${truncate(ctx.label, 40)}" to ${res.file}`
+                : `Content Filter: rule for "${truncate(ctx.label, 40)}" already exists in ${res.file}`
         );
     }
 
@@ -2602,7 +2579,7 @@ ${customCss || ''}
     async function quickBlock() {
         const ctx = captureContext();
         if (!ctx) {
-            toast('Content Blur: select text or hover a link first', false);
+            toast('Content Filter: select text or hover a link first', false);
             return;
         }
         const targets = await editTargets();
@@ -2622,8 +2599,8 @@ ${customCss || ''}
             }
             toast(
                 added.changed
-                    ? `Content Blur: no matching rule — created one for "${truncate(ctx.label, 40)}" in ${added.file}`
-                    : `Content Blur: rule for "${truncate(ctx.label, 40)}" already exists in ${added.file}`
+                    ? `Content Filter: no matching rule — created one for "${truncate(ctx.label, 40)}" in ${added.file}`
+                    : `Content Filter: rule for "${truncate(ctx.label, 40)}" already exists in ${added.file}`
             );
             return;
         }
@@ -2634,7 +2611,7 @@ ${customCss || ''}
             scan(document.body);
             if (activeRules.length > 0) startObserver();
         }
-        toast(`Content Blur: ${res.message} (${res.target.file.name})`);
+        toast(`Content Filter: ${res.message} (${res.target.file.name})`);
     }
 
     // Scan raw config lines once into an index of list blocks, rule lines and
@@ -2781,7 +2758,7 @@ ${customCss || ''}
     async function quickAddPanel() {
         const captured = captureContext();
         if (!captured) {
-            toast('Content Blur: select text or hover a link first', false);
+            toast('Content Filter: select text or hover a link first', false);
             return;
         }
         // If the bar is already open, refresh it in place from the fresh capture
@@ -3003,7 +2980,7 @@ ${customCss || ''}
         addBtn.addEventListener('click', async () => {
             const token = patternInput.value.trim();
             if (!token) {
-                toast('Content Blur: pattern is empty', false);
+                toast('Content Filter: pattern is empty', false);
                 return;
             }
             const mode = modeSel.value;
@@ -3026,19 +3003,19 @@ ${customCss || ''}
                         ? { mode, file: res.file, newFile: res.file, ruleKey: line.trim() }
                         : { mode, newFile: res.file }
                 );
-                toast(`Content Blur: ${res.changed ? 'rule added' : 'rule already exists'} (${res.file})`);
+                toast(`Content Filter: ${res.changed ? 'rule added' : 'rule already exists'} (${res.file})`);
             } else if (mode === 'rule') {
                 const { t, e } = ruleOpts[Number(mid.ruleSel.value)];
                 const res = insertRulePattern(t.lines, e, token, ctx.label);
                 await applyEdits(t, res.changed);
                 await saveState({ mode, file: t.file.name, ruleKey: t.lines[e.idx].trim() });
-                toast(`Content Blur: ${res.message} (${t.file.name})`);
+                toast(`Content Filter: ${res.message} (${t.file.name})`);
             } else {
                 const { t, name } = listOpts[Number(mid.listSel.value)];
                 const res = insertListEntry(t.lines, t.listBlocks.get(name), name, token, ctx.label);
                 await applyEdits(t, res.changed);
                 await saveState({ mode, file: t.file.name, listName: name });
-                toast(`Content Blur: ${res.message} (${t.file.name})`);
+                toast(`Content Filter: ${res.message} (${t.file.name})`);
             }
             panel.remove();
         });
@@ -3271,7 +3248,7 @@ ${customCss || ''}
     }
 
     // Export / import format: { format, version, exported, files: [{ name, enabled, text }] }.
-    const EXPORT_FORMAT = 'any-content-blur';
+    const EXPORT_FORMAT = 'any-content-filter';
 
     function downloadJson(filename, files) {
         const data = {
@@ -3294,7 +3271,7 @@ ${customCss || ''}
     function parseImport(json) {
         const data = JSON.parse(json);
         if (data?.format !== EXPORT_FORMAT || !Array.isArray(data.files)) {
-            throw new Error('not an Any Content Blur export');
+            throw new Error('not an Any Content Filter export');
         }
         return data.files
             .filter((f) => typeof f?.name === 'string' && typeof f?.text === 'string')
@@ -3346,7 +3323,7 @@ ${customCss || ''}
         const header = document.createElement('div');
         Object.assign(header.style, { display: 'flex', alignItems: 'center', margin: '0 0 6px' });
         const title = document.createElement('h3');
-        title.textContent = 'Any Content Blur — Settings';
+        title.textContent = 'Any Content Filter — Settings';
         Object.assign(title.style, { margin: '0', color: '#fff', fontSize: '15px', flex: '1' });
         const btnClose = document.createElement('button');
         btnClose.textContent = '✕';
@@ -3897,13 +3874,13 @@ ${customCss || ''}
                 ],
             });
             if (choice === 'file') {
-                downloadJson(`content-blur-${f.name}.json`, [f, ...libs]);
+                downloadJson(`content-filter-${f.name}.json`, [f, ...libs]);
                 setStatus(
                     `Exported "${f.name}"${libs.length ? ` + ${libs.length} librar${libs.length !== 1 ? 'ies' : 'y'}` : ''}.`,
                     '#4ec9b0'
                 );
             } else if (choice === 'all') {
-                downloadJson(`content-blur-all-${new Date().toISOString().slice(0, 10)}.json`, files);
+                downloadJson(`content-filter-all-${new Date().toISOString().slice(0, 10)}.json`, files);
                 setStatus(`Exported ${files.length} file${files.length !== 1 ? 's' : ''}.`, '#4ec9b0');
             }
         });
@@ -4252,7 +4229,7 @@ ${customCss || ''}
                 if (COMMIT_TAP.enabled && e.key === COMMIT_TAP.key && document.getElementById('ucb-quick-panel'))
                     return;
                 setPeek(!peekOn);
-                toast('Content Blur: peek ' + (peekOn ? 'on (effects revealed)' : 'off'));
+                toast('Content Filter: peek ' + (peekOn ? 'on (effects revealed)' : 'off'));
             }
         },
         true
@@ -4326,7 +4303,7 @@ ${customCss || ''}
     //  INIT
     // -----------------------------------------------------------------------
 
-    GM_registerMenuCommand(`⚙️ Content Blur Settings (${keyLabel(KEYS.openSettings)})`, () => openSettings());
+    GM_registerMenuCommand(`⚙️ Content Filter Settings (${keyLabel(KEYS.openSettings)})`, () => openSettings());
     GM_registerMenuCommand(
         `➕ Quick-add: ${keyLabel(KEYS.quickAddSilent)} (silent) / ${keyLabel(KEYS.quickAddPanel)} (panel)`,
         quickAddPanel

@@ -3,7 +3,7 @@
 ## Table of Contents
 
 - [User Scripts](#user-scripts)
-  - [Any Content Blur](#any-content-blur)
+  - [Any Content Filter](#any-content-filter)
   - [Any Emoji Replacer](#any-emoji-replacer)
   - [Any Image Resizer](#any-image-resizer)
   - [Any Redirector](#any-redirector)
@@ -36,9 +36,9 @@ See [Deprecated & Legacy Scripts](#deprecated--legacy-scripts) for older scripts
 
 ---
 
-### Any Content Blur
+### Any Content Filter
 
-[any-content-blur.user.js](any-content-blur.user.js) blurs disturbing or unwanted content on any site by configurable rules, with reveal-on-hover so you can decide whether to peek. A general, config-file-driven approach to filtering unwanted content.
+[any-content-filter.user.js](any-content-filter.user.js) filters content on any site by configurable rules: blur, mask, hide or highlight what matches, with reveal-on-hover so you can decide whether to peek. A general, config-file-driven approach to filtering unwanted content (or highlighting wanted content).
 
 - Plain-text **settings files** (one rule per line, edited in a textarea — no fiddly multi-tab GUI). Each file works like its own userscript: it runs on the URLs in its `[match]` section (several glob or `/regex/` lines, minus `[exclude]`), and its lists and CSS are private. One file per site or app (e.g. one regex covering all Jenkins hosts) stays small, can be toggled on/off, and can be shared on its own:
 

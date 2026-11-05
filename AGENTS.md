@@ -32,12 +32,12 @@ they are provided machine-wide from the dotfiles repo and load automatically
 
 ## Naming
 
-- Filename: `<scope>-<name>.user.js`; `@name`: the same words in title case (`any-content-blur.user.js` → `Any Content Blur`)
+- Filename: `<scope>-<name>.user.js`; `@name`: the same words in title case (`any-content-filter.user.js` → `Any Content Filter`)
 - `<scope>`: `any` for scripts that run on all pages by default (e.g. `@match *://*/*`, sites excluded by blocklist); otherwise the site/tool name (`imdb`, `jenkins`) or common purpose for multi-site scripts (`streaming`, `forum`)
 - `<name>`: the script's purpose/function in as few words as possible (details belong in `@description`); site-specific grab-bags use `tweaks`
 - No personal prefix (e.g. `cb-`): it would be on every file, so it adds noise without grouping anything
 - Renaming a published script breaks `@downloadURL` for existing installs and may lose settings or cause duplicates (Violentmonkey identifies scripts, including for sync, by `@namespace` + `@name`); keep a frozen copy of the renamed script at the old path during the transition (symlinks don't work — GitHub raw serves the link target path, not the content), and bump `@version` even though the rename is non-functional, otherwise the manager never fetches the new `@downloadURL`
-- Keep internal identifiers stable across renames when user config references them (e.g. `.ucb-*` classes in Content Blur's `[css]` section)
+- Keep internal identifiers stable across renames when user config references them (e.g. `.ucb-*` classes in Content Filter's `[css]` section)
 
 ## Documentation Rules
 
