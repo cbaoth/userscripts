@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Any Content Filter
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-11-05T173403
+// @version      2026-11-05T192525
 // @description  Blur, mask, hide or highlight page content (text, images, links, usernames) by per-site rules with regexes and word lists, plus reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -168,7 +168,7 @@
 #   [use]
 #   common                           (a library file named "common")
 #   [rules]
-#   * | text | @common/words_violent | blur | self | hover
+#   * | text | @common/words_spoiler | blur | self | hover
 #
 # ── Sections ──────────────────────────────────────────────────────────────
 #
@@ -183,7 +183,7 @@
 #                 rule patterns and in list entries. Imported library lists
 #                 are named LIB/NAME, so @* matches them too. [...] matches one
 #                 char from a set: with lists named LANG.TOPIC.LEVEL,
-#                 @words/*.sexual.[34] takes levels 3+4 of every language,
+#                 @words/*.insult.[34] takes levels 3+4 of every language,
 #                 @words/de.*.[!1] everything German except level 1.
 #                 A line starting with @ is always a list reference — to match a
 #                 literal "@foo" use a regex, e.g. /^@foo$/ or /@foo/.
@@ -322,29 +322,30 @@
 #                                 Runs after the normal rules, and like any rule
 #                                 skips an element an earlier rule already took.
 #                 partial         plain words of 4+ letters also match INSIDE
-#                                 other words (rape → rapemonster, but also grape) —
+#                                 other words (troll → trollking, but also trolley) —
 #                                 for usernames, which have no spaces. partial:N sets
 #                                 the minimum (shorter words keep their edges, so
-#                                 ass never hits classic). Cancel known false hits
-#                                 with excludes: rape, !grape*. Too broad for normal
+#                                 fan never hits fancy). Cancel known false hits
+#                                 with excludes: troll, !trolley*. Too broad for normal
 #                                 text. The user source also splits camelCase
-#                                 (xXRapeMonsterXx), with or without partial.
+#                                 (xXTrollKingXx), with or without partial.
 #                 fold            spelling-tolerant: the text AND the plain list
 #                                 words are folded before matching — lowercase,
 #                                 ß → ss, accents/umlauts dropped (ä → a; a list
 #                                 word with ä also matches ae), leet inside a word
 #                                 (4@ → a, 3 → e, 1! → i, 0 → o, $5 → s, 7 → t:
-#                                 sh!t, a55hole; digits and $ also at a word start:
-#                                 4rsch), and 3+ equal letters → 1 (fuuuck). So haß
+#                                 sp0iler, tr0ll; digits and $ also at a word start:
+#                                 5pam), and 3+ equal letters in a word → 1 (spaaam;
+#                                 not a word of just one letter: zzz). So haß
 #                                 and hass are the same word, has is not. Leet is
-#                                 ambiguous (f4ck → fack): list the vowel variants
+#                                 ambiguous (l4ve → lave): list the vowel variants
 #                                 you care about. /regex/ entries see the FOLDED
 #                                 text — write them lowercase, without umlauts.
 #                 sound           fold + sound-alike spellings: v → f, ph → f,
 #                                 ck/c → k, tz/ts → z, dt → t, y → i, sh → sch
-#                                 (votze = fotze). Broader, so more false hits —
-#                                 meant for sites with deliberately misspelled
-#                                 insults.
+#                                 (photo = foto, Stadt = Stat). Broader, so more
+#                                 false hits — meant for sites with deliberately
+#                                 misspelled words.
 #                 in:SELECTOR     only match inside elements matching this CSS
 #                                 selector (the matched text / attribute element
 #                                 must have such an ancestor, or be one). Limits
@@ -356,13 +357,13 @@
 #
 # ── Examples (remove the leading # to enable) ───────────────────────────────
 #
-# [list:words_violent]
-# gore                     (literal, whole word)
-# murder*                  (literal + wildcard: words starting with "murder")
-# /blood(y)?/              (regex, substring — also matches inside words)
-# /\bblood\b/              (regex, whole word)
-# /^blood$/                (regex, whole text)
-# /kill(ed|ing)?/          (regex alternation, substring)
+# [list:words_spoiler]
+# spoiler                  (literal, whole word)
+# finale*                  (literal + wildcard: words starting with "finale")
+# /twist(s)?/              (regex, substring — also matches inside words)
+# /\\btwist\\b/              (regex, whole word)
+# /^twist$/                (regex, whole text)
+# /reveal(ed|s)?/          (regex alternation, substring)
 #
 # [list:users]
 # /^some_user_name$/       (regex, exact username)
@@ -413,24 +414,24 @@
 # # one gallery item spans two <tr> rows (image row above the username row):
 # # blur BOTH rows when the username matches; hovering either reveals the pair:
 # *://site.com/*   | user          | @users             | blur       | row prev:1 | hover
-# # blur any visible text containing a @words_violent word, anywhere, reveal on hover:
-# *://*/*          | text          | @words_violent     | blur       | self  | hover
+# # blur any visible text containing a @words_spoiler word, anywhere, reveal on hover:
+# *://*/*          | text          | @words_spoiler     | blur       | self  | hover
 # # blur image + caption when alt/title or filename matches, on all sites,
 # # using a wildcard directly in the rule's patterns field:
 # *://*/*          | alt,title,url | @words_*           | blur       | up:1  | hover
 # # stronger blur (20px) on flagged text:
-# *://*/*          | text          | @words_violent     | blur:20    | self  | hover
+# *://*/*          | text          | @words_spoiler     | blur:20    | self  | hover
 # # darken (custom [css] action) image + caption instead of blurring:
 # *://*/*          | alt,title,url | @words_*           | dark       | up:1  | hover
 # # blur AND dim together, overriding the dim level for this rule:
-# *://*/*          | text          | @words_violent     | blur, dim:0.1 | self | hover
+# *://*/*          | text          | @words_spoiler     | blur, dim:0.1 | self | hover
 # # HIGHLIGHT your own name + friends' usernames (the opposite of blurring):
 # *://*/*          | text,user     | @friends           | hl         | up:1  | no-hover
 # # highlight a card when any line mentions a wanted term — but not when that same
 # # line also contains an unwanted one ("Minions deal 10% increased Damage"):
 # *://*/*          | text          | @wanted, !@unwanted, !minion* | hl | up:3 | no-hover
 # # only inside the comment section of a site (rest of the page untouched):
-# *://site.com/*   | text          | @words_violent     | blur       | self  | hover, in:#comments
+# *://site.com/*   | text          | @words_spoiler     | blur       | self  | hover, in:#comments
 # # dim every result card that has NOT a single wanted line (if-none inverts):
 # *://site.com/*   | text          | @wanted, !@unwanted | dim | closest:.card | if-none
 # # hide gallery items whose interest/genre icon carries a marker class — the
@@ -576,15 +577,15 @@
     // Word edges count LETTERS only — ASCII + Latin-1 + Latin Extended-A/B, so
     // umlauts, ß and accents are part of a word. (JS \b only knows ASCII \w: it let
     // "balls" match inside "Fußballs".) Digits and _ separate words for a letter
-    // edge ("rape_monster", "rape69"); a digit edge is only bounded by digits.
+    // edge ("troll_king", "troll69"); a digit edge is only bounded by digits.
     const LETTER_CLASS = '[A-Za-zÀ-ÖØ-öø-ɏ]';
     const LETTER_RE = new RegExp(LETTER_CLASS);
     const LETTERS_RE = new RegExp(LETTER_CLASS, 'g');
     const EDGE_CLASS = { letter: LETTER_CLASS, digit: '[0-9]' };
-    // A space in a literal: any whitespace, . _ - or nothing (bring dich um also
-    // matches bring-dich-um and bringdichum).
+    // A space in a literal: any whitespace, . _ - or nothing (spoiler alert also
+    // matches spoiler-alert and spoileralert).
     const LITERAL_SPACE = '[\\s._-]{0,3}';
-    // A * at either END of a plain word continues the word only (fuck* → fucking,
+    // A * at either END of a plain word continues the word only (spoil* → spoilers,
     // not the rest of the sentence). Same yes/no result as "any run" there, but
     // the word scope marks just the word. Inside a word (or in "exact") * stays
     // "any run".
@@ -664,7 +665,7 @@
 
     // The literal texts a rule matches for one list entry. With fold the entry is
     // folded like the text it is matched against, plus an ae/oe/ue variant for an
-    // umlaut (ärsche also catches aersche; arsche comes from folding ä → a).
+    // umlaut (grün also catches gruen; grun comes from folding ü → u).
     function literalVariants(text, options) {
         if (!options.fold) return [text];
         const out = new Set([foldText(text, options.sound).text]);
@@ -1190,7 +1191,7 @@
 
         // Resolve patterns: @ref → (possibly nested/wildcard) list items, else inline
         // token. The item sets deduplicate across all refs + inline tokens so
-        // overlapping lists (e.g. @dark and @text_* both yielding "gore") produce only
+        // overlapping lists (e.g. @dark and @text_* both yielding "spoiler") produce only
         // one regex branch — unique by token text, not semantic equivalence.
         // A leading ! puts the token into the exclude set instead (see matchRule).
         const include = newItemSet();
@@ -1258,8 +1259,8 @@
     // entries are folded the same way when the rule compiles. Raw /regex/ entries
     // see the folded text as-is, so write them in folded form.
     const FOLD_CHARS = { ß: 'ss', ẞ: 'ss', æ: 'ae', œ: 'oe', ø: 'o', ł: 'l', đ: 'd', þ: 'th' };
-    // Leet chars, read as letters only INSIDE a word (sh!t, a55hole) — or at its
-    // start for digits and $ (4rsch, $hit). Never at its end: shit! and user1 stay.
+    // Leet chars, read as letters only INSIDE a word (sp0iler, tr0ll) — or at its
+    // start for digits and $ (5pam, $pam). Never at its end: wow! and user1 stay.
     const LEET = { 4: 'a', '@': 'a', 3: 'e', 1: 'i', '!': 'i', 0: 'o', $: 's', 5: 's', 7: 't' };
     const LEET_LEAD = new Set(['4', '3', '1', '0', '$', '5', '7']);
     // sound: sound-alike spellings, longest match first. No double-letter collapse
@@ -1284,7 +1285,7 @@
     const FOLD_LETTER_RE = /\p{L}/u;
 
     // s → { text, map }: lowercase, ß → ss, accents/umlauts stripped (ä → a, é →
-    // e), leet read as letters, runs of 3+ equal letters → 1 (fuuuck → fuck), and
+    // e), leet read as letters, runs of 3+ equal letters → 1 (spaaam → spam, but zzz stays), and
     // with sound the SOUND merges. map[i] = index in s of folded char i.
     function foldText(s, sound = false) {
         const isLetter = (c) => c !== undefined && FOLD_LETTER_RE.test(c);
@@ -1319,7 +1320,10 @@
             const c = chars[i];
             let j = i + 1;
             while (chars[j] === c) j++;
-            const keep = isLetter(c) && j - i >= 3 ? 1 : j - i;
+            // A word that is only the run (zzz, www) stays: collapsed it
+            // would match every lone letter.
+            const stretched = isLetter(c) && j - i >= 3 && (isLetter(chars[i - 1]) || isLetter(chars[j]));
+            const keep = stretched ? 1 : j - i;
             for (let k = 0; k < keep; k++) {
                 outChars.push(c);
                 outMap.push(map[i + k]);
@@ -1373,8 +1377,8 @@
         return memo.text;
     }
 
-    // Usernames have no spaces, so camelCase humps mark the words: "xXRapeMonsterXx"
-    // → "x X Rape Monster Xx" (aB → a B, ABc → A Bc). Only adds word edges.
+    // Usernames have no spaces, so camelCase humps mark the words: "xXTrollKingXx"
+    // → "x X Troll King Xx" (aB → a B, ABc → A Bc). Only adds word edges.
     function splitCamelCase(s) {
         return s
             .replace(/([a-zß-öø-ÿ])([A-ZÀ-ÖØ-Þ])/g, '$1 $2')
@@ -2248,7 +2252,7 @@ ${customCss || ''}
         }
     }
 
-    // "fucking", mask:1 → "f******". Whitespace stays (phrases keep their shape).
+    // "spoiler", mask:1 → "s******". Whitespace stays (phrases keep their shape).
     function maskWord(word, value) {
         const keep = value == null ? 1 : Math.max(0, parseInt(value, 10) || 0);
         return [...word].map((c, i) => (i < keep || /\s/.test(c) ? c : '*')).join('');

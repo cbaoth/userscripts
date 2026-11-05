@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Any Content Blur
+// @name         Any Content Filter
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-09-18
-// @description  Blur disturbing/unwanted content (text, alt/title, URLs, usernames) by configurable regex rules per URL pattern, with reveal-on-hover and keyboard quick-add.
+// @version      2026-11-05T192525
+// @description  Blur, mask, hide or highlight page content (text, images, links, usernames) by per-site rules with regexes and word lists, plus reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
 //
@@ -14,7 +14,7 @@
 //
 // @run-at       document-idle
 //
-// @downloadURL  https://github.com/cbaoth/userscripts/raw/master/any-content-blur.user.js
+// @downloadURL  https://github.com/cbaoth/userscripts/raw/master/any-content-filter.user.js
 // ==/UserScript==
 
 (async function () {
@@ -25,15 +25,22 @@
     //  CONFIG (constants — tweak to taste)
     // -----------------------------------------------------------------------
 
-    const STORAGE_KEY = 'contentBlurRules';
-    const PANEL_STATE_KEY = 'contentBlurPanelState'; // remembered quick-add destination
+    const FILES_KEY = 'contentFilterFiles'; // [{ id, name, enabled, text }]; run order = name order (sortFiles)
+    const REFERENCE_NAME = 'reference'; // built-in read-only file (DEFAULT_RULES), never stored
+    const FILE_NAME_MAX = 50; // chars (names are ASCII-only, so also bytes)
+    // Used in [use] and @file/list, so no / or spaces.
+    const FILE_NAME_RE = new RegExp(`^[a-z0-9][a-z0-9_.-]{0,${FILE_NAME_MAX - 1}}$`);
+    const PANEL_STATE_KEY = 'contentFilterPanelState'; // remembered quick-add destination
+    const DIALOG_STATE_KEY = 'contentFilterDialogState'; // remembered settings dialog size ({ maximized })
     const BLUR_CLASS = 'ucb-blur';
     const HOVER_CLASS = 'ucb-hover';
     const FREEZE_CLASS = 'ucb-freeze'; // pauses CSS animations inside a frozen target
+    const WORD_CLASS = 'ucb-w'; // span wrapped around a match by the word scope
+    const MASK_CLASS = 'ucb-mask'; // built-in mask action (word scope): shows f***
     const FROZEN_CLASS = 'ucb-frozen'; // marks a canvas snapshot that replaced a GIF
     const BLUR_STRENGTH_PX = 9; // .ucb-blur { filter: blur(Npx) }
     const SCAN_DEBOUNCE_MS = 250;
-    const LOG_PREFIX = '[content-blur]';
+    const LOG_PREFIX = '[content-filter]';
 
     // Keyboard shortcuts. Each is { alt, shift, ctrl, meta, key } (key compared
     // lowercase).
@@ -127,9 +134,45 @@
     // -----------------------------------------------------------------------
 
     const DEFAULT_RULES = `\
-# Any Content Blur — configuration
+# Any Content Filter — reference (read-only; always matches the installed version)
 #
-# Three kinds of sections:
+# ── Settings files ────────────────────────────────────────────────────────
+#
+# Config is split into settings files, each behaving like its own userscript.
+# Use 📋 (copy) to start a new file from this text, or + for an empty file.
+#
+#   [match]       URL patterns (one per line, glob or /regex/, like @match) the
+#                 file runs on. All enabled files that match a page run, in
+#                 NAME order (character order: - before 0-9 before a-z); an
+#                 element already taken by an earlier rule is skipped by later
+#                 ones, also across files — prefix names (10-…, 50-…) to set
+#                 the order.
+#                 *://*/* = everywhere. Several lines = any of them, e.g. one
+#                 regex covering every Jenkins/Gerrit/MediaWiki host.
+#   [exclude]     URL patterns the file must NOT run on (wins over [match]).
+#                 To keep a global file off a site, exclude the site here.
+#   [use]         library file names (one per line) whose lists this file uses.
+#
+# Lists and CSS are private to their file. A file WITHOUT [match] is a library:
+# it never runs by itself; files that [use] it reference its lists as
+# @LIB/NAME (also @LIB/glob*) and get its [css] injected while they run. A
+# library's own [use] and [rules] are ignored. The Enabled flag only applies to
+# running files — an imported library is used even when disabled.
+#
+# A rule's url-pattern narrows further within the file's [match]: write * for
+# "wherever the file runs".
+#
+# Example:
+#   [match]
+#   *://www.example.com/*
+#   [use]
+#   common                           (a library file named "common")
+#   [rules]
+#   * | text | @common/words_spoiler | blur | self | hover
+#
+# ── Sections ──────────────────────────────────────────────────────────────
+#
+# Besides [match] / [exclude] / [use], three kinds of sections:
 #
 #   [list:NAME]   reusable pattern list — one regex per line (case-insensitive).
 #                 Reference it from a rule as @NAME. A list line may itself be
@@ -137,7 +180,11 @@
 #                 reference loops and self-references are silently dropped).
 #                 Wildcards (* / ?) are supported in list names: @text_* expands
 #                 to every list whose name matches that glob. This works both in
-#                 rule patterns and in list entries.
+#                 rule patterns and in list entries. Imported library lists
+#                 are named LIB/NAME, so @* matches them too. [...] matches one
+#                 char from a set: with lists named LANG.TOPIC.LEVEL,
+#                 @words/*.insult.[34] takes levels 3+4 of every language,
+#                 @words/de.*.[!1] everything German except level 1.
 #                 A line starting with @ is always a list reference — to match a
 #                 literal "@foo" use a regex, e.g. /^@foo$/ or /@foo/.
 #
@@ -163,7 +210,8 @@
 #   [rules]       one rule per line, pipe-separated:
 #                     url-pattern | source | patterns | action | scope | options
 #
-# Outside [css], lines starting with # or // and blank lines are ignored.
+# Outside [css], lines starting with # or // and blank lines are ignored
+# (no /* */ block comments there — a line starting with /* is an error).
 #
 # ── Fields ────────────────────────────────────────────────────────────────
 #
@@ -189,14 +237,24 @@
 # patterns      Comma list of:
 #                 @NAME       reference a [list:NAME] block
 #                 word        literal, WHOLE-WORD match (auto-escaped): test
-#                             matches the word "test" but not "tested". Spaces are
-#                             literal (foo bar). Wildcards: * = any run, ? = one
-#                             char; write \\* \\? for a literal * or ?.
+#                             matches the word "test" but not "tested". Word edges
+#                             count letters incl. umlauts/accents, so digits and _
+#                             separate words (test_1 matches, Fußballs does not
+#                             match balls). A space matches whitespace, . _ - or
+#                             nothing: foo bar also matches foo-bar and foobar.
+#                             Wildcards: * = any run, ? = one char; write \\* \\?
+#                             for a literal * or ?.
 #                 "text"      EXACT full-value match (^...$): "mike" matches only
 #                             the whole value "mike", not "mike2". Wildcards still
 #                             work inside; \\" is a literal quote.
 #                 /regex/i    raw regex (flags optional); matches as a SUBSTRING.
 #                             Add \\b...\\b for whole-word or ^...$ for full value.
+#                 !TOKEN      EXCLUDE: any of the above prefixed with ! (!word,
+#                             !"text", !/regex/, !@NAME). A value matches the rule
+#                             only if a plain pattern matches it AND no ! pattern
+#                             does — each text/attribute value is checked on its
+#                             own. Needs at least one plain pattern. Write \\! for
+#                             a literal leading !. Rule patterns only (not in lists).
 #               A , or | inside "..." is literal (not a separator). A , or | inside
 #               a /regex/ is also literal, as long as the regex starts the field or
 #               the token (a leading /) — so alternation like /(a|b)/ works in the
@@ -209,6 +267,12 @@
 #                 blur            built-in filter blur (reveals on hover). Tune
 #                                 strength as blur:N px, e.g. blur:20 — bare
 #                                 "blur" uses the default BLUR_STRENGTH_PX.
+#                 mask            built-in, word scope only: shows the matched
+#                                 word as f*** — mask:N keeps N leading chars
+#                                 (default 1, mask:0 = all stars). The word stays
+#                                 in the page underneath (copy/paste and screen
+#                                 readers get it), so hover, peek and Alt+Z
+#                                 reveal it like any other effect.
 #                 NAME            any .ucb-NAME class you defined in a [css] block,
 #                                 e.g. "dark" applies your .ucb-dark rule. Writing
 #                                 the full "ucb-dark" works too (the prefix is
@@ -223,6 +287,14 @@
 #                 up:N            climb N ancestor elements (e.g. up:2)
 #                 closest:SEL     nearest ancestor matching CSS selector SEL
 #                 row             alias for closest:tr (old table layouts)
+#                 word            only the matched word(s): each match in a text
+#                                 is wrapped in its own <span class="ucb-w"> that
+#                                 gets the action — instead of the whole paragraph.
+#                                 Text source only (other sources act like self).
+#                                 Changes the page's DOM (splits text nodes):
+#                                 script-heavy sites may re-render or break —
+#                                 self is the safe default. Editable text
+#                                 (contenteditable) is never split.
 #               Optional modifiers, space-separated after the base scope:
 #                 prev:N next:N   also apply the effect to the N sibling elements
 #                                 before/after the scoped target — for layouts where
@@ -241,16 +313,57 @@
 #                                 blurred animation can't leak context via motion.
 #                                 With hover, motion resumes while the area is
 #                                 revealed and re-freezes when you leave it.
+#                 if-none         INVERT: apply the action to every scope container
+#                                 whose text has NO match (instead of to the
+#                                 matches). Needs a closest:SELECTOR (or row) scope,
+#                                 which defines the containers; text source only.
+#                                 Only the texts inside in:SEL (if set) count; a
+#                                 container without any counted text is skipped.
+#                                 Runs after the normal rules, and like any rule
+#                                 skips an element an earlier rule already took.
+#                 partial         plain words of 4+ letters also match INSIDE
+#                                 other words (troll → trollking, but also trolley) —
+#                                 for usernames, which have no spaces. partial:N sets
+#                                 the minimum (shorter words keep their edges, so
+#                                 fan never hits fancy). Cancel known false hits
+#                                 with excludes: troll, !trolley*. Too broad for normal
+#                                 text. The user source also splits camelCase
+#                                 (xXTrollKingXx), with or without partial.
+#                 fold            spelling-tolerant: the text AND the plain list
+#                                 words are folded before matching — lowercase,
+#                                 ß → ss, accents/umlauts dropped (ä → a; a list
+#                                 word with ä also matches ae), leet inside a word
+#                                 (4@ → a, 3 → e, 1! → i, 0 → o, $5 → s, 7 → t:
+#                                 sp0iler, tr0ll; digits and $ also at a word start:
+#                                 5pam), and 3+ equal letters in a word → 1 (spaaam;
+#                                 not a word of just one letter: zzz). So haß
+#                                 and hass are the same word, has is not. Leet is
+#                                 ambiguous (l4ve → lave): list the vowel variants
+#                                 you care about. /regex/ entries see the FOLDED
+#                                 text — write them lowercase, without umlauts.
+#                 sound           fold + sound-alike spellings: v → f, ph → f,
+#                                 ck/c → k, tz/ts → z, dt → t, y → i, sh → sch
+#                                 (photo = foto, Stadt = Stat). Broader, so more
+#                                 false hits — meant for sites with deliberately
+#                                 misspelled words.
+#                 in:SELECTOR     only match inside elements matching this CSS
+#                                 selector (the matched text / attribute element
+#                                 must have such an ancestor, or be one). Limits
+#                                 WHERE a match may be, not the scope: in:.mod with
+#                                 closest:.card still marks the whole card. Must be
+#                                 the LAST option — it takes the rest of the
+#                                 field, so commas in the selector are fine:
+#                                 no-hover, in:.results, aside .comments
 #
 # ── Examples (remove the leading # to enable) ───────────────────────────────
 #
-# [list:words_violent]
-# gore                     (literal, whole word)
-# murder*                  (literal + wildcard: words starting with "murder")
-# /blood(y)?/              (regex, substring — also matches inside words)
-# /\bblood\b/              (regex, whole word)
-# /^blood$/                (regex, whole text)
-# /kill(ed|ing)?/          (regex alternation, substring)
+# [list:words_spoiler]
+# spoiler                  (literal, whole word)
+# finale*                  (literal + wildcard: words starting with "finale")
+# /twist(s)?/              (regex, substring — also matches inside words)
+# /\\btwist\\b/              (regex, whole word)
+# /^twist$/                (regex, whole text)
+# /reveal(ed|s)?/          (regex alternation, substring)
 #
 # [list:users]
 # /^some_user_name$/       (regex, exact username)
@@ -301,19 +414,26 @@
 # # one gallery item spans two <tr> rows (image row above the username row):
 # # blur BOTH rows when the username matches; hovering either reveals the pair:
 # *://site.com/*   | user          | @users             | blur       | row prev:1 | hover
-# # blur any visible text containing a @words_violent word, anywhere, reveal on hover:
-# *://*/*          | text          | @words_violent     | blur       | self  | hover
+# # blur any visible text containing a @words_spoiler word, anywhere, reveal on hover:
+# *://*/*          | text          | @words_spoiler     | blur       | self  | hover
 # # blur image + caption when alt/title or filename matches, on all sites,
 # # using a wildcard directly in the rule's patterns field:
 # *://*/*          | alt,title,url | @words_*           | blur       | up:1  | hover
 # # stronger blur (20px) on flagged text:
-# *://*/*          | text          | @words_violent     | blur:20    | self  | hover
+# *://*/*          | text          | @words_spoiler     | blur:20    | self  | hover
 # # darken (custom [css] action) image + caption instead of blurring:
 # *://*/*          | alt,title,url | @words_*           | dark       | up:1  | hover
 # # blur AND dim together, overriding the dim level for this rule:
-# *://*/*          | text          | @words_violent     | blur, dim:0.1 | self | hover
+# *://*/*          | text          | @words_spoiler     | blur, dim:0.1 | self | hover
 # # HIGHLIGHT your own name + friends' usernames (the opposite of blurring):
 # *://*/*          | text,user     | @friends           | hl         | up:1  | no-hover
+# # highlight a card when any line mentions a wanted term — but not when that same
+# # line also contains an unwanted one ("Minions deal 10% increased Damage"):
+# *://*/*          | text          | @wanted, !@unwanted, !minion* | hl | up:3 | no-hover
+# # only inside the comment section of a site (rest of the page untouched):
+# *://site.com/*   | text          | @words_spoiler     | blur       | self  | hover, in:#comments
+# # dim every result card that has NOT a single wanted line (if-none inverts):
+# *://site.com/*   | text          | @wanted, !@unwanted | dim | closest:.card | if-none
 # # hide gallery items whose interest/genre icon carries a marker class — the
 # # class says what the content is even when text/alt/url don't; scope climbs
 # # from the icon div to the whole item:
@@ -402,13 +522,30 @@
         if (issues) issues.push({ line: lineNum, severity, message });
     }
 
-    // Convert a list-name glob (with * and ?) into a RegExp anchored to the full name.
+    // Convert a list-name glob into a RegExp anchored to the full name: * = any run,
+    // ? = one char, [abc] / [2-4] / [!x] = one char from (or, with !, not from) a set.
+    function isListNameGlob(name) {
+        return /[*?[]/.test(name);
+    }
     function listNameGlobToRegex(glob) {
-        const escaped = glob
-            .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-            .replace(/\*/g, '.*')
-            .replace(/\?/g, '.');
-        return new RegExp('^' + escaped + '$', 'i');
+        let src = '';
+        for (let i = 0; i < glob.length; i++) {
+            const c = glob[i];
+            const close = c === '[' ? glob.indexOf(']', i + 2) : -1;
+            if (close !== -1) {
+                let set = glob.slice(i + 1, close).replace(/\\/g, '\\\\');
+                if (set[0] === '!') set = '^' + set.slice(1);
+                src += '[' + set + ']';
+                i = close;
+            } else if (c === '*') src += '.*';
+            else if (c === '?') src += '.';
+            else src += escapeRegExp(c);
+        }
+        try {
+            return new RegExp('^' + src + '$', 'i');
+        } catch {
+            return /(?!)/; // invalid set such as [4-2]: matches nothing (caller warns)
+        }
     }
 
     // Glob (with *) or /regex/flags → { regex }. Mirrors any-image-resizer.
@@ -437,24 +574,48 @@
     //  CONFIG PARSING
     // -----------------------------------------------------------------------
 
-    function isWordChar(c) {
-        return /\w/.test(c);
+    // Word edges count LETTERS only — ASCII + Latin-1 + Latin Extended-A/B, so
+    // umlauts, ß and accents are part of a word. (JS \b only knows ASCII \w: it let
+    // "balls" match inside "Fußballs".) Digits and _ separate words for a letter
+    // edge ("troll_king", "troll69"); a digit edge is only bounded by digits.
+    const LETTER_CLASS = '[A-Za-zÀ-ÖØ-öø-ɏ]';
+    const LETTER_RE = new RegExp(LETTER_CLASS);
+    const LETTERS_RE = new RegExp(LETTER_CLASS, 'g');
+    const EDGE_CLASS = { letter: LETTER_CLASS, digit: '[0-9]' };
+    // A space in a literal: any whitespace, . _ - or nothing (spoiler alert also
+    // matches spoiler-alert and spoileralert).
+    const LITERAL_SPACE = '[\\s._-]{0,3}';
+    // A * at either END of a plain word continues the word only (spoil* → spoilers,
+    // not the rest of the sentence). Same yes/no result as "any run" there, but
+    // the word scope marks just the word. Inside a word (or in "exact") * stays
+    // "any run".
+    const WORD_RUN = '[0-9_A-Za-zÀ-ÖØ-öø-ɏ]*';
+    const PARTIAL_MIN_LETTERS = 4; // default N of the partial[:N] option
+
+    function edgeKind(c) {
+        if (!c) return '';
+        if (LETTER_RE.test(c)) return 'letter';
+        return /[0-9]/.test(c) ? 'digit' : '';
     }
 
     // Body of a literal pattern (no anchors/boundaries): escape regex specials,
-    // expand the simplified wildcards (* = any run, ? = one char), and honor
-    // \* \? \\ \" \/ as the literal characters. The caller decides anchoring.
-    function literalBody(text) {
+    // expand the simplified wildcards (* = any run, ? = one char), honor
+    // \* \? \\ \" \/ \! as the literal characters, and let a run of spaces match
+    // LITERAL_SPACE. The caller decides anchoring.
+    function literalBody(text, wordEdges = false) {
         let body = '';
         for (let i = 0; i < text.length; i++) {
             const c = text[i];
-            if (c === '\\' && '*?\\"/'.includes(text[i + 1])) {
-                body += escapeRegExp(text[i + 1]); // literal *, ?, \, ", or /
+            if (c === '\\' && '*?\\"/!'.includes(text[i + 1])) {
+                body += escapeRegExp(text[i + 1]); // literal *, ?, \, ", /, or !
                 i++;
             } else if (c === '*') {
-                body += '.*';
+                body += wordEdges && (i === 0 || i === text.length - 1) ? WORD_RUN : '.*';
             } else if (c === '?') {
                 body += '.';
+            } else if (/\s/.test(c)) {
+                while (/\s/.test(text[i + 1] ?? '')) i++;
+                body += LITERAL_SPACE;
             } else {
                 body += escapeRegExp(c);
             }
@@ -462,57 +623,105 @@
         return body;
     }
 
-    // A bare literal token → whole-word match: \b…\b where the matched edge is a
-    // literal word char (not a wildcard). So "test" matches only the whole word.
-    function literalToFragment(text) {
-        const body = literalBody(text);
+    // Edge kinds ('letter' | 'digit' | '') of a literal's first and last char. A
+    // wildcard or escaped special at an end leaves that end open.
+    function literalEdges(text) {
         const first = text[0];
         const last = text[text.length - 1];
-        const lead = first !== '*' && first !== '?' && first !== '\\' && isWordChar(first) ? '\\b' : '';
-        const tail = last !== '*' && last !== '?' && isWordChar(last) ? '\\b' : '';
-        return lead + body + tail;
+        const lead = first === '*' || first === '?' || first === '\\' ? '' : edgeKind(first);
+        const tail = last === '*' || last === '?' ? '' : edgeKind(last);
+        return [lead, tail];
     }
 
-    // A single regex *fragment* from one pattern token (@ref expanded by the caller):
-    //   "exact"   → ^…$ full-value match (wildcards active inside; \" is a literal ")
-    //   /regex/   → used verbatim (delimiters + flags dropped)
-    //   bare word → whole-word literal (see literalToFragment)
-    function patternTokenToFragment(token) {
+    // One pattern token (@ref expanded by the caller) → { type, text }:
+    //   "exact"   → exact: ^…$ full-value match (wildcards active inside; \" is a literal ")
+    //   /regex/   → raw: used verbatim (delimiters + flags dropped)
+    //   bare word → lit: whole-word literal
+    // Literals stay text until the rule compiles them, so rule options (partial,
+    // fold) can shape them.
+    function patternTokenToItem(token) {
         const t = token.trim();
         if (!t) return null;
-        if (t.length >= 2 && t.startsWith('"') && t.endsWith('"')) {
-            return '^' + literalBody(t.slice(1, -1)) + '$';
-        }
+        if (t.length >= 2 && t.startsWith('"') && t.endsWith('"')) return { type: 'exact', text: t.slice(1, -1) };
         if (t.startsWith('/')) {
             const lastSlash = t.lastIndexOf('/');
-            if (lastSlash > 0) return t.slice(1, lastSlash); // raw regex (drop delimiters + flags)
+            if (lastSlash > 0) return { type: 'raw', text: t.slice(1, lastSlash) };
         }
-        return literalToFragment(t);
+        return { type: 'lit', text: t };
     }
 
-    // Combine regex fragments into one case-insensitive RegExp. Each fragment
-    // already carries its own boundaries (literal terms are whole-word).
-    function buildCombinedRegex(fragments, issues, lineNum) {
-        const valid = [];
-        for (const frag of fragments) {
-            if (!frag) continue;
-            try {
-                new RegExp(frag); // validate in isolation
-                valid.push(frag);
-            } catch (e) {
-                reportIssue(issues, lineNum, 'warning', `skipping invalid pattern "${frag}": ${e.message}`);
+    // Pattern items collected for one rule side (include or exclude), deduplicated
+    // by type + text across all lists and inline tokens.
+    function newItemSet() {
+        return { items: [], seen: new Set() };
+    }
+    function addItem(set, item) {
+        if (!item) return;
+        const key = item.type + '\0' + item.text;
+        if (set.seen.has(key)) return;
+        set.seen.add(key);
+        set.items.push(item);
+    }
+
+    // The literal texts a rule matches for one list entry. With fold the entry is
+    // folded like the text it is matched against, plus an ae/oe/ue variant for an
+    // umlaut (grün also catches gruen; grun comes from folding ü → u).
+    function literalVariants(text, options) {
+        if (!options.fold) return [text];
+        const out = new Set([foldText(text, options.sound).text]);
+        if (/[äöü]/i.test(text)) {
+            const ae = text.replace(/[äöü]/gi, (c) => ({ ä: 'ae', ö: 'oe', ü: 'ue' })[c.toLowerCase()]);
+            out.add(foldText(ae, options.sound).text);
+        }
+        return [...out];
+    }
+
+    // Compile pattern items into one case-insensitive RegExp. Whole-word literals
+    // are grouped by edge kind and each group gets ONE lookaround pair: per-entry
+    // boundaries (\b…\b|\b…\b|…) stop V8 from optimizing the alternation and made
+    // a 7,000-word list ~50× slower. options.partial = N drops the word edges of
+    // literals with at least N letters (substring match, e.g. for usernames).
+    function buildPatternRegex(items, options, issues, lineNum) {
+        const fragments = [];
+        const groups = new Map(); // 'lead|tail' → Set of literal bodies
+        for (const { type, text } of items) {
+            if (type === 'raw') {
+                try {
+                    new RegExp(text); // validate in isolation
+                    fragments.push(text);
+                } catch (e) {
+                    reportIssue(issues, lineNum, 'warning', `skipping invalid pattern "/${text}/": ${e.message}`);
+                }
+                continue;
+            }
+            for (const variant of literalVariants(text, options)) {
+                if (!variant) continue;
+                if (type === 'exact') {
+                    fragments.push('^' + literalBody(variant) + '$');
+                    continue;
+                }
+                let [lead, tail] = literalEdges(variant);
+                if (options.partial && (variant.match(LETTERS_RE) || []).length >= options.partial) lead = tail = '';
+                const key = lead + '|' + tail;
+                if (!groups.has(key)) groups.set(key, new Set());
+                groups.get(key).add(literalBody(variant, true));
             }
         }
-        if (!valid.length) return null;
-        try {
-            return new RegExp('(?:' + valid.join('|') + ')', 'i');
-        } catch (e) {
-            reportIssue(
-                issues,
-                lineNum,
-                'error',
-                `could not build combined regex from "${valid.join('|')}": ${e.message}`
+        for (const [key, bodies] of groups) {
+            const [lead, tail] = key.split('|');
+            fragments.push(
+                (lead ? `(?<!${EDGE_CLASS[lead]})` : '') +
+                    '(?:' +
+                    [...bodies].join('|') +
+                    ')' +
+                    (tail ? `(?!${EDGE_CLASS[tail]})` : '')
             );
+        }
+        if (!fragments.length) return null;
+        try {
+            return new RegExp('(?:' + fragments.join('|') + ')', 'i');
+        } catch (e) {
+            reportIssue(issues, lineNum, 'error', `could not build the combined regex: ${e.message}`);
             return null;
         }
     }
@@ -552,6 +761,7 @@
         }
         let base = null;
         if (!t || t === 'self') base = { kind: 'self' };
+        else if (t === 'word') base = { kind: 'word' };
         else if (t === 'row') base = { kind: 'closest', selector: 'tr' };
         else if (/^up:\d+$/i.test(t)) base = { kind: 'up', n: parseInt(t.slice(3), 10) };
         else if (/^closest:/i.test(t)) {
@@ -567,7 +777,7 @@
 
     // Class names the script uses internally — a custom action may not reuse them.
     // 'peek' is reserved because --ucb-peek is the per-class peek override in [css].
-    const RESERVED_ACTIONS = new Set(['hover', 'freeze', 'frozen', 'peek']);
+    const RESERVED_ACTIONS = new Set(['hover', 'freeze', 'frozen', 'peek', 'w']);
 
     // Parse the action field into a list of { name, value } effects. Each becomes a
     // CSS class .ucb-<name> on the scoped element; an optional :value is exposed as
@@ -607,34 +817,53 @@
         return out;
     }
 
+    // in:SEL takes the rest of the field (like closest:SEL in scope), so the
+    // selector may contain commas and keeps its case.
     function parseOptions(field, issues, lineNum) {
-        const opts = { hover: true, freeze: false };
+        const opts = { hover: true, freeze: false, within: null, ifNone: false, partial: 0, fold: false, sound: false };
         if (!field) return opts;
+        const inAt = field.search(/(?:^|,)\s*in:/i);
+        if (inAt !== -1) {
+            const selector = field.slice(field.indexOf(':', inAt) + 1).trim();
+            field = field.slice(0, inAt);
+            try {
+                document.createDocumentFragment().querySelector(selector); // throws on invalid syntax
+                opts.within = selector;
+            } catch {
+                reportIssue(issues, lineNum, 'warning', `invalid in: selector "${selector}", ignoring it`);
+            }
+        }
         for (const raw of field.split(',')) {
             const t = raw.trim().toLowerCase();
             if (!t) continue;
             if (t === 'hover') opts.hover = true;
             else if (t === 'no-hover') opts.hover = false;
             else if (t === 'freeze') opts.freeze = true;
+            else if (t === 'if-none') opts.ifNone = true;
+            else if (t === 'fold') opts.fold = true;
+            else if (t === 'sound') opts.fold = opts.sound = true;
+            else if (/^partial(:\d+)?$/.test(t))
+                opts.partial = t.includes(':') ? Math.max(1, parseInt(t.slice(8), 10)) : PARTIAL_MIN_LETTERS;
             else reportIssue(issues, lineNum, 'warning', `unknown option "${t}"`);
         }
         return opts;
     }
 
-    // Flatten a [list:NAME] into regex fragments, following nested @refs (including
-    // wildcards such as @text_* or @*). seenFragments deduplicates pattern strings
-    // across all lists; visited guards against reference loops; depth caps nesting.
-    function expandListFragments(name, lists, out, seenFragments, visited, depth, issues, lineNum) {
+    // Flatten a [list:NAME] into pattern items (see patternTokenToItem), following
+    // nested @refs (including wildcards such as @text_* or @*). The item set
+    // deduplicates across all lists; visited guards against reference loops; depth
+    // caps nesting.
+    function expandListItems(name, lists, set, visited, depth, issues, lineNum) {
         // Wildcard: resolve horizontally to all matching list names at the same depth.
         // This means @text_* inside a rule and @text_* inside a list both expand each
         // match at the caller's depth — the wildcard itself is not a nesting level.
-        if (name.includes('*') || name.includes('?')) {
+        if (isListNameGlob(name)) {
             const re = listNameGlobToRegex(name);
             let anyMatch = false;
             for (const listName of lists.keys()) {
                 if (re.test(listName)) {
                     anyMatch = true;
-                    expandListFragments(listName, lists, out, seenFragments, visited, depth, issues, lineNum);
+                    expandListItems(listName, lists, set, visited, depth, issues, lineNum);
                 }
             }
             if (!anyMatch) reportIssue(issues, lineNum, 'warning', `wildcard @${name} matched no lists`);
@@ -658,36 +887,52 @@
         visited.add(name);
         for (const listLine of lists.get(name)) {
             const t = listLine.trim();
-            if (t.startsWith('@')) {
-                expandListFragments(
-                    t.slice(1).toLowerCase(),
-                    lists,
-                    out,
-                    seenFragments,
-                    visited,
-                    depth + 1,
+            if (t.startsWith('!')) {
+                // Negation is a rule-level operator (!@NAME excludes a whole list);
+                // inside a list it would be ambiguous once lists nest.
+                reportIssue(
                     issues,
-                    lineNum
+                    lineNum,
+                    'warning',
+                    `skipping "${t}" in list @${name}: ! (exclude) only works in rule patterns — write \\! for a literal !`
                 );
+                continue;
+            }
+            if (t.startsWith('@')) {
+                expandListItems(t.slice(1).toLowerCase(), lists, set, visited, depth + 1, issues, lineNum);
             } else {
-                const frag = patternTokenToFragment(t);
-                if (frag !== null && !seenFragments.has(frag)) {
-                    seenFragments.add(frag);
-                    out.push(frag);
-                }
+                addItem(set, patternTokenToItem(t));
             }
         }
     }
 
-    // Parse the whole config into { lists, rules, css, issues }. `issues` collects
-    // structured problems (errors block save; warnings are advisory). `css` is the
-    // raw text of the [css] section, injected verbatim into the page.
-    function parseConfig(text) {
+    // Section header → { type, name? }, or null when the line is not a header.
+    // Shared by parseConfig(), fileHeader() and indexConfigRaw() so they agree.
+    function sectionHeader(trimmed) {
+        const listHeader = trimmed.match(/^\[list:([^\]]+)\]$/i);
+        if (listHeader) return { type: 'list', name: listHeader[1].trim().toLowerCase() };
+        const m = trimmed.match(/^\[(rules|css|match|exclude|use)\]$/i);
+        return m ? { type: m[1].toLowerCase() } : null;
+    }
+
+    // Parse one settings file into
+    //   { lists, rules, css, issues, match, exclude, use, isLibrary, libs }.
+    // `issues` collects structured problems (errors block save; warnings are
+    // advisory). `css` is the raw text of the [css] section, injected verbatim.
+    // getLib(name) → the parsed library file, or null if there is no such file.
+    // Imported lists are added as LIB/NAME. Lists are collected before rules are
+    // parsed, so a rule may reference a list defined further down.
+    function parseConfig(text, getLib = null, fileName = '') {
         const lists = new Map();
         const rules = [];
         const cssLines = [];
+        const cssEntries = []; // { text, line } for balance checking
         const issues = [];
-        let section = null; // { type:'list', name } | { type:'rules' } | { type:'css' }
+        const match = [];
+        const exclude = [];
+        const use = []; // { name, line }
+        const ruleLines = []; // { line, lineNum }
+        let section = null; // see sectionHeader()
         let lineNum = 0;
 
         for (const rawLine of text.split('\n')) {
@@ -696,26 +941,30 @@
 
             // Section headers are detected before comment filtering so we can switch
             // into/out of [css] — where # is a CSS id selector, not a comment.
-            const listHeader = trimmed.match(/^\[list:([^\]]+)\]$/i);
-            if (listHeader) {
-                const name = listHeader[1].trim().toLowerCase();
-                if (!lists.has(name)) lists.set(name, []);
-                section = { type: 'list', name };
-                continue;
-            }
-            if (/^\[rules\]$/i.test(trimmed)) {
-                section = { type: 'rules' };
-                continue;
-            }
-            if (/^\[css\]$/i.test(trimmed)) {
-                section = { type: 'css' };
+            const header = sectionHeader(trimmed);
+            if (header) {
+                section = header;
+                if (header.type === 'list') {
+                    if (header.name.includes('/')) {
+                        reportIssue(
+                            issues,
+                            lineNum,
+                            'error',
+                            `list name "${header.name}" may not contain / (used by @LIB/NAME)`
+                        );
+                    }
+                    if (!lists.has(header.name)) lists.set(header.name, []);
+                }
                 continue;
             }
 
             // Inside [css]: capture verbatim (skip only blank lines). # and // stay
             // literal so #id selectors and CSS work; use /* … */ for CSS comments.
             if (section && section.type === 'css') {
-                if (trimmed) cssLines.push(rawLine);
+                if (trimmed) {
+                    cssLines.push(rawLine);
+                    cssEntries.push({ text: rawLine, line: lineNum });
+                }
                 continue;
             }
 
@@ -723,30 +972,199 @@
             const line = trimmed;
             if (!line || line.startsWith('#') || line.startsWith('//')) continue;
 
+            // Block comments only exist inside [css]; elsewhere a line opening with /*
+            // would silently become a list entry / rule, so flag it (best effort: only
+            // line starts, since patterns and regexes may legitimately contain /*).
+            if (line.startsWith('/*')) {
+                reportIssue(
+                    issues,
+                    lineNum,
+                    'error',
+                    "'/*' block comments are only supported in [css]; use # or // per line here"
+                );
+                continue;
+            }
+
             if (section && section.type === 'list') {
                 lists.get(section.name).push(line);
+                continue;
+            }
+            if (section && (section.type === 'match' || section.type === 'exclude')) {
+                const up = parseUrlPattern(line, issues, lineNum);
+                if (up) (section.type === 'match' ? match : exclude).push(up);
+                continue;
+            }
+            if (section && section.type === 'use') {
+                use.push({ name: line.toLowerCase(), line: lineNum });
                 continue;
             }
 
             // Anything with pipes is a rule (allow rules even before a [rules] header).
             if (line.includes('|') || (section && section.type === 'rules')) {
-                const rule = parseRuleLine(line, lineNum, lists, issues);
-                if (rule) {
-                    // Stable identity for debug mode: the ordinal matches the rule's
-                    // position in the settings ("first rule = #1"); raw + line let the
-                    // user find it (Ctrl+F the line in the settings textarea).
-                    rule.id = rules.length + 1;
-                    rule.raw = line;
-                    rule.line = lineNum;
-                    rules.push(rule);
-                }
+                ruleLines.push({ line, lineNum });
                 continue;
             }
 
             reportIssue(issues, lineNum, 'warning', `ignored (not in a section, no pipes): ${line}`);
         }
 
-        return { lists, rules, css: cssLines.join('\n'), issues };
+        checkCssBalance(cssEntries, issues);
+
+        // No [match] = library: never runs by itself, so its own imports and rules
+        // would have no effect (rules are still parsed below, for validation).
+        const isLibrary = !match.length;
+        const libs = []; // { name, css } of imported libraries, in [use] order
+        if (isLibrary) {
+            if (use.length) {
+                reportIssue(
+                    issues,
+                    use[0].line,
+                    'warning',
+                    'no [match] (library): [use] is ignored — libraries cannot import'
+                );
+            }
+            if (ruleLines.length) {
+                reportIssue(issues, ruleLines[0].lineNum, 'warning', 'no [match] (library): its [rules] never run');
+            }
+        } else if (getLib) {
+            for (const u of use) {
+                if (libs.some((l) => l.name === u.name)) continue;
+                const lib = u.name === fileName ? null : getLib(u.name);
+                if (u.name === fileName) {
+                    reportIssue(issues, u.line, 'error', '[use]: a file cannot import itself');
+                } else if (!lib) {
+                    reportIssue(issues, u.line, 'error', `[use]: no settings file named "${u.name}"`);
+                } else if (!lib.isLibrary) {
+                    reportIssue(
+                        issues,
+                        u.line,
+                        'error',
+                        `[use]: "${u.name}" has a [match] section — only libraries can be imported`
+                    );
+                } else {
+                    if (lib.issues.some((i) => i.severity === 'error')) {
+                        reportIssue(
+                            issues,
+                            u.line,
+                            'warning',
+                            `[use]: library "${u.name}" has errors (open it to see them)`
+                        );
+                    }
+                    libs.push({ name: u.name, css: lib.css });
+                    // Nested @refs inside a library list point to the library's own
+                    // lists, so they get the same LIB/ prefix.
+                    for (const [name, entries] of lib.lists) {
+                        lists.set(
+                            `${u.name}/${name}`,
+                            entries.map((e) => (e.startsWith('@') ? `@${u.name}/${e.slice(1)}` : e))
+                        );
+                    }
+                }
+            }
+        }
+
+        for (const { line, lineNum: n } of ruleLines) {
+            const rule = parseRuleLine(line, n, lists, issues);
+            if (rule) {
+                // Stable identity for debug mode: file name + the rule's position in
+                // that file ("first rule = name#1"); raw + line let the user find it
+                // (Ctrl+F the line in the settings textarea).
+                rule.id = `${fileName}#${rules.length + 1}`;
+                rule.raw = line;
+                rule.line = n;
+                rule.file = fileName;
+                rules.push(rule);
+            }
+        }
+
+        return { lists, rules, css: cssLines.join('\n'), issues, match, exclude, use, isLibrary, libs };
+    }
+
+    // Only the [match]/[exclude] patterns of a file — cheap enough to run for every
+    // stored file on every page load, without parsing (and logging) the rest.
+    function fileHeader(text) {
+        const out = { match: [], exclude: [] };
+        let section = null;
+        for (const raw of text.split('\n')) {
+            const t = raw.trim();
+            const h = sectionHeader(t);
+            if (h) {
+                section = h.type;
+                continue;
+            }
+            if ((section === 'match' || section === 'exclude') && t && !t.startsWith('#') && !t.startsWith('//')) {
+                const up = parseUrlPattern(t);
+                if (up) out[section].push(up);
+            }
+        }
+        return out;
+    }
+
+    // Whether a file (parsed or fileHeader()) runs on `url`.
+    function fileRunsOn(header, url = location.href) {
+        return header.match.some((p) => p.regex.test(url)) && !header.exclude.some((p) => p.regex.test(url));
+    }
+
+    // Parse a stored file in the context of all files, resolving [use] by name.
+    // Pass the same libCache across calls to parse each library only once.
+    function parseFile(file, files, libCache = new Map()) {
+        const getLib = (name) => {
+            if (!libCache.has(name)) {
+                const f = files.find((x) => x.name === name);
+                libCache.set(name, f ? parseConfig(f.text, null, f.name) : null);
+            }
+            return libCache.get(name);
+        };
+        return parseConfig(file.text, getLib, file.name);
+    }
+
+    // Basic structural check of the [css] text: unclosed /* comments and unbalanced
+    // { } ( ) [ ]. The browser silently drops broken CSS, so an unclosed comment
+    // would otherwise swallow every rule after it without any hint.
+    function checkCssBalance(entries, issues) {
+        const stack = []; // { ch, line }
+        const closers = { '}': '{', ')': '(', ']': '[' };
+        let commentLine = 0;
+        for (const { text, line } of entries) {
+            let quote = null; // strings cannot span lines unescaped
+            for (let i = 0; i < text.length; i++) {
+                const c = text[i];
+                if (commentLine) {
+                    if (c === '*' && text[i + 1] === '/') {
+                        commentLine = 0;
+                        i++;
+                    }
+                } else if (quote) {
+                    if (c === '\\') i++;
+                    else if (c === quote) quote = null;
+                } else if (c === '/' && text[i + 1] === '*') {
+                    commentLine = line;
+                    i++;
+                } else if (c === '"' || c === "'") {
+                    quote = c;
+                } else if (c === '{' || c === '(' || c === '[') {
+                    stack.push({ ch: c, line });
+                } else if (closers[c]) {
+                    if (stack.at(-1)?.ch !== closers[c]) {
+                        reportIssue(issues, line, 'error', `[css]: unexpected '${c}' (no matching '${closers[c]}')`);
+                        return;
+                    }
+                    stack.pop();
+                }
+            }
+        }
+        if (commentLine) {
+            reportIssue(
+                issues,
+                commentLine,
+                'error',
+                "[css]: comment opened with '/*' is never closed with '*/' (swallows all CSS after it)"
+            );
+            return;
+        }
+        for (const { ch, line } of stack) {
+            reportIssue(issues, line, 'error', `[css]: '${ch}' is never closed`);
+        }
     }
 
     function parseRuleLine(line, lineNum, lists, issues) {
@@ -771,57 +1189,276 @@
 
         const options = parseOptions(rawOptions, issues, lineNum);
 
-        // Resolve patterns: @ref → (possibly nested/wildcard) list fragments, else
-        // inline token. seenFragments deduplicates across all refs + inline tokens so
-        // overlapping lists (e.g. @dark and @text_* both yielding "gore") produce only
-        // one regex branch — unique by fragment string, not semantic equivalence.
-        const fragments = [];
-        const seenFragments = new Set();
+        // Resolve patterns: @ref → (possibly nested/wildcard) list items, else inline
+        // token. The item sets deduplicate across all refs + inline tokens so
+        // overlapping lists (e.g. @dark and @text_* both yielding "spoiler") produce only
+        // one regex branch — unique by token text, not semantic equivalence.
+        // A leading ! puts the token into the exclude set instead (see matchRule).
+        const include = newItemSet();
+        const exclude = newItemSet();
         for (const tok of splitTopLevel(rawPatterns, ',')) {
-            const t = tok.trim();
+            let t = tok.trim();
+            const set = t.startsWith('!') ? exclude : include;
+            if (set === exclude) t = t.slice(1).trim();
             if (!t) continue;
             if (t.startsWith('@')) {
-                expandListFragments(
-                    t.slice(1).toLowerCase(),
-                    lists,
-                    fragments,
-                    seenFragments,
-                    new Set(),
-                    1,
-                    issues,
-                    lineNum
-                );
+                expandListItems(t.slice(1).toLowerCase(), lists, set, new Set(), 1, issues, lineNum);
             } else {
-                const frag = patternTokenToFragment(t);
-                if (frag !== null && !seenFragments.has(frag)) {
-                    seenFragments.add(frag);
-                    fragments.push(frag);
-                }
+                addItem(set, patternTokenToItem(t));
             }
         }
-        const regex = buildCombinedRegex(fragments, issues, lineNum);
+        if (!include.items.length && exclude.items.length) {
+            reportIssue(issues, lineNum, 'error', `only ! (exclude) patterns, nothing to match: ${rawPatterns}`);
+            return null;
+        }
+        const regex = buildPatternRegex(include.items, options, issues, lineNum);
         if (!regex) {
             reportIssue(issues, lineNum, 'error', `no valid patterns: ${rawPatterns}`);
             return null;
         }
+        // partial never widens an exclusion: !grape stays a whole word.
+        const excludeRegex = exclude.items.length
+            ? buildPatternRegex(exclude.items, { ...options, partial: 0 }, issues, lineNum)
+            : null;
 
         const scope = parseScope(rawScope, issues, lineNum);
-        return { urlPattern, sources, regex, actions, scope, options };
+        if (scope.kind === 'word') {
+            if (scope.prev || scope.next) {
+                reportIssue(issues, lineNum, 'warning', 'prev:/next: do not apply to the word scope, ignoring them');
+                scope.prev = scope.next = 0;
+            }
+            if (sources.some((s) => s !== 'text')) {
+                reportIssue(issues, lineNum, 'warning', 'word scope only splits text; other sources act like self');
+            }
+        } else if (actions.some((a) => a.name === 'mask')) {
+            reportIssue(
+                issues,
+                lineNum,
+                'warning',
+                'the built-in mask needs the word scope (here only your own .ucb-mask [css] applies, if any)'
+            );
+        }
+        if (options.ifNone) {
+            // if-none has no matched element to start from — the scope selector is
+            // what defines the containers to check.
+            if (scope.kind !== 'closest') {
+                reportIssue(issues, lineNum, 'error', `if-none needs a closest:SELECTOR (or row) scope: ${line}`);
+                return null;
+            }
+            if (sources.some((s) => s !== 'text')) {
+                reportIssue(issues, lineNum, 'warning', 'if-none only checks text, ignoring the other sources');
+            }
+            sources.splice(0, sources.length, 'text');
+        }
+        return { urlPattern, sources, regex, excludeRegex, actions, scope, options };
+    }
+
+    // -- fold / sound: spelling-tolerant matching (rule options) --------------
+    // The TEXT is folded (not the patterns: expanding every letter into a class
+    // would bloat the regex and defeat V8's literal pre-filters), and literal list
+    // entries are folded the same way when the rule compiles. Raw /regex/ entries
+    // see the folded text as-is, so write them in folded form.
+    const FOLD_CHARS = { ß: 'ss', ẞ: 'ss', æ: 'ae', œ: 'oe', ø: 'o', ł: 'l', đ: 'd', þ: 'th' };
+    // Leet chars, read as letters only INSIDE a word (sp0iler, tr0ll) — or at its
+    // start for digits and $ (5pam, $pam). Never at its end: wow! and user1 stay.
+    const LEET = { 4: 'a', '@': 'a', 3: 'e', 1: 'i', '!': 'i', 0: 'o', $: 's', 5: 's', 7: 't' };
+    const LEET_LEAD = new Set(['4', '3', '1', '0', '$', '5', '7']);
+    // sound: sound-alike spellings, longest match first. No double-letter collapse
+    // (hass → has would hit English "has").
+    const SOUND = [
+        ['sch', 'sch'],
+        ['sh', 'sch'],
+        ['ph', 'f'],
+        ['ck', 'k'],
+        ['tz', 'z'],
+        ['ts', 'z'],
+        ['dt', 't'],
+        ['c', 'k'],
+        ['v', 'f'],
+        ['y', 'i'],
+    ];
+    const SOUND_BY_FIRST = new Map();
+    for (const pair of SOUND) {
+        if (!SOUND_BY_FIRST.has(pair[0][0])) SOUND_BY_FIRST.set(pair[0][0], []);
+        SOUND_BY_FIRST.get(pair[0][0]).push(pair);
+    }
+    const FOLD_LETTER_RE = /\p{L}/u;
+
+    // s → { text, map }: lowercase, ß → ss, accents/umlauts stripped (ä → a, é →
+    // e), leet read as letters, runs of 3+ equal letters → 1 (spaaam → spam, but zzz stays), and
+    // with sound the SOUND merges. map[i] = index in s of folded char i.
+    function foldText(s, sound = false) {
+        const isLetter = (c) => c !== undefined && FOLD_LETTER_RE.test(c);
+        let chars = [];
+        let map = [];
+        for (let i = 0; i < s.length; i++) {
+            const lc = s[i].toLowerCase();
+            const folded = lc < '\x80' ? lc : (FOLD_CHARS[lc] ?? lc.normalize('NFD').replace(/\p{M}/gu, ''));
+            for (const c of folded) {
+                chars.push(c);
+                map.push(i);
+            }
+        }
+        for (let i = 0; i < chars.length; i++) {
+            if (!Object.hasOwn(LEET, chars[i])) continue;
+            let j = i;
+            while (j < chars.length && Object.hasOwn(LEET, chars[j])) j++;
+            const before = chars[i - 1];
+            const run = chars.slice(i, j);
+            const inner = isLetter(before) && isLetter(chars[j]);
+            const lead =
+                !isLetter(before) &&
+                !/[0-9]/.test(before ?? '') &&
+                isLetter(chars[j]) &&
+                run.every((c) => LEET_LEAD.has(c));
+            if (inner || lead) for (let k = i; k < j; k++) chars[k] = LEET[chars[k]];
+            i = j - 1;
+        }
+        const outChars = [];
+        const outMap = [];
+        for (let i = 0; i < chars.length; i++) {
+            const c = chars[i];
+            let j = i + 1;
+            while (chars[j] === c) j++;
+            // A word that is only the run (zzz, www) stays: collapsed it
+            // would match every lone letter.
+            const stretched = isLetter(c) && j - i >= 3 && (isLetter(chars[i - 1]) || isLetter(chars[j]));
+            const keep = stretched ? 1 : j - i;
+            for (let k = 0; k < keep; k++) {
+                outChars.push(c);
+                outMap.push(map[i + k]);
+            }
+            i = j - 1;
+        }
+        chars = outChars;
+        map = outMap;
+        if (sound) {
+            const sc = [];
+            const sm = [];
+            let i = 0;
+            while (i < chars.length) {
+                const pair = SOUND_BY_FIRST.get(chars[i])?.find(([from]) =>
+                    [...from].every((c, k) => chars[i + k] === c)
+                );
+                if (!pair) {
+                    sc.push(chars[i]);
+                    sm.push(map[i]);
+                    i++;
+                    continue;
+                }
+                const [from, to] = pair;
+                // Map each new char to a source char; an inserted char shares its
+                // left neighbor's (sh → sch: s,c ← s; h ← h).
+                const grow = Math.max(0, to.length - from.length);
+                for (let k = 0; k < to.length; k++) {
+                    sc.push(to[k]);
+                    sm.push(map[i + Math.min(Math.max(0, k - grow), from.length - 1)]);
+                }
+                i += from.length;
+            }
+            chars = sc;
+            map = sm;
+        }
+        return { text: chars.join(''), map };
+    }
+
+    // Rules test one value after the other, so caching the last fold per mode
+    // folds each text node once even with several fold rules.
+    const foldMemo = [
+        { s: null, text: '' },
+        { s: null, text: '' },
+    ];
+    function foldCached(s, sound) {
+        const memo = foldMemo[sound ? 1 : 0];
+        if (memo.s !== s) {
+            memo.s = s;
+            memo.text = foldText(s, sound).text;
+        }
+        return memo.text;
+    }
+
+    // Usernames have no spaces, so camelCase humps mark the words: "xXTrollKingXx"
+    // → "x X Troll King Xx" (aB → a B, ABc → A Bc). Only adds word edges.
+    function splitCamelCase(s) {
+        return s
+            .replace(/([a-zß-öø-ÿ])([A-ZÀ-ÖØ-Þ])/g, '$1 $2')
+            .replace(/([A-ZÀ-ÖØ-Þ])([A-ZÀ-ÖØ-Þ][a-zß-öø-ÿ])/g, '$1 $2');
+    }
+
+    // A rule's match on one value: the include regex hits and no exclude pattern
+    // does. Returns the exec result (for the debug label) or null.
+    function matchRule(rule, value) {
+        if (rule.options.fold) value = foldCached(value, rule.options.sound);
+        const m = rule.regex.exec(value); // exec (no /g flag) also yields the matched substring for debug
+        return m && !rule.excludeRegex?.test(value) ? m : null;
+    }
+
+    // -----------------------------------------------------------------------
+    //  SETTINGS FILES (storage)
+    // -----------------------------------------------------------------------
+
+    function newFileId() {
+        return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    }
+
+    // Run order = name order, by plain character code (0-9 before a-z, - before
+    // both), so a prefix like 10-… / 50-… sets the order — see the reference.
+    function sortFiles(files) {
+        return files.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    }
+
+    // Stored files in run order.
+    async function getFiles() {
+        const files = await GM.getValue(FILES_KEY, null);
+        return Array.isArray(files) ? sortFiles(files) : [];
+    }
+
+    async function saveFiles(files) {
+        await GM.setValue(FILES_KEY, files);
+    }
+
+    // Replace one file's text in the CURRENT stored state (not a stale copy), so
+    // a quick-add never overwrites concurrent edits to other files.
+    async function saveFileText(id, text) {
+        const files = await getFiles();
+        const f = files.find((x) => x.id === id);
+        if (!f) return false;
+        f.text = text;
+        await saveFiles(files);
+        return true;
     }
 
     // -----------------------------------------------------------------------
     //  RULE STATE
     // -----------------------------------------------------------------------
 
-    let rules = [];
     let activeRules = [];
-    let customCss = ''; // raw [css] section, injected by ensureStyles()
+    let activeFiles = []; // names of the files running on this page, in run order
+    let customCss = ''; // [css] of the active files + their libraries, injected by ensureStyles()
 
+    // Every enabled file whose [match] fits this page runs, in name order. A
+    // library's CSS comes before its importer's (so the importer can override it)
+    // and is injected only once even when several active files use it.
     async function loadRules() {
-        const stored = await GM.getValue(STORAGE_KEY, null);
-        const parsed = parseConfig(stored ?? DEFAULT_RULES);
-        rules = parsed.rules;
-        customCss = parsed.css;
+        const files = await getFiles();
+        const libCache = new Map();
+        const cssParts = [];
+        const cssLibs = new Set();
+        const rules = [];
+        activeFiles = [];
+        for (const f of files) {
+            if (!f.enabled || !fileRunsOn(fileHeader(f.text))) continue;
+            const parsed = parseFile(f, files, libCache);
+            activeFiles.push(f.name);
+            for (const lib of parsed.libs) {
+                if (cssLibs.has(lib.name) || !lib.css) continue;
+                cssLibs.add(lib.name);
+                cssParts.push(`/* library: ${lib.name} */\n${lib.css}`);
+            }
+            if (parsed.css) cssParts.push(`/* file: ${f.name} */\n${parsed.css}`);
+            rules.push(...parsed.rules);
+        }
+        customCss = cssParts.join('\n');
         const cssInfo = analyzeEffectCss(customCss);
         peekExempt = cssInfo.peekExempt;
         hiddenActions = cssInfo.hiddenActions;
@@ -880,6 +1517,16 @@
 .${BLUR_CLASS}.${HOVER_CLASS}:hover { filter: none !important; }
 .${FREEZE_CLASS}, .${FREEZE_CLASS} * { animation-play-state: paused !important; }
 .${FREEZE_CLASS}.${HOVER_CLASS}:hover, .${FREEZE_CLASS}.${HOVER_CLASS}:hover * { animation-play-state: running !important; }
+/* mask (word scope): the word stays in the DOM, invisible; ::before draws the
+   masked copy (data-ucb-mask) over it. Removing the class (hover, peek, Alt+Z)
+   shows the word again. */
+.${MASK_CLASS}[data-ucb-mask] { position: relative !important; -webkit-text-fill-color: transparent !important; }
+.${MASK_CLASS}[data-ucb-mask]::before {
+    content: attr(data-ucb-mask); position: absolute; left: 0; top: 0;
+    -webkit-text-fill-color: currentColor; white-space: pre; pointer-events: none;
+}
+.${MASK_CLASS}.${HOVER_CLASS}:hover { -webkit-text-fill-color: inherit !important; }
+.${MASK_CLASS}.${HOVER_CLASS}:hover::before { content: none; }
 /* DEBUG (Alt+Shift+D): outline every affected element and label it with its rule
    id + matched text. Gated on the root .ucb-debug-on class so it costs nothing
    until enabled. --ucb-r is stamped on each target by applyActions(). */
@@ -933,8 +1580,7 @@ ${customCss || ''}
         const group = expandScopeGroup(base, rule.scope);
         // Debug label, stamped on every group member: "#N ⟨matched text⟩". Group
         // siblings (prev/next) share the base match — they carry the same label.
-        const dbgLabel =
-            '#' + rule.id + (matchInfo?.match ? ' ' + truncate(String(matchInfo.match), 30) : '');
+        const dbgLabel = rule.id + (matchInfo?.match ? ' ' + truncate(String(matchInfo.match), 30) : '');
         for (const target of group) {
             if (processed.has(target)) continue;
             // Never touch structural roots.
@@ -1109,7 +1755,7 @@ ${customCss || ''}
     // Both the styles-off toggle and debug mode fully reveal every effect. Peek is
     // the narrower, transient reveal (skips peek-exempt/layout effects).
     const revealAll = () => stylesOff || debugOn;
-    const NON_EFFECT_CLASSES = new Set([HOVER_CLASS, FREEZE_CLASS, FROZEN_CLASS]);
+    const NON_EFFECT_CLASSES = new Set([HOVER_CLASS, FREEZE_CLASS, FROZEN_CLASS, WORD_CLASS]);
 
     // Effect classes ('ucb-NAME') a peek must NOT strip: revealing an effect that
     // changes layout (a [css] hide/resize, …) makes content jump/scroll under the
@@ -1296,7 +1942,7 @@ ${customCss || ''}
 
     function toggleStyles() {
         setStylesOff(!stylesOff);
-        toast('Content Blur: all effects ' + (stylesOff ? 'OFF' : 'ON'));
+        toast('Content Filter: all effects ' + (stylesOff ? 'OFF' : 'ON'));
     }
 
     // -----------------------------------------------------------------------
@@ -1327,14 +1973,15 @@ ${customCss || ''}
     function toggleDebug() {
         ensureStyles(); // debug CSS lives in the main style block; make sure it's injected
         setDebug(!debugOn);
-        toast('Content Blur: debug ' + (debugOn ? 'ON — effects revealed, areas labelled' : 'OFF'));
+        toast('Content Filter: debug ' + (debugOn ? 'ON — effects revealed, areas labelled' : 'OFF'));
     }
 
-    // A fixed corner legend mapping the #N badges to their rules: id, the raw
+    // A fixed corner legend mapping the FILE#N badges to their rules: id, the raw
     // config line (Ctrl+F it in settings), and a live hit count. Click a row to
-    // open the settings dialog.
+    // open that settings file.
     function buildDebugHud() {
         removeDebugHud();
+        ensureUiStyles();
         const hud = document.createElement('div');
         hud.id = 'ucb-debug-hud';
         Object.assign(hud.style, {
@@ -1359,7 +2006,7 @@ ${customCss || ''}
         const head = document.createElement('div');
         Object.assign(head.style, { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' });
         const title = document.createElement('strong');
-        title.textContent = 'Content Blur — debug';
+        title.textContent = 'Content Filter — debug';
         Object.assign(title.style, { color: '#fff', flex: '1', fontSize: '13px' });
         const close = document.createElement('span');
         close.textContent = '✕';
@@ -1369,7 +2016,9 @@ ${customCss || ''}
         head.append(title, close);
 
         const sub = document.createElement('div');
-        sub.textContent = `${activeRules.length} rule${activeRules.length !== 1 ? 's' : ''} active on ${location.hostname}`;
+        sub.textContent =
+            `${activeRules.length} rule${activeRules.length !== 1 ? 's' : ''} active on ${location.hostname}` +
+            (activeFiles.length ? ` — files: ${activeFiles.join(', ')}` : '');
         Object.assign(sub.style, { color: '#888', fontSize: '11px', marginBottom: '8px' });
 
         hud.append(head, sub);
@@ -1392,13 +2041,13 @@ ${customCss || ''}
                 cursor: 'pointer',
                 lineHeight: '1.45',
             });
-            row.title = 'Open settings';
+            row.title = `Open settings file "${r.file}"`;
             row.addEventListener('mouseenter', () => (row.style.background = 'rgba(255,255,255,0.06)'));
             row.addEventListener('mouseleave', () => (row.style.background = ''));
-            row.addEventListener('click', () => openSettings());
+            row.addEventListener('click', () => openSettings(r.file));
 
             const id = document.createElement('span');
-            id.textContent = '#' + r.id;
+            id.textContent = r.id;
             Object.assign(id.style, { color: '#ff8c7a', fontFamily: 'monospace', fontWeight: 'bold' });
 
             const raw = document.createElement('span');
@@ -1408,7 +2057,12 @@ ${customCss || ''}
             const count = document.createElement('span');
             count.textContent = String(debugHits.get(r.id) || 0);
             count.title = 'elements matched';
-            Object.assign(count.style, { color: '#4ec9b0', fontFamily: 'monospace', minWidth: '2ch', textAlign: 'right' });
+            Object.assign(count.style, {
+                color: '#4ec9b0',
+                fontFamily: 'monospace',
+                minWidth: '2ch',
+                textAlign: 'right',
+            });
             debugCountEls.set(r.id, count);
 
             row.append(id, raw, count);
@@ -1485,26 +2139,123 @@ ${customCss || ''}
     // -----------------------------------------------------------------------
 
     const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION']);
+    // The script's own UI (settings dialog, quick panel, debug HUD) must never be
+    // scanned: its help text contains words the rules match, which would get the
+    // dialog blurred/underlined/hidden.
+    const OWN_UI_SELECTOR = '#ucb-quick-panel, #ucb-settings, #ucb-debug-hud';
 
-    function scanText(root, textRules) {
-        if (!textRules.length) return;
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    // Page stylesheets leak into our UI (e.g. a site's global `code { background }`
+    // made the settings help text unreadable). `all: revert` rolls every page-author
+    // declaration back to browser defaults; our inline styles still win because the
+    // rule is not !important. Not a shadow root, so the UI stays plain light DOM.
+    function ensureUiStyles() {
+        if (document.getElementById('ucb-ui-style')) return;
+        const style = document.createElement('style');
+        style.id = 'ucb-ui-style';
+        style.textContent = OWN_UI_SELECTOR.split(', ')
+            .flatMap((id) => [id, id + ' *'])
+            .join(', ')
+            .concat(' { all: revert; }');
+        (document.head || document.documentElement).appendChild(style);
+    }
+
+    // Walker over the visible, non-empty text nodes under root (own UI excluded).
+    function textWalker(root) {
+        return document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
             acceptNode(node) {
+                // Elements are only visited to prune own-UI subtrees; SKIP keeps descending.
+                if (node.nodeType === Node.ELEMENT_NODE)
+                    return node.matches(OWN_UI_SELECTOR) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
                 if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
                 const parent = node.parentElement;
                 if (!parent || SKIP_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
                 return NodeFilter.FILTER_ACCEPT;
             },
         });
+    }
+
+    function scanText(root, textRules) {
+        if (!textRules.length) return;
+        const wordRules = textRules.filter((r) => r.scope.kind === 'word');
+        const elRules = textRules.filter((r) => r.scope.kind !== 'word');
+        const wordJobs = []; // split AFTER the walk — splitting text nodes mid-walk would derail it
+        const walker = textWalker(root);
         let node;
         while ((node = walker.nextNode())) {
             const text = node.nodeValue;
             const el = node.parentElement;
-            for (const rule of textRules) {
-                const m = rule.regex.exec(text); // exec (no /g flag) also yields the matched substring for debug
+            for (const rule of elRules) {
+                if (rule.options.within && !el.closest(rule.options.within)) continue;
+                const m = matchRule(rule, text);
                 if (m) applyActions(el, rule, { source: 'text', match: m[0] });
             }
+            // Never re-split our own spans (the observer re-scans them) or text
+            // someone is editing.
+            if (wordRules.length && !el.classList.contains(WORD_CLASS) && !el.isContentEditable) {
+                const ranges = findWordRanges(text, el, wordRules);
+                if (ranges.length) wordJobs.push([node, ranges]);
+            }
         }
+        for (const [textNode, ranges] of wordJobs) wrapWords(textNode, ranges);
+    }
+
+    // All matches of the word-scope rules in one text, as non-overlapping ranges
+    // of the ORIGINAL text sorted by start; an earlier rule wins an overlap. With
+    // fold, positions are mapped back through foldText's index map.
+    function findWordRanges(text, el, rules) {
+        const ranges = [];
+        for (const rule of rules) {
+            if (rule.options.within && !el.closest(rule.options.within)) continue;
+            const folded = rule.options.fold ? foldText(text, rule.options.sound) : null;
+            const value = folded ? folded.text : text;
+            if (rule.excludeRegex?.test(value)) continue;
+            rule.regexAll ??= new RegExp(rule.regex.source, 'gi');
+            const re = rule.regexAll;
+            re.lastIndex = 0;
+            let m;
+            while ((m = re.exec(value))) {
+                if (!m[0]) {
+                    re.lastIndex++;
+                    continue;
+                }
+                let start = m.index;
+                let end = start + m[0].length;
+                if (folded) {
+                    const map = folded.map;
+                    start = map[start];
+                    // end of the last matched char: start of the next one, unless
+                    // both come from the same source char (ß → ss)
+                    end = end < map.length && map[end] !== map[end - 1] ? map[end] : map[end - 1] + 1;
+                }
+                if (!ranges.some((r) => start < r.end && end > r.start)) ranges.push({ start, end, rule, match: m[0] });
+            }
+        }
+        return ranges.sort((a, b) => a.start - b.start);
+    }
+
+    // Wrap each range of a text node in its own span and apply the rule to it.
+    // Back to front, so the earlier offsets stay valid in the remaining node.
+    function wrapWords(node, ranges) {
+        if (!node.isConnected) return;
+        for (let i = ranges.length - 1; i >= 0; i--) {
+            const { start, end, rule, match } = ranges[i];
+            let word = node;
+            if (end < word.length) word.splitText(end);
+            if (start > 0) word = word.splitText(start);
+            const span = document.createElement('span');
+            span.className = WORD_CLASS;
+            word.replaceWith(span);
+            span.appendChild(word);
+            const mask = rule.actions.find((a) => a.name === 'mask');
+            if (mask) span.dataset.ucbMask = maskWord(word.nodeValue, mask.value);
+            applyActions(span, rule, { source: 'text', match });
+        }
+    }
+
+    // "spoiler", mask:1 → "s******". Whitespace stays (phrases keep their shape).
+    function maskWord(word, value) {
+        const keep = value == null ? 1 : Math.max(0, parseInt(value, 10) || 0);
+        return [...word].map((c, i) => (i < keep || /\s/.test(c) ? c : '*')).join('');
     }
 
     function scanAttributes(root, attrRules) {
@@ -1518,6 +2269,7 @@ ${customCss || ''}
         const descendants = root.querySelectorAll === undefined ? [] : root.querySelectorAll(sel);
         const els = root.matches?.(sel) ? [root, ...descendants] : descendants;
         for (const el of els) {
+            if (el.closest?.(OWN_UI_SELECTOR)) continue;
             const href = el.getAttribute && (el.getAttribute('href') || el.getAttribute('src'));
             const alt = el.getAttribute && el.getAttribute('alt');
             const title = el.getAttribute && el.getAttribute('title');
@@ -1525,16 +2277,17 @@ ${customCss || ''}
             const classes = needClass && el.classList?.length ? [...el.classList] : null;
 
             for (const rule of attrRules) {
+                if (rule.options.within && !el.closest(rule.options.within)) continue;
                 for (const source of rule.sources) {
-                    // exec (no /g flag) yields the matched substring for the debug label.
                     let hit = null;
-                    if (source === 'url' && href) hit = rule.regex.exec(href);
-                    else if (source === 'alt' && alt) hit = rule.regex.exec(alt);
-                    else if (source === 'title' && title) hit = rule.regex.exec(title);
-                    else if (source === 'user' && usernames)
-                        for (const u of usernames) if ((hit = rule.regex.exec(u))) break;
-                    else if (source === 'class' && classes)
-                        for (const c of classes) if ((hit = rule.regex.exec(c))) break;
+                    if (source === 'url' && href) hit = matchRule(rule, href);
+                    else if (source === 'alt' && alt) hit = matchRule(rule, alt);
+                    else if (source === 'title' && title) hit = matchRule(rule, title);
+                    else if (source === 'user' && usernames) {
+                        for (const u of usernames) if ((hit = matchRule(rule, splitCamelCase(u)))) break;
+                    } else if (source === 'class' && classes) {
+                        for (const c of classes) if ((hit = matchRule(rule, c))) break;
+                    }
                     if (hit) {
                         applyActions(el, rule, { source, match: hit[0] });
                         break;
@@ -1544,13 +2297,47 @@ ${customCss || ''}
         }
     }
 
+    // if-none rules: every scope container (closest:SEL) under or around root whose
+    // text has NO match gets the actions. A container is re-checked whenever new
+    // content lands in it, but an applied effect is not undone if a matching text
+    // only arrives later.
+    function scanNone(root, noneRules) {
+        for (const rule of noneRules) {
+            const sel = rule.scope.selector;
+            const containers = new Set(root.querySelectorAll?.(sel) ?? []);
+            const around = root.closest?.(sel);
+            if (around) containers.add(around);
+            for (const box of containers) {
+                if (processed.has(box)) continue;
+                // Like for normal rules, in:SEL restricts which texts count, not the
+                // target. A box without any counted text (e.g. not rendered yet, or
+                // a same-class element elsewhere on the page) is left alone.
+                const walker = textWalker(box);
+                let node;
+                let counted = 0;
+                let hit = false;
+                while (!hit && (node = walker.nextNode())) {
+                    if (rule.options.within && !node.parentElement.closest(rule.options.within)) continue;
+                    counted++;
+                    hit = !!matchRule(rule, node.nodeValue);
+                }
+                if (counted && !hit) applyActions(box, rule, { source: 'text', match: '(no match)' });
+            }
+        }
+    }
+
     function scan(root = document.body) {
-        if (!root || isCloudflareChallenge()) return;
+        if (!root || isCloudflareChallenge() || root.closest?.(OWN_UI_SELECTOR)) return;
         ensureStyles();
-        const textRules = activeRules.filter((r) => r.sources.includes('text'));
-        const attrRules = activeRules.filter((r) => r.sources.some((s) => s !== 'text'));
+        const matchRules = activeRules.filter((r) => !r.options.ifNone);
+        const textRules = matchRules.filter((r) => r.sources.includes('text'));
+        const attrRules = matchRules.filter((r) => r.sources.some((s) => s !== 'text'));
         scanText(root, textRules);
         scanAttributes(root, attrRules);
+        scanNone(
+            root,
+            activeRules.filter((r) => r.options.ifNone)
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1627,7 +2414,7 @@ ${customCss || ''}
     // anonymous content while focus reliably sits on the input itself.
     function isOwnUiNode(node) {
         const el = node instanceof Element ? node : node?.parentElement;
-        return !!el?.closest?.('#ucb-quick-panel, #ucb-settings');
+        return !!el?.closest?.(OWN_UI_SELECTOR);
     }
 
     // Figure out what to capture: selected text wins, else hovered link. `pattern`
@@ -1651,11 +2438,11 @@ ${customCss || ''}
     }
 
     // Escape raw captured text into a faithful *literal* token: neutralize the
-    // literal-syntax specials (\ * ? ") and a leading / (which would otherwise be
-    // read as the start of a /regex/). Interior characters need no escaping.
+    // literal-syntax specials (\ * ? ") and a leading / or ! (which would otherwise
+    // be read as a /regex/ or an exclude). Interior characters need no escaping.
     function escapeLiteral(s) {
         const out = s.replace(/([\\*?"])/g, '\\$1');
-        return out.startsWith('/') ? '\\' + out : out;
+        return /^[/!]/.test(out) ? '\\' + out : out;
     }
 
     // The config-syntax token quick-add pre-fills / writes for a captured value:
@@ -1682,21 +2469,61 @@ ${customCss || ''}
             .join(' | ');
     }
 
-    // Append a rule line, unless a semantically-identical rule already exists.
-    // Returns { changed } so callers can report added-vs-already-present.
-    async function appendRuleLine(ruleLine) {
-        const stored = (await GM.getValue(STORAGE_KEY, null)) ?? DEFAULT_RULES;
-        const { ruleEntries } = indexConfigRaw(stored.split('\n'));
+    // Append a rule line to settings file `fileName` — or to a new file for this
+    // host when there is no such file — unless a semantically-identical rule
+    // already exists there. Returns { changed, file } (file = name written to).
+    async function appendRuleLine(ruleLine, fileName) {
+        const files = await getFiles();
+        const f = files.find((x) => x.name === fileName) ?? createHostFile(files);
+        const { ruleEntries } = indexConfigRaw(f.text.split('\n'));
         const newNorm = normalizeRuleLine(ruleLine);
         if (ruleEntries.some((e) => e.fields.join(' | ') === newNorm)) {
-            return { changed: false };
+            return { changed: false, file: f.name };
         }
-        let next = stored.trimEnd();
-        if (!/\[rules\]/i.test(next)) next += '\n\n[rules]';
-        next += '\n' + ruleLine + '\n';
-        await GM.setValue(STORAGE_KEY, next);
+        let next = f.text.trimEnd();
+        // Append into a [rules] section: a trailing list/css/match block would
+        // otherwise swallow the new line.
+        const lastHeader = next
+            .split('\n')
+            .map((l) => sectionHeader(l.trim()))
+            .filter(Boolean)
+            .pop();
+        if (lastHeader?.type !== 'rules') next += '\n\n[rules]';
+        f.text = next + '\n' + ruleLine + '\n';
+        await saveFiles(files);
         await loadRules();
-        return { changed: true };
+        return { changed: true, file: f.name };
+    }
+
+    // Files quick-add may write to on this page: the running files (their rules
+    // and lists) plus the libraries they import (lists only — library rules never
+    // run). Each carries its raw lines + index, so edits happen in place.
+    async function editTargets() {
+        const files = await getFiles();
+        const targets = [];
+        const libNames = [];
+        for (const f of files) {
+            if (!f.enabled || !fileRunsOn(fileHeader(f.text))) continue;
+            const lines = f.text.split('\n');
+            const idx = indexConfigRaw(lines);
+            targets.push({ file: f, lines, ...idx, isLibrary: false });
+            libNames.push(...idx.use);
+        }
+        for (const name of new Set(libNames)) {
+            const f = files.find((x) => x.name === name);
+            if (!f || targets.some((t) => t.file === f) || fileHeader(f.text).match.length) continue;
+            const lines = f.text.split('\n');
+            const idx = indexConfigRaw(lines);
+            targets.push({ file: f, lines, ...idx, ruleEntries: [], isLibrary: true });
+        }
+        return targets;
+    }
+
+    // File a new rule goes to: the remembered one if it still runs here, else the
+    // first file running here, else null (= create a file for this host).
+    function newRuleFile(targets, saved) {
+        const running = targets.filter((t) => !t.isLibrary);
+        return (running.find((t) => t.file.name === saved.newFile) ?? running[0])?.file.name ?? null;
     }
 
     function toast(msg, ok = true) {
@@ -1722,8 +2549,8 @@ ${customCss || ''}
     }
 
     // Append a brand-new rule built from the captured context, then apply it.
-    async function addNewRuleFromContext(ctx) {
-        const res = await appendRuleLine(buildRuleLine(ctx.source, defaultToken(ctx), 'self', ['hover']));
+    async function addNewRuleFromContext(ctx, fileName) {
+        const res = await appendRuleLine(buildRuleLine(ctx.source, defaultToken(ctx), 'self', ['hover']), fileName);
         if (res.changed) {
             scan(document.body);
             if (activeRules.length > 0) startObserver(); // apply immediately on this page
@@ -1734,71 +2561,80 @@ ${customCss || ''}
     async function quickAddSilent() {
         const ctx = captureContext();
         if (!ctx) {
-            toast('Content Blur: select text or hover a link first', false);
+            toast('Content Filter: select text or hover a link first', false);
             return;
         }
-        const res = await addNewRuleFromContext(ctx);
+        const saved = (await GM.getValue(PANEL_STATE_KEY, null)) || {};
+        const res = await addNewRuleFromContext(ctx, newRuleFile(await editTargets(), saved));
         toast(
             res.changed
-                ? `Content Blur: added rule for "${truncate(ctx.label, 40)}"`
-                : `Content Blur: rule for "${truncate(ctx.label, 40)}" already exists`
+                ? `Content Filter: added rule for "${truncate(ctx.label, 40)}" to ${res.file}`
+                : `Content Filter: rule for "${truncate(ctx.label, 40)}" already exists in ${res.file}`
         );
     }
 
-    // Quick-block: add the captured pattern to the FIRST existing rule whose source
-    // type + URL pattern match the current page — into its first referenced
-    // [list:NAME] if it has one, else appended inline to the rule's patterns field.
-    // Falls back to creating a new rule when nothing matches. Great for blocking
-    // users one keypress at a time into a list an existing rule already uses.
+    // Quick-block: add the captured pattern to the rule/list last used via the
+    // quick-add panel (or a previous quick-block) when it still applies to this
+    // page, else to the FIRST rule (in a file running here) whose source type +
+    // URL pattern match — into its first referenced [list:NAME] if it has one,
+    // else appended inline to the rule's patterns field. Falls back to creating a
+    // new rule when nothing matches. Great for blocking users one keypress at a
+    // time into a chosen list.
     async function quickBlock() {
         const ctx = captureContext();
         if (!ctx) {
-            toast('Content Blur: select text or hover a link first', false);
+            toast('Content Filter: select text or hover a link first', false);
             return;
         }
-        const stored = (await GM.getValue(STORAGE_KEY, null)) ?? DEFAULT_RULES;
-        const res = addPatternToMatchingRule(stored, ctx);
+        const targets = await editTargets();
+        const saved = (await GM.getValue(PANEL_STATE_KEY, null)) || {};
+        const res = addPatternToMatchingRule(targets, ctx, saved);
         if (!res) {
-            const added = await addNewRuleFromContext(ctx);
+            const added = await addNewRuleFromContext(ctx, newRuleFile(targets, saved));
+            if (added.changed) {
+                const line = buildRuleLine(ctx.source, defaultToken(ctx), 'self', ['hover']);
+                await GM.setValue(PANEL_STATE_KEY, {
+                    ...saved,
+                    mode: 'rule',
+                    file: added.file,
+                    newFile: added.file,
+                    ruleKey: line.trim(),
+                });
+            }
             toast(
                 added.changed
-                    ? `Content Blur: no matching rule — created one for "${truncate(ctx.label, 40)}"`
-                    : `Content Blur: rule for "${truncate(ctx.label, 40)}" already exists`
+                    ? `Content Filter: no matching rule — created one for "${truncate(ctx.label, 40)}" in ${added.file}`
+                    : `Content Filter: rule for "${truncate(ctx.label, 40)}" already exists in ${added.file}`
             );
             return;
         }
+        await GM.setValue(PANEL_STATE_KEY, { ...saved, ...res.state });
         if (res.changed) {
-            await GM.setValue(STORAGE_KEY, res.text);
+            await saveFileText(res.target.file.id, res.target.lines.join('\n'));
             await loadRules();
             scan(document.body);
             if (activeRules.length > 0) startObserver();
         }
-        toast('Content Blur: ' + res.message);
+        toast(`Content Filter: ${res.message} (${res.target.file.name})`);
     }
 
-    // Scan raw config lines once into an index of list blocks + rule lines, so the
-    // quick-add panel and quick-block can insert into a chosen destination and edit
-    // the raw text in place. Mirrors the section handling in parseConfig().
+    // Scan raw config lines once into an index of list blocks, rule lines and
+    // [use] names, so the quick-add panel and quick-block can insert into a chosen
+    // destination and edit the raw text in place. Mirrors parseConfig().
     function indexConfigRaw(lines) {
         const listBlocks = new Map(); // name -> { headerIdx, lastEntryIdx }
         const ruleEntries = []; // { idx, fields } for each rule line
+        const use = []; // [use] file names
         let section = null;
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
 
-            const listHeader = line.match(/^\[list:([^\]]+)\]$/i);
-            if (listHeader) {
-                const name = listHeader[1].trim().toLowerCase();
-                if (!listBlocks.has(name)) listBlocks.set(name, { headerIdx: i, lastEntryIdx: i });
-                section = { type: 'list', name };
-                continue;
-            }
-            if (/^\[rules\]$/i.test(line)) {
-                section = { type: 'rules' };
-                continue;
-            }
-            if (/^\[css\]$/i.test(line)) {
-                section = { type: 'css' };
+            const header = sectionHeader(line);
+            if (header) {
+                if (header.type === 'list' && !listBlocks.has(header.name)) {
+                    listBlocks.set(header.name, { headerIdx: i, lastEntryIdx: i });
+                }
+                section = header;
                 continue;
             }
             if (section && section.type === 'css') continue; // never touch raw CSS
@@ -1808,12 +2644,17 @@ ${customCss || ''}
                 listBlocks.get(section.name).lastEntryIdx = i;
                 continue;
             }
+            if (section && section.type === 'use') {
+                use.push(line.toLowerCase());
+                continue;
+            }
+            if (section && (section.type === 'match' || section.type === 'exclude')) continue;
             if (line.includes('|') || (section && section.type === 'rules')) {
                 const fields = splitTopLevel(line, '|').map((f) => f.trim());
                 if (fields.length >= 4) ruleEntries.push({ idx: i, fields });
             }
         }
-        return { listBlocks, ruleEntries };
+        return { listBlocks, ruleEntries, use };
     }
 
     // Insert an entry into a [list:NAME] block (dedup). Mutates `lines` in place.
@@ -1840,30 +2681,65 @@ ${customCss || ''}
         return { changed: true, message: `added "${truncate(label, 40)}" to the rule` };
     }
 
-    // Quick-block target: the FIRST rule matching the current URL + captured source.
-    // Prefer its first referenced [list:NAME]; else append inline to its patterns.
-    // Returns { text, changed, message } (text only when changed), or null.
-    function addPatternToMatchingRule(text, ctx) {
-        const lines = text.split('\n');
-        const { listBlocks, ruleEntries } = indexConfigRaw(lines);
-        const match = ruleEntries.find((e) => {
-            const up = parseUrlPattern(e.fields[0]);
-            return up && up.regex.test(location.href) && parseSource(e.fields[1]).includes(ctx.source);
-        });
-        if (!match) return null;
-
-        const listRef = splitTopLevel(match.fields[2], ',')
+    // First list a rule references that actually exists, as { target, name }
+    // (`name` local to that target's file), or null. @LIB/NAME resolves into the
+    // imported library's file; wildcard refs are skipped.
+    function firstListOf(entry, target, targets) {
+        const ref = splitTopLevel(entry.fields[2], ',')
             .map((t) => t.trim())
             .find((t) => t.startsWith('@'));
+        const full = ref?.slice(1).toLowerCase();
+        if (!full) return null;
+        const slash = full.indexOf('/');
+        if (slash === -1) return target.listBlocks.has(full) ? { target, name: full } : null;
+        const lib = targets.find((t) => t.isLibrary && t.file.name === full.slice(0, slash));
+        const name = full.slice(slash + 1);
+        return lib?.listBlocks.has(name) ? { target: lib, name } : null;
+    }
+
+    // Quick-block target, in order of preference:
+    //   1. the destination last used via the quick-add panel (incl. a newly
+    //      created rule) or quick-block (`saved`), if it is still relevant here
+    //      (its rule matches the current URL + captured source) — so repeated
+    //      adds keep going to the same place
+    //   2. the FIRST rule matching the current URL + captured source
+    // A rule's first referenced list is preferred over its inline patterns.
+    // Mutates the chosen target's `lines`. Returns
+    // { target, changed, message, state }, or null when no rule is relevant.
+    function addPatternToMatchingRule(targets, ctx, saved = {}) {
+        const relevant = targets.flatMap((t) =>
+            t.ruleEntries
+                .filter((e) => {
+                    const up = parseUrlPattern(e.fields[0]);
+                    return up && up.regex.test(location.href) && parseSource(e.fields[1]).includes(ctx.source);
+                })
+                .map((e) => ({ t, e }))
+        );
+        if (!relevant.length) return null;
+
         const token = defaultToken(ctx);
-        let res;
-        if (listRef && listBlocks.has(listRef.slice(1).toLowerCase())) {
-            const name = listRef.slice(1).toLowerCase();
-            res = insertListEntry(lines, listBlocks.get(name), name, token, ctx.label);
-        } else {
-            res = insertRulePattern(lines, match, token, ctx.label);
+        const toList = ({ target, name }) => {
+            const res = insertListEntry(target.lines, target.listBlocks.get(name), name, token, ctx.label);
+            return { ...res, target, state: { mode: 'list', file: target.file.name, listName: name } };
+        };
+        const toRule = ({ t, e }) => {
+            const res = insertRulePattern(t.lines, e, token, ctx.label);
+            return { ...res, target: t, state: { mode: 'rule', file: t.file.name, ruleKey: t.lines[e.idx].trim() } };
+        };
+        const isSavedRule = ({ t, e }) => t.file.name === saved.file && t.lines[e.idx].trim() === saved.ruleKey;
+
+        if (saved.mode === 'list') {
+            const hit = relevant
+                .map(({ t, e }) => firstListOf(e, t, targets))
+                .find((l) => l && l.target.file.name === saved.file && l.name === saved.listName);
+            if (hit) return toList(hit);
+        } else if (saved.mode === 'rule' || saved.mode === 'new') {
+            const hit = relevant.find(isSavedRule);
+            if (hit) return toRule(hit);
         }
-        return { ...res, text: res.changed ? lines.join('\n') : undefined };
+        const first = relevant[0];
+        const list = firstListOf(first.e, first.t, targets);
+        return list ? toList(list) : toRule(first);
     }
 
     function truncate(s, n) {
@@ -1886,7 +2762,7 @@ ${customCss || ''}
     async function quickAddPanel() {
         const captured = captureContext();
         if (!captured) {
-            toast('Content Blur: select text or hover a link first', false);
+            toast('Content Filter: select text or hover a link first', false);
             return;
         }
         // If the bar is already open, refresh it in place from the fresh capture
@@ -1901,13 +2777,15 @@ ${customCss || ''}
         existing?.remove();
         let ctx = captured;
 
-        // Load config (to enumerate destinations) + remembered panel state.
-        const stored = (await GM.getValue(STORAGE_KEY, null)) ?? DEFAULT_RULES;
-        const lines = stored.split('\n');
-        const { listBlocks, ruleEntries } = indexConfigRaw(lines);
-        const listNames = [...listBlocks.keys()];
+        // Load the files running here (to enumerate destinations) + remembered
+        // panel state. Destinations are file-qualified: { t: target, e | name }.
+        const targets = await editTargets();
+        const ruleOpts = targets.flatMap((t) => t.ruleEntries.map((e) => ({ t, e })));
+        const listOpts = targets.flatMap((t) => [...t.listBlocks.keys()].map((name) => ({ t, name })));
+        const runningFiles = targets.filter((t) => !t.isLibrary).map((t) => t.file.name);
         const savedState = (await GM.getValue(PANEL_STATE_KEY, null)) || {};
 
+        ensureUiStyles();
         const panel = document.createElement('div');
         panel.id = 'ucb-quick-panel';
         Object.assign(panel.style, {
@@ -1968,8 +2846,8 @@ ${customCss || ''}
             const o = document.createElement('option');
             o.value = m.value;
             o.textContent = m.label;
-            if (m.value === 'rule' && !ruleEntries.length) o.disabled = true;
-            if (m.value === 'list' && !listNames.length) o.disabled = true;
+            if (m.value === 'rule' && !ruleOpts.length) o.disabled = true;
+            if (m.value === 'list' && !listOpts.length) o.disabled = true;
             modeSel.appendChild(o);
         }
 
@@ -2016,28 +2894,48 @@ ${customCss || ''}
                     color: '#999',
                 });
                 hoverLabel.append(hoverCb, 'reveal on hover');
-                Object.assign(mid, { sourceSel, scopeSel, hoverCb });
-                midWrap.append(field('source', sourceSel), field('scope', scopeSel), hoverLabel);
+                const fileSel = mkSelect();
+                const defaultFile = newRuleFile(targets, savedState);
+                for (const name of runningFiles) {
+                    const o = document.createElement('option');
+                    o.value = o.textContent = name;
+                    if (name === defaultFile) o.selected = true;
+                    fileSel.appendChild(o);
+                }
+                const o = document.createElement('option');
+                o.value = '';
+                o.textContent = `+ new file (${location.hostname})`;
+                if (!defaultFile) o.selected = true;
+                fileSel.appendChild(o);
+                Object.assign(mid, { sourceSel, scopeSel, hoverCb, fileSel });
+                midWrap.append(
+                    field('file', fileSel),
+                    field('source', sourceSel),
+                    field('scope', scopeSel),
+                    hoverLabel
+                );
             } else if (mode === 'rule') {
                 const ruleSel = mkSelect();
                 Object.assign(ruleSel.style, { maxWidth: '440px' });
-                ruleEntries.forEach((e, i) => {
+                ruleOpts.forEach(({ t, e }, i) => {
                     const o = document.createElement('option');
+                    const raw = t.lines[e.idx].trim();
                     o.value = String(i);
-                    o.textContent = truncate(lines[e.idx].trim(), 70);
-                    if (lines[e.idx].trim() === savedState.ruleKey) o.selected = true;
+                    o.textContent = `${t.file.name}: ${truncate(raw, 60)}`;
+                    if (t.file.name === savedState.file && raw === savedState.ruleKey) o.selected = true;
                     ruleSel.appendChild(o);
                 });
                 mid.ruleSel = ruleSel;
                 midWrap.append(field('target rule', ruleSel));
             } else {
                 const listSel = mkSelect();
-                for (const name of listNames) {
+                listOpts.forEach(({ t, name }, i) => {
                     const o = document.createElement('option');
-                    o.value = o.textContent = name;
-                    if (name === savedState.listName) o.selected = true;
+                    o.value = String(i);
+                    o.textContent = `${t.file.name}: ${name}`;
+                    if (t.file.name === savedState.file && name === savedState.listName) o.selected = true;
                     listSel.appendChild(o);
-                }
+                });
                 mid.listSel = listSel;
                 midWrap.append(field('target list', listSel));
             }
@@ -2045,8 +2943,8 @@ ${customCss || ''}
 
         // Initial mode: remembered, if still available; else new.
         let initialMode = savedState.mode || 'new';
-        if (initialMode === 'rule' && !ruleEntries.length) initialMode = 'new';
-        if (initialMode === 'list' && !listNames.length) initialMode = 'new';
+        if (initialMode === 'rule' && !ruleOpts.length) initialMode = 'new';
+        if (initialMode === 'list' && !listOpts.length) initialMode = 'new';
         modeSel.value = initialMode;
         renderMid(initialMode);
         modeSel.addEventListener('change', () => renderMid(modeSel.value));
@@ -2058,9 +2956,9 @@ ${customCss || ''}
             const cur = (await GM.getValue(PANEL_STATE_KEY, null)) || {};
             await GM.setValue(PANEL_STATE_KEY, { ...cur, ...patch });
         };
-        const applyEdits = async (changed) => {
+        const applyEdits = async (target, changed) => {
             if (!changed) return;
-            await GM.setValue(STORAGE_KEY, lines.join('\n'));
+            await saveFileText(target.file.id, target.lines.join('\n'));
             await loadRules();
             scan(document.body);
             if (activeRules.length > 0) startObserver();
@@ -2086,7 +2984,7 @@ ${customCss || ''}
         addBtn.addEventListener('click', async () => {
             const token = patternInput.value.trim();
             if (!token) {
-                toast('Content Blur: pattern is empty', false);
+                toast('Content Filter: pattern is empty', false);
                 return;
             }
             const mode = modeSel.value;
@@ -2097,25 +2995,31 @@ ${customCss || ''}
                     mid.scopeSel.value,
                     mid.hoverCb.checked ? ['hover'] : ['no-hover']
                 );
-                const res = await appendRuleLine(line);
+                const res = await appendRuleLine(line, mid.fileSel.value || null);
                 if (res.changed) {
                     scan(document.body);
                     if (activeRules.length > 0) startObserver();
                 }
-                await saveState({ mode });
-                toast('Content Blur: ' + (res.changed ? 'rule added' : 'rule already exists'));
+                // Remember the new rule (and its file) so Alt+A (quick-block) and
+                // the next new rule keep going there.
+                await saveState(
+                    res.changed
+                        ? { mode, file: res.file, newFile: res.file, ruleKey: line.trim() }
+                        : { mode, newFile: res.file }
+                );
+                toast(`Content Filter: ${res.changed ? 'rule added' : 'rule already exists'} (${res.file})`);
             } else if (mode === 'rule') {
-                const entry = ruleEntries[Number(mid.ruleSel.value)];
-                const res = insertRulePattern(lines, entry, token, ctx.label);
-                await applyEdits(res.changed);
-                await saveState({ mode, ruleKey: lines[entry.idx].trim() });
-                toast('Content Blur: ' + res.message);
+                const { t, e } = ruleOpts[Number(mid.ruleSel.value)];
+                const res = insertRulePattern(t.lines, e, token, ctx.label);
+                await applyEdits(t, res.changed);
+                await saveState({ mode, file: t.file.name, ruleKey: t.lines[e.idx].trim() });
+                toast(`Content Filter: ${res.message} (${t.file.name})`);
             } else {
-                const name = mid.listSel.value;
-                const res = insertListEntry(lines, listBlocks.get(name), name, token, ctx.label);
-                await applyEdits(res.changed);
-                await saveState({ mode, listName: name });
-                toast('Content Blur: ' + res.message);
+                const { t, name } = listOpts[Number(mid.listSel.value)];
+                const res = insertListEntry(t.lines, t.listBlocks.get(name), name, token, ctx.label);
+                await applyEdits(t, res.changed);
+                await saveState({ mode, file: t.file.name, listName: name });
+                toast(`Content Filter: ${res.message} (${t.file.name})`);
             }
             panel.remove();
         });
@@ -2157,8 +3061,240 @@ ${customCss || ''}
         return btn;
     }
 
-    function openSettings() {
+    // Coerce any string into a valid file name (FILE_NAME_RE): lowercase, runs of
+    // other characters become -, cut to FILE_NAME_MAX. '' when nothing is left.
+    function toFileName(raw) {
+        return String(raw)
+            .toLowerCase()
+            .replace(/[^a-z0-9_.-]+/g, '-')
+            .replace(/^[^a-z0-9]+/, '')
+            .slice(0, FILE_NAME_MAX);
+    }
+
+    // Settings-file name derived from this page's host (e.g. "example.com").
+    function hostFileName() {
+        return toFileName(location.hostname.replace(/^www\./, '')) || 'site';
+    }
+
+    // `base`, or base-2, base-3, … — the first name no file in `files` uses. The
+    // base is cut so that name + suffix stays within FILE_NAME_MAX.
+    function uniqueFileName(base, files) {
+        const taken = (n) => n === REFERENCE_NAME || files.some((x) => x.name === n);
+        let name = base.slice(0, FILE_NAME_MAX);
+        for (let n = 2; taken(name); n++) name = base.slice(0, FILE_NAME_MAX - `-${n}`.length) + `-${n}`;
+        return name;
+    }
+
+    // "a, b, c and 4 more" — keeps long name lists in prompts short.
+    function nameList(names, max = 8) {
+        const shown = names.slice(0, max).join(', ');
+        return names.length > max ? `${shown} and ${names.length - max} more` : shown;
+    }
+
+    // Modal prompt inside `host` (an overlay element), replacing the browser's
+    // confirm()/prompt(), which offer only two choices and can't be styled.
+    //   message  headline text
+    //   details  extra lines (plain text) shown below it
+    //   input    { value, maxLength, validate(v) → error message | null } for a
+    //            text field; Enter presses the primary button
+    //   buttons  [{ label, value, bg?, color?, primary? }], left to right
+    // Resolves { choice, value }: choice = the pressed button's value, or null
+    // for Esc / a click on the backdrop. A button with validate errors stays open.
+    function modalPrompt(host, { message, details = [], input = null, buttons }) {
+        return new Promise((resolve) => {
+            const layer = document.createElement('div');
+            Object.assign(layer.style, {
+                position: 'fixed',
+                inset: '0',
+                zIndex: '2147483647',
+                background: 'rgba(0,0,0,0.45)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+            });
+            const box = document.createElement('div');
+            Object.assign(box.style, {
+                background: '#252526',
+                color: '#d4d4d4',
+                border: '1px solid #555',
+                borderRadius: '8px',
+                padding: '16px',
+                width: '460px',
+                maxWidth: '90vw',
+                maxHeight: '80vh',
+                overflowY: 'auto',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                fontFamily: 'sans-serif',
+                fontSize: '13px',
+            });
+            const msg = document.createElement('div');
+            msg.textContent = message;
+            Object.assign(msg.style, { color: '#fff', margin: '0 0 10px', fontWeight: 'bold' });
+            box.append(msg);
+            for (const line of details) {
+                const d = document.createElement('div');
+                d.textContent = line;
+                Object.assign(d.style, { color: '#aaa', fontSize: '12px', margin: '0 0 6px', wordBreak: 'break-word' });
+                box.append(d);
+            }
+            let field = null;
+            const err = document.createElement('div');
+            Object.assign(err.style, { color: '#f14c4c', fontSize: '12px', minHeight: '16px', margin: '4px 0 0' });
+            if (input) {
+                field = document.createElement('input');
+                field.type = 'text';
+                field.value = input.value ?? '';
+                if (input.maxLength) field.maxLength = input.maxLength;
+                Object.assign(field.style, {
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: '#1e1e1e',
+                    color: '#d4d4d4',
+                    border: '1px solid #444',
+                    borderRadius: '4px',
+                    padding: '6px 8px',
+                    fontFamily: 'monospace',
+                    fontSize: '13px',
+                });
+                field.addEventListener('input', () => (err.textContent = ''));
+                box.append(field, err);
+            }
+            const row = document.createElement('div');
+            Object.assign(row.style, {
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '8px',
+                justifyContent: 'flex-end',
+                marginTop: '12px',
+            });
+            const done = (choice) => {
+                layer.remove();
+                resolve({ choice, value: field?.value.trim() });
+            };
+            let primary = null;
+            for (const b of buttons) {
+                const btn = makeBtn(b.label, b.bg ?? '#333', b.color ?? (b.bg ? '#fff' : '#ccc'));
+                btn.addEventListener('click', () => {
+                    // Only a confirming button needs a valid value; cancel always works.
+                    if (field && input.validate && b.primary) {
+                        const e = input.validate(field.value.trim());
+                        if (e) {
+                            err.textContent = e;
+                            field.focus();
+                            return;
+                        }
+                    }
+                    done(b.value);
+                });
+                if (b.primary) primary = btn;
+                row.append(btn);
+            }
+            box.append(row);
+            layer.addEventListener('click', (e) => e.target === layer && done(null));
+            layer.addEventListener('keydown', (e) => {
+                e.stopPropagation(); // the dialog's own Esc / Ctrl+S must not fire underneath
+                if (e.key === 'Escape') done(null);
+                else if (e.key === 'Enter' && e.target === field) {
+                    e.preventDefault();
+                    primary?.click();
+                }
+            });
+            layer.append(box);
+            host.append(layer);
+            if (field) {
+                field.focus();
+                field.select();
+            } else (primary ?? row.lastChild)?.focus();
+        });
+    }
+
+    // The text of a new settings file running on this host.
+    function hostFileText(name) {
+        return `# ${name}\n[match]\n*://${location.hostname}/*\n\n[rules]\n`;
+    }
+
+    // A new, empty settings file running on this host (pushed onto `files`).
+    function createHostFile(files) {
+        const name = uniqueFileName(hostFileName(), files);
+        const f = { id: newFileId(), name, enabled: true, text: hostFileText(name) };
+        files.push(f);
+        return f;
+    }
+
+    // Names of the files that [use] the file named `name`.
+    function importersOf(name, files) {
+        return files
+            .filter((f) => f.name !== name && indexConfigRaw(f.text.split('\n')).use.includes(name))
+            .map((f) => f.name);
+    }
+
+    // Rewrite references to a renamed library: its [use] line and @OLD/ list refs
+    // in list and rule lines ([css] and other sections are left alone).
+    function renameImports(text, oldName, newName) {
+        let section = null;
+        const refRe = new RegExp('@' + escapeRegExp(oldName) + '/', 'gi');
+        return text
+            .split('\n')
+            .map((line) => {
+                const t = line.trim();
+                const h = sectionHeader(t);
+                if (h) {
+                    section = h.type;
+                    return line;
+                }
+                if (!t || t.startsWith('#') || t.startsWith('//')) return line;
+                if (section === 'use') return t.toLowerCase() === oldName ? line.replace(t, newName) : line;
+                if (section === 'list' || section === 'rules' || section === null)
+                    return line.replace(refRe, `@${newName}/`);
+                return line;
+            })
+            .join('\n');
+    }
+
+    // Export / import format: { format, version, exported, files: [{ name, enabled, text }] }.
+    const EXPORT_FORMAT = 'any-content-filter';
+
+    function downloadJson(filename, files) {
+        const data = {
+            format: EXPORT_FORMAT,
+            version: 1,
+            exported: new Date().toISOString(),
+            files: files.map(({ name, enabled, text }) => ({ name, enabled, text })),
+        };
+        const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        (document.body ?? document.documentElement).append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    // Parse an export file's text into [{ name, enabled, text }], or throw.
+    function parseImport(json) {
+        const data = JSON.parse(json);
+        if (data?.format !== EXPORT_FORMAT || !Array.isArray(data.files)) {
+            throw new Error('not an Any Content Filter export');
+        }
+        return data.files
+            .filter((f) => typeof f?.name === 'string' && typeof f?.text === 'string')
+            .map((f) => ({
+                name: toFileName(f.name.trim()) || 'imported',
+                original: f.name,
+                enabled: f.enabled !== false,
+                text: f.text,
+            }));
+    }
+
+    // Settings dialog: a file bar (select, enabled, New/Duplicate/Rename/Delete,
+    // Import/Export) above the selected file's text. File-bar actions are stored
+    // immediately; text edits need Save (per file — leaving a file with unsaved
+    // changes asks first). The built-in reference file is read-only and never
+    // stored.
+    function openSettings(fileName) {
         document.getElementById('ucb-settings')?.remove();
+        ensureUiStyles();
 
         const overlay = document.createElement('div');
         overlay.id = 'ucb-settings';
@@ -2178,7 +3314,7 @@ ${customCss || ''}
             color: '#d4d4d4',
             borderRadius: '8px',
             padding: '18px',
-            width: '760px',
+            width: '860px',
             maxWidth: '96vw',
             maxHeight: '92vh',
             overflowY: 'auto',
@@ -2191,7 +3327,7 @@ ${customCss || ''}
         const header = document.createElement('div');
         Object.assign(header.style, { display: 'flex', alignItems: 'center', margin: '0 0 6px' });
         const title = document.createElement('h3');
-        title.textContent = 'Any Content Blur — Rules';
+        title.textContent = 'Any Content Filter — Settings';
         Object.assign(title.style, { margin: '0', color: '#fff', fontSize: '15px', flex: '1' });
         const btnClose = document.createElement('button');
         btnClose.textContent = '✕';
@@ -2209,24 +3345,189 @@ ${customCss || ''}
         btnClose.addEventListener('mouseenter', () => (btnClose.style.color = '#fff'));
         btnClose.addEventListener('mouseleave', () => (btnClose.style.color = '#888'));
         btnClose.addEventListener('click', () => confirmClose());
-        header.append(title, btnClose);
+
+        // Maximize / restore: maximized = almost the whole viewport height (a small
+        // margin keeps it looking like a dialog) with a wider, but capped, width —
+        // very long lines don't help an editor. Both sizes still shrink with the
+        // viewport. The choice is remembered (DIALOG_STATE_KEY).
+        const btnMax = document.createElement('button');
+        Object.assign(btnMax.style, {
+            background: 'none',
+            border: 'none',
+            color: '#888',
+            cursor: 'pointer',
+            fontSize: '15px',
+            lineHeight: '1',
+            padding: '2px 6px',
+        });
+        btnMax.addEventListener('mouseenter', () => (btnMax.style.color = '#fff'));
+        btnMax.addEventListener('mouseleave', () => (btnMax.style.color = '#888'));
+
+        // Help: an ⓘ toggle right after the title opens a popover over the editor.
+        // Click/tap toggles it (works on touch, unlike hover); its ✕ or a click
+        // anywhere else in the panel closes it. Esc stays reserved for the dialog.
+        Object.assign(title.style, { flex: '0 1 auto' });
+        const btnInfo = document.createElement('button');
+        btnInfo.textContent = 'ⓘ';
+        btnInfo.title = 'Help';
+        btnInfo.setAttribute('aria-label', 'Help');
+        btnInfo.setAttribute('aria-expanded', 'false');
+        Object.assign(btnInfo.style, {
+            background: 'none',
+            border: 'none',
+            color: '#9cdcfe',
+            cursor: 'pointer',
+            fontSize: '16px',
+            lineHeight: '1',
+            padding: '2px 6px',
+            margin: '0 auto 0 4px', // pushes the close button to the right edge
+        });
+        header.style.position = 'relative';
+        header.append(title, btnInfo, btnMax, btnClose);
 
         const hint = document.createElement('div');
         hint.innerHTML =
+            'Each settings file runs like its own userscript on the URLs in its ' +
+            '<code style="color:#9cdcfe">[match]</code> section (minus ' +
+            '<code style="color:#9cdcfe">[exclude]</code>); its lists and CSS are private. A file without ' +
+            '<code style="color:#9cdcfe">[match]</code> is a library: import it with ' +
+            '<code style="color:#9cdcfe">[use]</code> and reference its lists as ' +
+            '<code style="color:#9cdcfe">@LIB/NAME</code>. ' +
             'One rule per line: ' +
-            '<code style="color:#9cdcfe">url-pattern | source | patterns | action | scope | options</code>. ' +
-            'Define reusable lists with <code style="color:#9cdcfe">[list:NAME]</code> and reference them as ' +
-            '<code style="color:#9cdcfe">@NAME</code> or <code style="color:#9cdcfe">@glob*</code> — lists ' +
-            'may reference other lists (including wildcards) to compose categories. ' +
-            'Patterns: <code style="color:#9cdcfe">word</code> (whole-word), ' +
-            '<code style="color:#9cdcfe">"exact"</code>, <code style="color:#9cdcfe">/regex/</code>. ' +
-            'Sources: text, alt, title, url, user, class (matched per class name). Scope: self, up:N, ' +
-            'closest:SEL, row — append prev:N / next:N to extend the effect to sibling ' +
-            'elements (hover reveals the whole group). Actions: blur (or blur:N), plus any ' +
-            '<code style="color:#9cdcfe">.ucb-NAME</code> class you define in a ' +
-            '<code style="color:#9cdcfe">[css]</code> block. ' +
-            'See the comments in the default config for full docs.';
-        Object.assign(hint.style, { margin: '0 0 10px', color: '#888', fontSize: '11px', lineHeight: '1.5' });
+            '<code style="color:#9cdcfe">url-pattern | source | patterns | action | scope | options</code> ' +
+            '(url <code style="color:#9cdcfe">*</code> = wherever the file runs). ' +
+            'Files run in name order (prefix 10-…, 50-… to order them). ' +
+            'In the list: ► runs on this page · ✓ enabled (other pages) · ✗ disabled · ○ library · ≡ reference. ' +
+            'See the read-only <code style="color:#9cdcfe">reference</code> file for full docs and examples.' +
+            '<br><br>File buttons: ✅/❌ enabled/disabled (click to toggle) · + new · 📋 duplicate (or copy the ' +
+            'reference) · ✏️ rename · 🗑️ delete. □/❐ in the title bar maximizes/restores the dialog. ' +
+            'Save keeps the dialog open (Ctrl+S); Save &amp; Reload re-applies the rules to this page.';
+        Object.assign(hint.style, { color: '#bbb', fontSize: '12px', lineHeight: '1.55', paddingRight: '18px' });
+        const helpPop = document.createElement('div');
+        Object.assign(helpPop.style, {
+            display: 'none',
+            position: 'absolute',
+            top: '100%',
+            left: '0',
+            right: '0',
+            zIndex: '1',
+            marginTop: '6px',
+            background: '#2d2d2d',
+            border: '1px solid #555',
+            borderRadius: '6px',
+            padding: '10px 12px',
+            boxShadow: '0 6px 20px rgba(0,0,0,0.6)',
+        });
+        const helpClose = document.createElement('button');
+        helpClose.textContent = '✕';
+        helpClose.title = 'Close help';
+        helpClose.setAttribute('aria-label', 'Close help');
+        Object.assign(helpClose.style, {
+            position: 'absolute',
+            top: '6px',
+            right: '6px',
+            background: 'none',
+            border: 'none',
+            color: '#888',
+            cursor: 'pointer',
+            fontSize: '13px',
+            padding: '2px 4px',
+        });
+        helpPop.append(hint, helpClose);
+        header.append(helpPop);
+        const showHelp = (on) => {
+            helpPop.style.display = on ? 'block' : 'none';
+            btnInfo.setAttribute('aria-expanded', String(on));
+        };
+        btnInfo.addEventListener('click', () => showHelp(helpPop.style.display === 'none'));
+        helpClose.addEventListener('click', () => showHelp(false));
+        panel.addEventListener('pointerdown', (e) => {
+            if (!helpPop.contains(e.target) && e.target !== btnInfo) showHelp(false);
+        });
+
+        // --- file bar ---
+        const smallBtn = (label, tip) => {
+            const b = makeBtn(label, '#333', '#ccc');
+            Object.assign(b.style, { padding: '4px 9px', fontSize: '12px' });
+            b.title = tip;
+            return b;
+        };
+        const setEnabled = (btn, on) => {
+            btn.disabled = !on;
+            btn.style.opacity = on ? '1' : '0.4';
+            btn.style.cursor = on ? 'pointer' : 'default';
+        };
+        const fileBar = document.createElement('div');
+        Object.assign(fileBar.style, {
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '6px',
+            alignItems: 'center',
+            margin: '0 0 8px',
+        });
+        const fileSel = document.createElement('select');
+        Object.assign(fileSel.style, {
+            background: '#2d2d2d',
+            color: '#d4d4d4',
+            border: '1px solid #444',
+            borderRadius: '4px',
+            padding: '4px 6px',
+            fontSize: '12px',
+            fontFamily: 'monospace',
+            // Fixed width so the buttons never shift with the selected name; a
+            // longer name is cut off here (full name in the tooltip) while the
+            // open list is as wide as its longest entry.
+            width: '32ch',
+            maxWidth: '100%',
+        });
+        // Enabled toggle for the selected file (the list marks show it for all).
+        const btnEnabled = smallBtn('✅', '');
+        btnEnabled.setAttribute('aria-pressed', 'true');
+        const btnNew = smallBtn('+', `New file running on ${location.hostname}`);
+        // A plain colored glyph: the gray ➕ emoji looked like a disabled button.
+        Object.assign(btnNew.style, { color: '#4ec9b0', fontWeight: 'bold', fontSize: '17px' });
+        const btnDup = smallBtn('📋', 'Duplicate this file (the copy starts disabled)');
+        const btnRename = smallBtn('✏️', 'Rename this file (also updates files that [use] it)');
+        const btnDelete = smallBtn('🗑️', 'Delete this file');
+        // Icon buttons share one fixed box, whatever their glyph's size.
+        for (const [b, label] of [
+            [btnEnabled, 'Enabled'],
+            [btnNew, 'New file'],
+            [btnDup, 'Duplicate file'],
+            [btnRename, 'Rename file'],
+            [btnDelete, 'Delete file'],
+        ]) {
+            b.setAttribute('aria-label', label);
+            Object.assign(b.style, {
+                width: '34px',
+                height: '28px',
+                padding: '0',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                lineHeight: '1',
+            });
+        }
+        const spacer = document.createElement('div');
+        spacer.style.flex = '1';
+        const btnImport = smallBtn('Import…', 'Import files from an exported .json');
+        const btnExport = smallBtn('Export…', 'Download this file (+ the libraries it uses) or all files as .json');
+        const importInput = document.createElement('input');
+        importInput.type = 'file';
+        importInput.accept = '.json,application/json';
+        importInput.style.display = 'none';
+        fileBar.append(
+            fileSel,
+            btnEnabled,
+            btnNew,
+            btnDup,
+            btnRename,
+            btnDelete,
+            spacer,
+            btnImport,
+            btnExport,
+            importInput
+        );
 
         const textarea = document.createElement('textarea');
         Object.assign(textarea.style, {
@@ -2245,74 +3546,475 @@ ${customCss || ''}
             lineHeight: '1.6',
         });
 
-        let savedValue = '';
-        GM.getValue(STORAGE_KEY, null).then((stored) => {
-            savedValue = stored ?? DEFAULT_RULES;
-            textarea.value = savedValue;
-            textarea.scrollTop = textarea.scrollHeight;
-        });
-
-        const isDirty = () => textarea.value !== savedValue;
-        const confirmClose = () => {
-            if (isDirty() && !confirm('Discard unsaved changes to blur rules?')) return;
-            overlay.remove();
-        };
-
         const statusLine = document.createElement('div');
         Object.assign(statusLine.style, { marginTop: '6px', fontSize: '11px', color: '#888', minHeight: '16px' });
+        const setStatus = (msg, color = '#888') => {
+            statusLine.style.color = color;
+            statusLine.textContent = msg;
+        };
 
         const btnRow = document.createElement('div');
         Object.assign(btnRow.style, { display: 'flex', gap: '8px', marginTop: '10px', justifyContent: 'flex-end' });
-
-        const btnReset = makeBtn('Reset to Default', '#444', '#ccc');
         const btnValidate = makeBtn('Validate', '#3a3a3a', '#9cdcfe');
-        const btnCancel = makeBtn('Cancel', '#333', '#ccc');
+        const btnCancel = makeBtn('Close', '#333', '#ccc');
         const btnSave = makeBtn('Save', '#1f6fad');
         const btnSaveReload = makeBtn('Save & Reload', '#0e639c');
+        btnCancel.title = 'Close (Esc) — asks first if there are unsaved changes';
+        btnSave.title = 'Save this file and keep editing (Ctrl+S) — applies on next page load';
+        btnSaveReload.title = 'Save this file and reload — re-evaluates rules on the current page';
 
-        btnSave.title = 'Save — applies on next page load; current page not re-evaluated';
-        btnSaveReload.title = 'Save and reload — re-evaluates rules on the current page';
+        // --- state ---
+        const REF_ID = '\0reference'; // select value of the built-in reference file
+        const COLOR_ON = '#5cb85c'; // enabled files in the list
+        const COLOR_OFF = '#e5534b'; // disabled files in the list
+        let files = [];
+        let selId = REF_ID;
+        let savedValue = DEFAULT_RULES;
+        const sel = () => files.find((f) => f.id === selId) ?? null; // null = reference
+        const isDirty = () => !!sel() && textarea.value !== savedValue;
+        // Unsaved changes: three choices, so a browser confirm() won't do.
+        // Resolves 'save' | 'discard' | 'stay' (Esc / backdrop = stay).
+        const askUnsaved = async () => {
+            const { choice } = await modalPrompt(overlay, {
+                message: `"${sel().name}" has unsaved changes.`,
+                buttons: [
+                    { label: 'Stay', value: 'stay' },
+                    { label: 'Discard & continue', value: 'discard', bg: '#6e2a2a' },
+                    { label: 'Save & continue', value: 'save', bg: '#0e639c', primary: true },
+                ],
+            });
+            return choice ?? 'stay';
+        };
+        // Before leaving the current file (switch, new, import, close): true when it
+        // is clean, was saved, or the user chose to discard. A save with errors
+        // stays (the status line shows them).
+        const proceedIfClean = async () => {
+            if (!isDirty()) return true;
+            const choice = await askUnsaved();
+            if (choice === 'save') return saveSelected();
+            return choice === 'discard';
+        };
+        const confirmClose = async () => {
+            if (await proceedIfClean()) overlay.remove();
+        };
 
-        btnReset.addEventListener('click', () => {
-            textarea.value = DEFAULT_RULES;
-            statusLine.textContent = '';
-        });
+        // Grouped by kind; within a group by name (= run order, see sortFiles).
+        // Every mark is one monospace cell so the names line up.
+        const renderSelect = () => {
+            // Colors match the ✅/❌ toggle. A native option can only be colored as
+            // a whole (not just its mark); mobile pickers may ignore the color.
+            const option = (value, mark, label, color = '#d4d4d4') => {
+                const o = document.createElement('option');
+                o.value = value;
+                o.textContent = `${mark} ${label}`;
+                o.style.color = color;
+                return o;
+            };
+            const group = (label, opts) => {
+                const g = document.createElement('optgroup');
+                g.label = label;
+                g.style.color = '#999'; // not the select's (selection-colored) text color
+                g.append(...opts);
+                return g;
+            };
+            const runnable = [];
+            const libs = [];
+            for (const f of sortFiles([...files])) {
+                const hdr = fileHeader(f.text);
+                if (!hdr.match.length) libs.push(option(f.id, '○', f.name));
+                else if (!f.enabled) runnable.push(option(f.id, '✗', f.name, COLOR_OFF));
+                else runnable.push(option(f.id, fileRunsOn(hdr) ? '►' : '✓', f.name, COLOR_ON));
+            }
+            const groups = [];
+            if (runnable.length) groups.push(group('Files (in run order)', runnable));
+            if (libs.length) groups.push(group('Libraries', libs));
+            groups.push(group('Reference', [option(REF_ID, '≡', `${REFERENCE_NAME}  (read-only)`, '#999')]));
+            fileSel.replaceChildren(...groups);
+            fileSel.value = selId;
+            // The closed select shows the selected entry in its color too.
+            fileSel.style.color = fileSel.selectedOptions[0]?.style.color ?? '#d4d4d4';
+            fileSel.title = sel()?.name ?? `${REFERENCE_NAME} (read-only)`;
+        };
+        const updateControls = () => {
+            const f = sel();
+            textarea.readOnly = !f;
+            textarea.style.opacity = f ? '1' : '0.8';
+            // Libraries ignore the flag (an imported library is always used), so
+            // the toggle only applies to files with [match].
+            const lib = f && !fileHeader(f.text).match.length;
+            const on = !!f?.enabled;
+            btnEnabled.textContent = on || !f || lib ? '✅' : '❌';
+            btnEnabled.setAttribute('aria-pressed', String(on));
+            btnEnabled.title = !f
+                ? 'The reference never runs'
+                : lib
+                  ? 'Library: always used by the files that [use] it (no enabled flag)'
+                  : on
+                    ? 'Enabled — click to disable'
+                    : 'Disabled — click to enable';
+            setEnabled(btnEnabled, !!f && !lib);
+            btnDup.title = f
+                ? 'Duplicate this file (the copy starts disabled)'
+                : 'Copy the reference into a new file for this host';
+            for (const b of [btnRename, btnDelete, btnValidate, btnSave, btnSaveReload]) setEnabled(b, !!f);
+            setEnabled(btnExport, files.length > 0);
+        };
+        const selectFile = (id) => {
+            selId = files.some((f) => f.id === id) ? id : REF_ID;
+            savedValue = sel()?.text ?? DEFAULT_RULES;
+            textarea.value = savedValue;
+            textarea.scrollTop = 0;
+            renderSelect();
+            updateControls();
+            if (sel()) validateInto();
+            else setStatus('Read-only reference — use 📋 to copy it into a new file.');
+        };
+        // Apply a file-bar change to the CURRENT stored files (so concurrent
+        // quick-adds are not overwritten), store it, and re-render.
+        const mutate = async (fn) => {
+            files = await getFiles();
+            const res = fn(files);
+            sortFiles(files);
+            await saveFiles(files);
+            renderSelect();
+            updateControls();
+            return res;
+        };
+        // Prompt for a valid, unused file name; null when cancelled. The field is
+        // capped at FILE_NAME_MAX; the name is lowercased before checking.
+        const askName = async (message, def, except = null) => {
+            const { choice, value } = await modalPrompt(overlay, {
+                message,
+                details: [`a-z, 0-9, _ . - (no spaces or /), up to ${FILE_NAME_MAX} characters.`],
+                input: {
+                    value: def,
+                    maxLength: FILE_NAME_MAX,
+                    validate: (v) => {
+                        const name = v.toLowerCase();
+                        if (!FILE_NAME_RE.test(name)) return 'Use a-z, 0-9, _ . - and start with a letter or digit.';
+                        if (name === REFERENCE_NAME) return `"${name}" is reserved.`;
+                        if (files.some((f) => f.name === name && f.id !== except)) return `"${name}" already exists.`;
+                        return null;
+                    },
+                },
+                buttons: [
+                    { label: 'Cancel', value: null },
+                    { label: 'OK', value: 'ok', bg: '#0e639c', primary: true },
+                ],
+            });
+            return choice === 'ok' ? value.toLowerCase() : null;
+        };
 
-        // Parse the textarea, render a summary + first issues into the status line,
-        // and return the number of error-severity issues. Shared by Validate + Save
-        // so a faulty config is never persisted.
-        const validateInto = (parsed = parseConfig(textarea.value)) => {
-            const errs = parsed.issues.filter((i) => i.severity === 'error');
-            const warns = parsed.issues.filter((i) => i.severity === 'warning');
+        // Parse the textarea (in the context of all files, for [use]), render a
+        // summary + first issues into the status line, and return the number of
+        // error-severity issues. Shared by Validate + Save so a faulty file is
+        // never stored. For a library, also re-checks the files importing it.
+        const validateInto = () => {
+            const f = sel();
+            if (!f) return 0;
+            const draft = { ...f, text: textarea.value };
+            const ctxFiles = files.map((x) => (x.id === f.id ? draft : x));
+            const parsed = parseFile(draft, ctxFiles);
+            const issues = [...parsed.issues];
+            const ownLists = [...parsed.lists.keys()].filter((n) => !n.includes('/')).length;
             const count = parsed.rules.length;
-            const active = parsed.rules.filter((r) => r.urlPattern.regex.test(location.href)).length;
-            const summary =
-                `${count} rule${count !== 1 ? 's' : ''}, ${parsed.lists.size} list${parsed.lists.size !== 1 ? 's' : ''}, ` +
-                `${active} match${active !== 1 ? '' : 'es'} the current URL (${location.hostname})`;
+            let summary = `${count} rule${count !== 1 ? 's' : ''}, ${ownLists} list${ownLists !== 1 ? 's' : ''}`;
+            if (parsed.isLibrary) {
+                const users = importersOf(f.name, ctxFiles);
+                summary += ` — library, used by: ${users.length ? users.join(', ') : 'none'}`;
+                const libCache = new Map();
+                for (const name of users) {
+                    const errs = parseFile(
+                        ctxFiles.find((x) => x.name === name),
+                        ctxFiles,
+                        libCache
+                    ).issues.filter((i) => i.severity === 'error').length;
+                    if (errs)
+                        issues.push({
+                            severity: 'warning',
+                            message: `importing file "${name}" has ${errs} error${errs !== 1 ? 's' : ''}`,
+                        });
+                }
+            } else {
+                if (parsed.libs.length) summary += ` (+ ${parsed.libs.map((l) => l.name).join(', ')})`;
+                const runs = f.enabled && fileRunsOn(parsed);
+                const active = runs ? parsed.rules.filter((r) => r.urlPattern.regex.test(location.href)).length : 0;
+                summary += runs
+                    ? ` — runs here, ${active} rule${active !== 1 ? 's' : ''} match ${location.hostname}`
+                    : ` — does not run on ${location.hostname}${f.enabled ? '' : ' (disabled)'}`;
+            }
+            const errs = issues.filter((i) => i.severity === 'error');
+            const warns = issues.filter((i) => i.severity === 'warning');
             const shown = (errs.length ? errs : warns).slice(0, 2);
             const detail = shown.map((i) => (i.line ? `line ${i.line}: ` : '') + i.message).join('  •  ');
-            statusLine.style.color = errs.length ? '#f14c4c' : warns.length ? '#d7ba7d' : '#4ec9b0';
-            statusLine.textContent =
+            setStatus(
                 `${errs.length} error${errs.length !== 1 ? 's' : ''}, ${warns.length} warning${warns.length !== 1 ? 's' : ''} — ${summary}.` +
-                (detail ? `  (${detail}${(errs.length || warns.length) > 2 ? ', …' : ''})` : '');
+                    (detail ? `  (${detail}${(errs.length || warns.length) > 2 ? ', …' : ''})` : ''),
+                errs.length ? '#f14c4c' : warns.length ? '#d7ba7d' : '#4ec9b0'
+            );
             return errs.length;
         };
 
-        btnValidate.addEventListener('click', () => validateInto());
-
-        btnCancel.addEventListener('click', confirmClose);
-
-        btnSave.addEventListener('click', async () => {
-            if (validateInto() > 0) return; // errors → stay in the dialog, do not persist
-            await GM.setValue(STORAGE_KEY, textarea.value);
-            overlay.remove();
-            await loadRules();
+        // --- file bar actions ---
+        fileSel.addEventListener('change', async () => {
+            const target = fileSel.value;
+            fileSel.value = selId; // stays on the current file until it is clean
+            if (await proceedIfClean()) selectFile(target);
         });
 
+        btnEnabled.addEventListener('click', async () => {
+            const id = selId;
+            await mutate((fs) => {
+                const f = fs.find((x) => x.id === id);
+                if (f) f.enabled = !f.enabled;
+            });
+            validateInto();
+        });
+
+        btnNew.addEventListener('click', async () => {
+            if (!(await proceedIfClean())) return;
+            const name = await askName('Name of the new settings file:', uniqueFileName(hostFileName(), files));
+            if (!name) return;
+            const f = { id: newFileId(), name, enabled: true, text: hostFileText(name) };
+            await mutate((fs) => fs.push(f));
+            selectFile(f.id);
+        });
+
+        btnDup.addEventListener('click', async () => {
+            if (!(await proceedIfClean())) return;
+            const src = sel();
+            const name = await askName(
+                src ? `Name of the copy of "${src.name}":` : 'Name of the new settings file:',
+                uniqueFileName(src ? `${src.name}-copy` : hostFileName(), files)
+            );
+            if (!name) return;
+            // A copy of a running file starts disabled so it doesn't double every
+            // effect; a copy of the reference gets a [match] for this host.
+            const f = src
+                ? { id: newFileId(), name, enabled: false, text: src.text }
+                : {
+                      id: newFileId(),
+                      name,
+                      enabled: true,
+                      text: DEFAULT_RULES.replace(/\[rules\]\s*$/, `[match]\n*://${location.hostname}/*\n\n[rules]\n`),
+                  };
+            await mutate((fs) => fs.push(f));
+            selectFile(f.id);
+        });
+
+        btnRename.addEventListener('click', async () => {
+            const f = sel();
+            if (!f) return;
+            if (!(await proceedIfClean())) return;
+            const name = await askName(`New name for "${f.name}":`, f.name, f.id);
+            if (!name || name === f.name) return;
+            const users = importersOf(f.name, files);
+            const id = f.id;
+            const old = f.name;
+            await mutate((fs) => {
+                for (const x of fs) {
+                    if (x.id === id) x.name = name;
+                    else if (users.includes(x.name)) x.text = renameImports(x.text, old, name);
+                }
+            });
+            selectFile(id);
+            if (users.length)
+                setStatus(`Renamed; updated [use] and @${old}/ references in: ${users.join(', ')}.`, '#4ec9b0');
+        });
+
+        btnDelete.addEventListener('click', async () => {
+            const f = sel();
+            if (!f) return;
+            const users = importersOf(f.name, files);
+            const { choice } = await modalPrompt(overlay, {
+                message: `Delete settings file "${f.name}"?`,
+                details: [
+                    'This cannot be undone — use Export… first to keep a copy.',
+                    ...(users.length ? [`These files [use] it and will report errors: ${nameList(users)}`] : []),
+                ],
+                buttons: [
+                    { label: 'Cancel', value: null, primary: true },
+                    { label: 'Delete', value: 'delete', bg: '#6e2a2a' },
+                ],
+            });
+            if (choice !== 'delete') return;
+            const i = files.indexOf(f);
+            await mutate((fs) =>
+                fs.splice(
+                    fs.findIndex((x) => x.id === f.id),
+                    1
+                )
+            );
+            selectFile(files[Math.min(i, files.length - 1)]?.id ?? REF_ID);
+        });
+
+        // Libraries a file imports (existing files without [match]).
+        const libsOf = (f) =>
+            [...new Set(indexConfigRaw(f.text.split('\n')).use)]
+                .map((n) => files.find((x) => x.name === n))
+                .filter((x) => x && !fileHeader(x.text).match.length);
+
+        btnExport.addEventListener('click', async () => {
+            const f = sel();
+            const libs = f ? libsOf(f) : [];
+            const { choice } = await modalPrompt(overlay, {
+                message: 'Export settings as .json',
+                details: [
+                    ...(f
+                        ? [
+                              `This file: "${f.name}"` +
+                                  (libs.length
+                                      ? ` + the libraries it uses (${nameList(libs.map((x) => x.name))})`
+                                      : '') +
+                                  (isDirty() ? ' — stored version, unsaved changes are not included' : ''),
+                          ]
+                        : []),
+                    `All files: ${files.length} (${nameList(files.map((x) => x.name))})`,
+                ],
+                buttons: [
+                    { label: 'Cancel', value: null },
+                    ...(f ? [{ label: 'This file', value: 'file', bg: '#1f6fad', primary: true }] : []),
+                    { label: 'All files', value: 'all', bg: '#1f6fad', primary: !f },
+                ],
+            });
+            if (choice === 'file') {
+                downloadJson(`content-filter-${f.name}.json`, [f, ...libs]);
+                setStatus(
+                    `Exported "${f.name}"${libs.length ? ` + ${libs.length} librar${libs.length !== 1 ? 'ies' : 'y'}` : ''}.`,
+                    '#4ec9b0'
+                );
+            } else if (choice === 'all') {
+                downloadJson(`content-filter-all-${new Date().toISOString().slice(0, 10)}.json`, files);
+                setStatus(`Exported ${files.length} file${files.length !== 1 ? 's' : ''}.`, '#4ec9b0');
+            }
+        });
+
+        btnImport.addEventListener('click', async () => {
+            if (!(await proceedIfClean())) return;
+            importInput.value = '';
+            importInput.click();
+        });
+        // Import: show what the file contains compared to the stored files, then
+        // let the user pick how to handle names that already exist:
+        //   keep both    existing files stay; clashing imports get a -2, -3 … suffix
+        //   replace      clashing files are overwritten by the imported version
+        //   replace all  restore a backup: afterwards exactly the imported files exist
+        // Identical files (same name + text) are skipped in the first two modes.
+        importInput.addEventListener('change', async () => {
+            const file = importInput.files?.[0];
+            if (!file) return;
+            let incoming;
+            try {
+                incoming = parseImport(await file.text());
+            } catch (e) {
+                setStatus(`Import failed: ${e.message}`, '#f14c4c');
+                return;
+            }
+            if (!incoming.length) {
+                setStatus('Import: the file contains no settings files.', '#d7ba7d');
+                return;
+            }
+            // Names unique within the import itself (reserved/duplicate → suffixed).
+            const seen = [];
+            for (const inc of incoming) {
+                inc.name = uniqueFileName(inc.name, seen);
+                seen.push(inc);
+            }
+            const renamed = incoming.filter((x) => x.name !== x.original);
+            const isNew = incoming.filter((x) => !files.some((f) => f.name === x.name));
+            const same = incoming.filter((x) => files.some((f) => f.name === x.name && f.text === x.text));
+            const clash = incoming.filter((x) => files.some((f) => f.name === x.name && f.text !== x.text));
+            const dropped = files.filter((f) => !incoming.some((x) => x.name === f.name));
+            const names = (list) => nameList(list.map((x) => x.name));
+            const { choice } = await modalPrompt(overlay, {
+                message: `Import ${incoming.length} file${incoming.length !== 1 ? 's' : ''} from "${file.name}"`,
+                details: [
+                    ...(isNew.length ? [`New: ${names(isNew)}`] : []),
+                    ...(clash.length ? [`Already exist with different content: ${names(clash)}`] : []),
+                    ...(same.length ? [`Identical, skipped: ${names(same)}`] : []),
+                    ...(renamed.length
+                        ? [
+                              'Names changed (invalid, too long or duplicate): ' +
+                                  nameList(
+                                      renamed.map((x) => `"${x.original}" → ${x.name}`),
+                                      5
+                                  ),
+                          ]
+                        : []),
+                    'Replace all = restore a backup: afterwards exactly the imported files exist' +
+                        (dropped.length ? `; deletes ${dropped.length} not in the import (${names(dropped)}).` : '.'),
+                ],
+                buttons: [
+                    { label: 'Cancel', value: null },
+                    { label: 'Replace all', value: 'all', bg: '#6e2a2a' },
+                    ...(clash.length
+                        ? [
+                              { label: 'Replace existing', value: 'replace', bg: '#8a5a00' },
+                              { label: 'Keep both', value: 'copy', bg: '#0e639c', primary: true },
+                          ]
+                        : isNew.length
+                          ? [{ label: 'Import', value: 'copy', bg: '#0e639c', primary: true }]
+                          : []),
+                ],
+            });
+            if (!choice) return;
+            const counts = { added: 0, replaced: 0 };
+            let lastId = null;
+            await mutate((fs) => {
+                if (choice === 'all') fs.splice(0, fs.length);
+                for (const inc of incoming) {
+                    const existing = fs.find((x) => x.name === inc.name);
+                    if (existing && existing.text === inc.text) continue;
+                    if (existing && choice === 'replace') {
+                        Object.assign(existing, { enabled: inc.enabled, text: inc.text });
+                        counts.replaced++;
+                        lastId = existing.id;
+                        continue;
+                    }
+                    const f = {
+                        id: newFileId(),
+                        name: existing ? uniqueFileName(inc.name, fs) : inc.name,
+                        enabled: inc.enabled,
+                        text: inc.text,
+                    };
+                    fs.push(f);
+                    counts.added++;
+                    lastId = f.id;
+                }
+            });
+            selectFile(lastId ?? selId);
+            setStatus(
+                (choice === 'all'
+                    ? `Restored ${incoming.length} file${incoming.length !== 1 ? 's' : ''} (all others deleted)`
+                    : `Imported: ${counts.added} added, ${counts.replaced} replaced, ${same.length} identical skipped`) +
+                    ' — reload the page to apply.',
+                '#4ec9b0'
+            );
+        });
+
+        // --- save / close ---
+        btnValidate.addEventListener('click', () => validateInto());
+        btnCancel.addEventListener('click', confirmClose);
+
+        const saveSelected = async () => {
+            if (validateInto() > 0) return false; // errors → stay in the dialog, do not persist
+            const id = selId;
+            const text = textarea.value;
+            await mutate((fs) => {
+                const f = fs.find((x) => x.id === id);
+                if (f) f.text = text;
+            });
+            savedValue = text;
+            await loadRules();
+            setStatus(
+                `Saved "${sel()?.name}" — applies on next page load. ${statusLine.textContent}`,
+                statusLine.style.color
+            );
+            return true;
+        };
+        btnSave.addEventListener('click', () => saveSelected());
         btnSaveReload.addEventListener('click', async () => {
-            if (validateInto() > 0) return; // errors → stay in the dialog, do not persist
-            await GM.setValue(STORAGE_KEY, textarea.value);
-            location.reload();
+            if (await saveSelected()) location.reload();
         });
 
         // Close on backdrop click only when the press STARTED on the backdrop and
@@ -2340,13 +4042,79 @@ ${customCss || ''}
         });
         overlay.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') confirmClose();
+            // Ctrl/Cmd+S saves (and keeps the dialog open) instead of the
+            // browser's "save page as".
+            if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
+                e.preventDefault();
+                e.stopPropagation();
+                if (sel()) saveSelected();
+            }
         });
 
-        btnRow.append(btnReset, btnValidate, btnCancel, btnSave, btnSaveReload);
-        panel.append(header, hint, textarea, statusLine, btnRow);
+        // Maximized: a flex column whose textarea takes the remaining height. Sizes
+        // are px/vw, not rem: rem follows the PAGE's root font size (often 10px),
+        // so 70rem came out narrower than the restored dialog on some sites. The
+        // max() keeps maximized at least as wide as restored (860px + padding).
+        let maximized = false;
+        const applySize = (max) => {
+            maximized = max;
+            Object.assign(
+                panel.style,
+                max
+                    ? {
+                          width: 'max(min(1100px, calc(100vw - 16px)), min(896px, 96vw))',
+                          maxWidth: 'max(calc(100vw - 16px), 96vw)',
+                          height: 'calc(100vh - 16px)',
+                          maxHeight: 'calc(100vh - 16px)',
+                          boxSizing: 'border-box',
+                          display: 'flex',
+                          flexDirection: 'column',
+                      }
+                    : {
+                          width: '860px',
+                          maxWidth: '96vw',
+                          height: '',
+                          maxHeight: '92vh',
+                          boxSizing: '',
+                          display: '',
+                          flexDirection: '',
+                      }
+            );
+            // dvh follows mobile browser toolbars; ignored (vh kept) where unsupported.
+            if (max) panel.style.height = panel.style.maxHeight = 'calc(100dvh - 16px)';
+            Object.assign(
+                textarea.style,
+                max
+                    ? { height: 'auto', flex: '1 1 auto', minHeight: '160px', resize: 'none' }
+                    : { height: '420px', flex: '', minHeight: '', resize: 'vertical' }
+            );
+            btnMax.textContent = max ? '❐' : '□';
+            btnMax.title = max ? 'Restore size' : 'Maximize';
+            btnMax.setAttribute('aria-label', btnMax.title);
+        };
+        btnMax.addEventListener('click', () => {
+            applySize(!maximized);
+            GM.setValue(DIALOG_STATE_KEY, { maximized });
+        });
+        applySize(false);
+        GM.getValue(DIALOG_STATE_KEY, null).then((st) => st?.maximized && applySize(true));
+
+        btnRow.append(btnValidate, btnCancel, btnSave, btnSaveReload);
+        panel.append(header, fileBar, textarea, statusLine, btnRow);
         overlay.append(panel);
         (document.body ?? document.documentElement).append(overlay);
         textarea.focus();
+
+        // Initial file: the requested one, else the first enabled file running
+        // here, else the first file, else the reference.
+        getFiles().then((fs) => {
+            files = fs;
+            const pick =
+                fs.find((f) => f.name === fileName) ??
+                fs.find((f) => f.enabled && fileRunsOn(fileHeader(f.text))) ??
+                fs[0];
+            selectFile(pick?.id ?? REF_ID);
+        });
     }
 
     // -----------------------------------------------------------------------
@@ -2465,7 +4233,7 @@ ${customCss || ''}
                 if (COMMIT_TAP.enabled && e.key === COMMIT_TAP.key && document.getElementById('ucb-quick-panel'))
                     return;
                 setPeek(!peekOn);
-                toast('Content Blur: peek ' + (peekOn ? 'on (effects revealed)' : 'off'));
+                toast('Content Filter: peek ' + (peekOn ? 'on (effects revealed)' : 'off'));
             }
         },
         true
@@ -2539,7 +4307,7 @@ ${customCss || ''}
     //  INIT
     // -----------------------------------------------------------------------
 
-    GM_registerMenuCommand(`⚙️ Content Blur Settings (${keyLabel(KEYS.openSettings)})`, openSettings);
+    GM_registerMenuCommand(`⚙️ Content Filter Settings (${keyLabel(KEYS.openSettings)})`, () => openSettings());
     GM_registerMenuCommand(
         `➕ Quick-add: ${keyLabel(KEYS.quickAddSilent)} (silent) / ${keyLabel(KEYS.quickAddPanel)} (panel)`,
         quickAddPanel
