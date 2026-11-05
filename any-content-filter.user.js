@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Any Content Filter
 // @namespace    https://github.com/cbaoth/userscripts
-// @version      2026-11-05T194736
+// @version      2026-11-05T204352
 // @description  Blur, mask, hide or highlight page content (text, images, links, usernames) by per-site rules with regexes and word lists, plus reveal-on-hover and keyboard quick-add.
 // @author       cbaoth235
 // @license      MIT
@@ -28,8 +28,9 @@
     const FILES_KEY = 'contentFilterFiles'; // [{ id, name, enabled, text }]; run order = name order (sortFiles)
     const REFERENCE_NAME = 'reference'; // built-in read-only file (DEFAULT_RULES), never stored
     const FILE_NAME_MAX = 50; // chars (names are ASCII-only, so also bytes)
-    // Used in [use] and @file/list, so no / or spaces.
-    const FILE_NAME_RE = new RegExp(`^[a-z0-9][a-z0-9_.-]{0,${FILE_NAME_MAX - 1}}$`);
+    // Used in [use] and @file/list, so no / or spaces. A leading ~ sorts after
+    // a-z, so ~… files run last (catch-all files after the host-named ones).
+    const FILE_NAME_RE = new RegExp(`^(?=.{1,${FILE_NAME_MAX}}$)~?[a-z0-9][a-z0-9_.-]*$`);
     const PANEL_STATE_KEY = 'contentFilterPanelState'; // remembered quick-add destination
     const DIALOG_STATE_KEY = 'contentFilterDialogState'; // remembered settings dialog size + last file ({ maximized, fileId, fileName })
     const BLUR_CLASS = 'ucb-blur';
@@ -143,10 +144,12 @@
 #
 #   [match]       URL patterns (one per line, glob or /regex/, like @match) the
 #                 file runs on. All enabled files that match a page run, in
-#                 NAME order (character order: - before 0-9 before a-z); an
-#                 element already taken by an earlier rule is skipped by later
-#                 ones, also across files — prefix names (10-…, 50-…) to set
-#                 the order.
+#                 NAME order (character order: - before 0-9 before a-z
+#                 before ~); an element already taken by an earlier rule is
+#                 skipped by later ones, also across files — prefix names
+#                 (10-…, 50-…) to set the order. New files from Alt+Shift+S
+#                 are named after the host, so a catch-all file meant to run
+#                 after them starts with ~ (~90-defaults).
 #                 *://*/* = everywhere. Several lines = any of them, e.g. one
 #                 regex covering every Jenkins/Gerrit/MediaWiki host.
 #   [exclude]     URL patterns the file must NOT run on (wins over [match]).
@@ -3064,11 +3067,13 @@ ${customCss || ''}
     // Coerce any string into a valid file name (FILE_NAME_RE): lowercase, runs of
     // other characters become -, cut to FILE_NAME_MAX. '' when nothing is left.
     function toFileName(raw) {
-        return String(raw)
-            .toLowerCase()
+        const s = String(raw).toLowerCase();
+        const tilde = s.startsWith('~') ? '~' : '';
+        const rest = s
+            .slice(tilde.length)
             .replace(/[^a-z0-9_.-]+/g, '-')
-            .replace(/^[^a-z0-9]+/, '')
-            .slice(0, FILE_NAME_MAX);
+            .replace(/^[^a-z0-9]+/, '');
+        return rest ? (tilde + rest).slice(0, FILE_NAME_MAX) : '';
     }
 
     // Settings-file name derived from this page's host (e.g. "example.com").
@@ -3396,7 +3401,7 @@ ${customCss || ''}
             'One rule per line: ' +
             '<code style="color:#9cdcfe">url-pattern | source | patterns | action | scope | options</code> ' +
             '(url <code style="color:#9cdcfe">*</code> = wherever the file runs). ' +
-            'Files run in name order (prefix 10-…, 50-… to order them). ' +
+            'Files run in name order (prefix 10-…, 50-… to order them; ~… runs after a-z). ' +
             'In the list: ► runs on this page · ✓ enabled (other pages) · ✗ disabled · ○ library · ≡ reference. ' +
             'See the read-only <code style="color:#9cdcfe">reference</code> file for full docs and examples.' +
             '<br><br>File buttons: ✅/❌ enabled/disabled (click to toggle) · + new · 📋 duplicate (or copy the ' +
@@ -3696,13 +3701,16 @@ ${customCss || ''}
         const askName = async (message, def, except = null) => {
             const { choice, value } = await modalPrompt(overlay, {
                 message,
-                details: [`a-z, 0-9, _ . - (no spaces or /), up to ${FILE_NAME_MAX} characters.`],
+                details: [
+                    `a-z, 0-9, _ . - (no spaces or /), up to ${FILE_NAME_MAX} characters. A leading ~ runs the file last.`,
+                ],
                 input: {
                     value: def,
                     maxLength: FILE_NAME_MAX,
                     validate: (v) => {
                         const name = v.toLowerCase();
-                        if (!FILE_NAME_RE.test(name)) return 'Use a-z, 0-9, _ . - and start with a letter or digit.';
+                        if (!FILE_NAME_RE.test(name))
+                            return 'Use a-z, 0-9, _ . - and start with a letter or digit (or ~ then one).';
                         if (name === REFERENCE_NAME) return `"${name}" is reserved.`;
                         if (files.some((f) => f.name === name && f.id !== except)) return `"${name}" already exists.`;
                         return null;

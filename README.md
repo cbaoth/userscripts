@@ -40,7 +40,7 @@ See [Deprecated & Legacy Scripts](#deprecated--legacy-scripts) for older scripts
 
 [any-content-filter.user.js](any-content-filter.user.js) filters content on any site by configurable rules: blur, mask, hide or highlight what matches, with reveal-on-hover so you can decide whether to peek. A general, config-file-driven approach to filtering unwanted content (or highlighting wanted content).
 
-- Plain-text **settings files** (one rule per line, edited in a textarea — no fiddly multi-tab GUI). Each file works like its own userscript: it runs on the URLs in its `[match]` section (several glob or `/regex/` lines, minus `[exclude]`), and its lists and CSS are private. One file per site or app (e.g. one regex covering all Jenkins hosts) stays small, can be toggled on/off, and can be shared on its own:
+- Plain-text **settings files** (one rule per line, edited in a textarea — no fiddly multi-tab GUI). Each file works like its own userscript: it runs on the URLs in its `[match]` section (several glob or `/regex/` lines, minus `[exclude]`), and its lists and CSS are private. Files run in name order; a rule skips an element an earlier rule already took, so a catch-all file named `~…` (sorts after `a-z`) runs after the site files, which are named after their host. One file per site or app (e.g. one regex covering all Jenkins hosts) stays small, can be toggled on/off, and can be shared on its own:
 
   ```
   [match]
