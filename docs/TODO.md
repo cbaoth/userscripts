@@ -10,7 +10,7 @@
 ## Rename Migration
 
 - [ ] Delete the frozen copies at the old paths once all installs (all synced Violentmonkey devices) have updated to the new `@downloadURL` — renamed 2026-09-18, see `AGENTS.md` → Naming: `universal-content-blur`, `universal-emoji-replacer`, `universal-image-resizer`, `universal-redirector`, `copy-url-on-hover`, `amazon-links`, `auto-show-forum-spoilers`, `search-hotkey` (`*.user.js`)
-  - Note: `any-content-blur` was renamed again to `any-content-filter` (2026-11-05) without a frozen copy, so the `universal-content-blur` copy's `@downloadURL` now points to a removed path; such installs no longer update — reinstall from `any-content-filter.user.js`.
+  - Also `any-content-blur` (renamed again to `any-content-filter` 2026-11-05; chain: `universal-content-blur` → `any-content-blur` → `any-content-filter`). The storage keys changed too, so updated installs start without settings (re-import them).
 
 ## Build Toolchain
 
@@ -64,7 +64,7 @@ Scripts that have not had functional updates in a long time — verify each stil
 
 - [ ] `any-content-filter.user.js`
   - [x] ~~Additional actions beyond `blur`: `hide` (display:none), `dim` (low opacity).~~ Done differently: actions are now arbitrary user-defined `.ucb-NAME` classes via a `[css]` section (`blur` is the built-in default, parameterizable as `blur:N`). `hide`/`dim`/`darken`/`grayscale`/`resize` etc. are plain CSS the user writes; `NAME:VALUE` exposes `--ucb-NAME` for per-rule tuning.
-  - [x] [S] ~~Remove the deprecated single-config migration (added 2026-10-12): `STORAGE_KEY` and the legacy branch in `getFiles()`.~~ Done with the rename to Any Content Filter (2026-11-05), which starts with fresh storage anyway (settings carried over by export/import).
+  - [x] [S] ~~Remove the deprecated single-config migration (added 2026-10-12): `STORAGE_KEY` and the legacy branch in `getFiles()`.~~ Done with the rename to Any Content Filter (2026-11-05), whose new storage keys start empty anyway (settings carried over by export/import).
   - [ ] [S] Settings files follow-ups (added 2026-10-12): verify on real configs that renaming a library rewrites the `[use]` lines and `@OLD/` refs in importing files; check the dialog on mobile (Firefox/Vivaldi on Android). Idea if needed later: per-file conflict choice on import (today one choice applies to all clashing names).
   - [ ] [M] Profanity lists follow-ups (added 2026-11-04; plan: grouped `LANG.TOPIC.LEVEL` lists in a local library, `partial` / `fold` / `sound` options, `word` scope):
     - [ ] [M] Per-entry exceptions for wildcard list entries (`ass*` but not `asset`, `assay`), like dsojevic/profanity-list `exceptions`. Rule-level `!` excludes drop the whole value, which is fine for usernames but not for text with a real hit next to an excepted word. Idea: iterate matches (`g` flag) and skip those whose word is in an allow set.
